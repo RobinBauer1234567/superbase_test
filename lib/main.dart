@@ -2,14 +2,22 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:premier_league/provider/player_provider.dart';
-import 'package:premier_league/screens/player_screen.dart';
+import 'package:premier_league/screens/home_screen.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'firebase_options.dart';
+import 'package:premier_league/match_service.dart';
+
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  await Firebase.initializeApp();
+
+  // 🔥 Firebase mit konfigurierten Optionen initialisieren
+  await Firebase.initializeApp(
+    options: DefaultFirebaseOptions.currentPlatform,
+  );
   runApp(MyApp());
 }
+
 
 class MyApp extends StatelessWidget {
   @override
@@ -20,10 +28,8 @@ class MyApp extends StatelessWidget {
       ],
       child: MaterialApp(
         title: 'Premier League Fantasy App',
-        theme: ThemeData(
-          primarySwatch: Colors.blue,
-        ),
-        home: PlayerScreen(),
+        theme: ThemeData(primarySwatch: Colors.blue),
+        home: HomeScreen(),
       ),
     );
   }

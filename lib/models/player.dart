@@ -1,38 +1,48 @@
-import 'dart:convert';
-
 class Player {
   final String name;
   final String shortName;
   final String position;
-  final double statistic;
   final String team;
   final String league;
-  final int matchId;
+  final Map<int, double> matchRatings; // 🔹 Jetzt als Map für zuverlässigere Updates
 
   Player({
     required this.name,
     required this.shortName,
     required this.position,
-    required this.statistic,
     required this.team,
     required this.league,
-    required this.matchId,
+    required this.matchRatings,
   });
 
+  // 🏗 Factory-Methode zum Erstellen eines Players aus JSON-Daten
   factory Player.fromJson(Map<String, dynamic> json) {
     return Player(
-      name: json['player']['name'] ?? 'Unbekannt',
-      shortName: json['player']['shortName'] ?? '',
-      position: json['player']['position'] ?? '',
-      statistic: json['statistic'] ?? 0,
-      team: json['event']['homeTeam']['name'] ?? 'Unbekannt',
-      league: json['event']['tournament']['name'] ?? 'Unbekannt',
-      matchId: json['event']['id'] ?? 0,
+      name: json['name'] ?? 'Unbekannt',
+      shortName: json['shortName'] ?? '',
+      position: json['position'] ?? '',
+      team: json['team'] ?? 'Unbekannt',
+      league: json['league'] ?? 'Unbekannt',
+      matchRatings: (json['matchRatings'] as Map<String, dynamic>?)?.map(
+            (key, value) => MapEntry(int.parse(key), (value as num).toDouble()),
+      ) ?? {},
     );
   }
-}
 
-List<Player> parsePlayers(String responseBody) {
-  final parsed = json.decode(responseBody)['topPlayers']['rating'] as List;
-  return parsed.map<Player>((json) => Player.fromJson(json)).toList();
+  // 🔄 Konvertiert das Objekt in JSON
+  Map<String, dynamic> toJson() {
+    return {
+      'name': name,
+      'shortName': shortName,
+      'position': position,
+      'team': team,
+      'league': league,
+      'matchRatings': matchRatings.map((key, value) => MapEntry(key.toString(), value)),
+    };
+  }
+
+  // 🔄 Methode zum Hinzufügen oder Aktualisieren eines MatchRatings
+  void addOrUpdateMatchRating(int matchId, double rating) {
+    matchRatings[matchId] = rating; // Falls matchId existiert, wird der Wert überschrieben
+  }
 }

@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "459424282585",
+    "project_id": "pl-f6ea7",
+    "storage_bucket": "pl-f6ea7.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:459424282585:android:67b70b146a209ad6b9cbc8",
+        "android_client_info": {
+          "package_name": "com.example.premier_league"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyD0m7yDOu7GBqaZzSzCyQ11UVxQTxW2MbU"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

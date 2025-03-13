@@ -1,41 +1,37 @@
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import 'package:premier_league/provider/player_provider.dart';
 import 'package:premier_league/models/player.dart';
 
-class PlayerScreen extends StatefulWidget {
-  @override
-  _PlayerScreenState createState() => _PlayerScreenState();
-}
+class PlayerScreen extends StatelessWidget {
+  final Player player;
 
-class _PlayerScreenState extends State<PlayerScreen> {
-  @override
-  void initState() {
-    super.initState();
-    Future.microtask(() =>
-        Provider.of<PlayerProvider>(context, listen: false).fetchPlayers());
-  }
+  PlayerScreen({required this.player});
 
   @override
   Widget build(BuildContext context) {
-    final playerProvider = Provider.of<PlayerProvider>(context);
-
     return Scaffold(
-      appBar: AppBar(title: Text("Top Spieler")),
-      body: playerProvider.isLoading
-          ? Center(child: CircularProgressIndicator())
-          : playerProvider.errorMessage != null
-          ? Center(child: Text(playerProvider.errorMessage!))
-          : ListView.builder(
-        itemCount: playerProvider.players.length,
-        itemBuilder: (context, index) {
-          final player = playerProvider.players[index];
-          return ListTile(
-            title: Text(player.name),
-            subtitle: Text("${player.team} (${player.league})"),
-            trailing: Text("Stat: ${player.statistic}"),
-          );
-        },
+      appBar: AppBar(title: Text(player.name)),
+      body: Padding(
+        padding: const EdgeInsets.all(16.0),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text("Team: ${player.team}", style: TextStyle(fontSize: 18)),
+            Text("Position: ${player.position}", style: TextStyle(fontSize: 18)),
+            Text("Liga: ${player.league}", style: TextStyle(fontSize: 18)),
+            SizedBox(height: 16),
+            Text("Match Ratings:", style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold)),
+            Expanded(
+              child: ListView(
+                children: player.matchRatings.entries.map((entry) {
+                  return ListTile(
+                    title: Text("Match ID: ${entry.key}"),
+                    trailing: Text("Rating: ${entry.value.toStringAsFixed(1)}"),
+                  );
+                }).toList(),
+              ),
+            ),
+          ],
+        ),
       ),
     );
   }
