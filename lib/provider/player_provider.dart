@@ -1,6 +1,6 @@
 import 'package:flutter/material.dart';
 import 'package:premier_league/models/player.dart';
-import 'package:premier_league/match_service.dart';
+import 'package:premier_league/data_service.dart';
 
 class PlayerProvider with ChangeNotifier {
   List<Player> _players = [];
@@ -13,30 +13,19 @@ class PlayerProvider with ChangeNotifier {
 
   String? get errorMessage => _errorMessage;
 
-  Future<void> fetchPlayers() async {
+  Future<void> fetchPlayers(List <Player> players) async {
     _isLoading = true;
     _errorMessage = null;
     notifyListeners();
 
     try {
       FirestoreService firestoreService = FirestoreService();
-      ApiService apiService = ApiService();
-      MatchService matchService = MatchService();
-
-      List<int> matchIds = await matchService.collectNewData();
-      List<Player> allNewPlayers = []; // Liste für alle neu geladenen Spieler
-
-      // 🔹 Spieler aus der API für jede Match-ID abrufen
-      for (var matchId in matchIds) {
-        List<Player> newPlayers = await apiService.fetchTopPlayers(matchId);
-        allNewPlayers.addAll(newPlayers);
-      }
 
       // 🔹 Spieler aus Firestore abrufen
       List<Player> storedPlayers = await firestoreService.getPlayers();
       List<Player> updatedPlayers = []; // Liste für Spieler mit neuen Daten
 
-      for (var newPlayer in allNewPlayers) {
+      for (var newPlayer in players) {
         // Prüfen, ob Spieler bereits existiert
         Player? existingPlayer = storedPlayers.firstWhere(
               (p) => p.name == newPlayer.name,

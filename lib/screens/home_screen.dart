@@ -2,9 +2,8 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:premier_league/provider/player_provider.dart';
-
+import 'package:premier_league/viewmodels/data_viewmodel.dart';
 import 'package:premier_league/screens/player_screen.dart';
-
 class HomeScreen extends StatefulWidget {
   @override
   _HomeScreenState createState() => _HomeScreenState();
@@ -15,13 +14,12 @@ class _HomeScreenState extends State<HomeScreen> {
   void initState() {
     super.initState();
     Future.microtask(() =>
-        Provider.of<PlayerProvider>(context, listen: false).fetchPlayers());
+        Provider.of<DataManagement>(context, listen: false).collectNewData());
   }
 
   @override
   Widget build(BuildContext context) {
     final playerProvider = Provider.of<PlayerProvider>(context);
-
     return Scaffold(
       appBar: AppBar(title: Text("Spielerübersicht")),
       body: playerProvider.isLoading
