@@ -9,7 +9,7 @@ import 'package:premier_league/provider/player_provider.dart';
 
 class DataManagement extends ChangeNotifier{
   ApiService apiService = ApiService();
-  FirestoreService firestoreService = FirestoreService();
+  SupabaseService supabaseService = SupabaseService();
   PlayerProvider playerProvider = PlayerProvider();
 
   Future<void> collectNewData() async {
@@ -21,9 +21,9 @@ class DataManagement extends ChangeNotifier{
       for (var neuesSpiel in neueSpiele) {
         spiele.add(neuesSpiel);
         spieltag.addSpiel(neuesSpiel);
-        firestoreService.saveSpiel(neuesSpiel, neuesSpiel.matchId);
+        supabaseService.saveSpiel(neuesSpiel, neuesSpiel.matchId);
       }
-      firestoreService.saveSpieltag(spieltag);
+      supabaseService.saveSpieltag(spieltag);
     }
     await updateData();
     print('finish');
@@ -32,12 +32,12 @@ class DataManagement extends ChangeNotifier{
   Future<void> updateData() async {
     print("updateData() gestartet");
     print("Vor getSpieltage()");
-    List<Spieltag> spieltage = await firestoreService.getSpieltage();
+    List<Spieltag> spieltage = await supabaseService.getSpieltage();
     print("Nach getSpieltage(): $spieltage");
     List <Player> players = [];
     for (var spieltag in spieltage) {
       //if (spieltag.status == SpielStatus.finalStatus) break;
-      List<Spiel> spiele = await firestoreService.getSpieleBySpieltag(spieltag.roundNumber);
+      List<Spiel> spiele = await supabaseService.getSpieleBySpieltag(spieltag.roundNumber);
       print(spiele);
       for (var spiel in spiele) {
         if (spiel.status != SpielStatus.finalStatus) {
@@ -47,7 +47,6 @@ class DataManagement extends ChangeNotifier{
             spiel.setStatus(SpielStatus.notPlayed);
           } else {
             List <Player> playersPerGame = await apiService.fetchLineups(spiel.matchId);
-            print(playersPerGame);
             for (var playerPerGame in playersPerGame){
               players.add(playerPerGame);
             }

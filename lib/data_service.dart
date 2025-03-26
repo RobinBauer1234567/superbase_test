@@ -4,6 +4,8 @@ import 'package:http/http.dart' as http;
 import 'package:premier_league/models/player.dart';
 import 'package:premier_league/models/match.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
 
 class ApiService {
   final String baseUrl = 'https://www.sofascore.com/api/v1';
@@ -98,8 +100,6 @@ class ApiService {
             } else {
               throw Exception('⏳ Weder offizielles noch geschätztes Endzeitdatum verfügbar.');
             }
-          } else if (type == 'postponed') {  // ✅ Neuer Fall für verschobene Spiele
-            return SpielStatus.postponed;
           } else {
             throw Exception('🔍 Unbekannter Status: $type');
           }
@@ -170,7 +170,6 @@ class ApiService {
 
 class FirestoreService {
   final FirebaseFirestore _db = FirebaseFirestore.instance;
-
   // 🔥 Spieler speichern
   Future<void> savePlayer(List<Player> players) async {
     for (var player in players) {
@@ -245,12 +244,10 @@ class FirestoreService {
       }
 
       final data = docSnapshot.data();
-      print("📥 Rohdaten aus Firestore: $data");
       if (data == null || !data.containsKey('spiele')) {
         print("⚠️ Kein 'spiele'-Feld in Spieltag $roundNumber gefunden.");
         return [];
       }
-      print("🎮 Spiele-Array: ${data['spiele']}");
 
       final List<dynamic> spieleList = data['spiele'];
 
@@ -260,8 +257,96 @@ class FirestoreService {
       return [];
     }
   }
+}
 
+class SupabaseService {
+  final SupabaseClient _supabase = Supabase.instance.client;
 
+  // 🔥 Spieler speichern
+  Future<void> savePlayer(List<Player> players) async {
+    try {
+      final data = players.map((player) => player.toJson()).toList();
+      await _supabase.from('players').upsert(data);
+    } catch (e) {
+      print("❌ Fehler beim Speichern der Spieler: $e");
+    }
+  }
 
+  // 🔥 Alle Spieler abrufen
+  Future<List<Player>> getPlayers() async {
+    try {
+      final response = await _supabase.from('players').select();
+      return response.map((json) => Player.fromJson(json)).toList();
+    } catch (e) {
+      print("❌ Fehler beim Abrufen der Spieler: $e");
+      return [];
+    }
+  }
 
+  // 🔥 Spieltag speichern
+  Future<void> saveSpieltag(Spieltag spieltag) async {
+    try {
+      await _supabase.from('spieltage').upsert(spieltag.toJson());
+    } catch (e) {
+      print("❌ Fehler beim Speichern des Spieltags ${spieltag.roundNumber}: $e");
+    }
+  }
+
+  // 🔥 Alle Spieltage abrufen
+  Future<List<Spieltag>> getSpieltage() async {
+    try {
+      final response = await _supabase.from('spieltage').select();
+      return response.map((json) => Spieltag.fromJson(json)).toList();
+    } catch (e) {
+      print("❌ Fehler beim Abrufen der Spieltage: $e");
+      return [];
+    }
+  }
+
+  // 🔥 Spiel speichern
+  Future<void> saveSpiel(Spiel spiel, int roundNumber) async {
+    try {
+      // Prüfen, ob das Spiel bereits final ist
+      final existing = await _supabase
+          .from('spiele')
+          .select()
+          .eq('matchId', spiel.matchId)
+          .single();
+
+      if (existing != null && existing['status'] == SpielStatus.finalStatus.description) {
+        print("⚠️ Spiel ${spiel.matchId} ist bereits final und wird nicht aktualisiert.");
+        return;
+      }
+
+      // Speichern des Spiels
+      await _supabase.from('spiele').upsert(spiel.toJson());
+    } catch (e) {
+      print("❌ Fehler beim Speichern des Spiels ${spiel.matchId}: $e");
+    }
+  }
+
+  // 🔥 Alle Spiele eines bestimmten Spieltags abrufen
+  Future<List<Spiel>> getSpieleBySpieltag(int roundNumber) async {
+    try {
+      final response = await _supabase
+          .from('spiele')
+          .select()
+          .eq('roundNumber', roundNumber);
+
+      return response.map((json) => Spiel.fromJson(json)).toList();
+    } catch (e) {
+      print("❌ Fehler beim Abrufen der Spiele für Spieltag $roundNumber: $e");
+      return [];
+    }
+  }
+
+  // 🔥 Echtzeit-Updates für Spieler erhalten
+  void listenToPlayerUpdates(void Function(List<Player>) onUpdate) {
+    _supabase
+        .from('players')
+        .stream(primaryKey: ['id'])
+        .listen((data) {
+      onUpdate(data.map((json) => Player.fromJson(json)).toList());
+    });
+  }
 }

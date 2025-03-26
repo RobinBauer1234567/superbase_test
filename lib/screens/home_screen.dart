@@ -4,42 +4,45 @@ import 'package:provider/provider.dart';
 import 'package:premier_league/provider/player_provider.dart';
 import 'package:premier_league/viewmodels/data_viewmodel.dart';
 import 'package:premier_league/screens/player_screen.dart';
-class HomeScreen extends StatefulWidget {
+import 'package:premier_league/models/match.dart';
+import 'package:premier_league/data_service.dart';
+
+
+
+class SpielListeScreen extends StatefulWidget {
   @override
-  _HomeScreenState createState() => _HomeScreenState();
+  _SpielListeScreenState createState() => _SpielListeScreenState();
 }
 
-class _HomeScreenState extends State<HomeScreen> {
+class _SpielListeScreenState extends State<SpielListeScreen> {
+  List<Spiel> spiele = [];
+  final ApiService apiService = ApiService();
+
   @override
   void initState() {
     super.initState();
-    Future.microtask(() =>
-        Provider.of<DataManagement>(context, listen: false).collectNewData());
+    fetchSpiele();
+  }
+
+  Future<void> fetchSpiele() async {
+    final fetchedSpiele = await Spiel.fetchFromSupabase();
+    setState(() {
+      spiele = fetchedSpiele;
+    });
   }
 
   @override
   Widget build(BuildContext context) {
-    final playerProvider = Provider.of<PlayerProvider>(context);
     return Scaffold(
-      appBar: AppBar(title: Text("Spielerübersicht")),
-      body: playerProvider.isLoading
-          ? Center(child: CircularProgressIndicator())
-          : playerProvider.errorMessage != null
-          ? Center(child: Text(playerProvider.errorMessage!))
-          : ListView.builder(
-        itemCount: playerProvider.players.length,
+      appBar: AppBar(title: Text('Spiele Übersicht')),
+      body: ListView.builder(
+        itemCount: spiele.length,
         itemBuilder: (context, index) {
-          final player = playerProvider.players[index];
+          final spiel = spiele[index];
           return ListTile(
-            title: Text(player.name),
-            onTap: () {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => PlayerScreen(player: player),
-                ),
-              );
-            },
+            title: Text("${spiel.homeTeam} vs ${spiel.awayTeam}"),
+            subtitle: Text("Stand: ${spiel.homeScore} - ${spiel.awayScore}"),
+            onTap: () => apiService.fetchLineups(spiel.matchId),
           );
         },
       ),

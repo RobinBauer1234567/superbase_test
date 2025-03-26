@@ -1,9 +1,11 @@
+import 'package:supabase_flutter/supabase_flutter.dart';
+
+
 enum SpielStatus {
   notPlayed,
   live,
   provisional,
   finalStatus,
-  postponed, // ✅ Neuer Status
 }
 
 
@@ -18,8 +20,6 @@ extension SpielStatusExtension on SpielStatus {
         return "Beendet, aber nicht final";
       case SpielStatus.finalStatus:
         return "Final";
-      case SpielStatus.postponed:
-        return "postponed";
     }
   }
 }
@@ -60,6 +60,20 @@ class Spiel {
     }
   }
 
+  /// **Spiel in Supabase speichern**
+  Future<void> saveToSupabase() async {
+    final supabase = Supabase.instance.client;
+    await supabase.from('spiele').upsert(toJson());
+  }
+
+  /// **Spiele aus Supabase abrufen**
+  static Future<List<Spiel>> fetchFromSupabase() async {
+    final supabase = Supabase.instance.client;
+    final response = await supabase.from('spiele').select();
+
+    return response.map((json) => Spiel.fromJson(json)).toList();
+  }
+
   // Factory-Methode zum Erzeugen eines Spiel-Objekts aus JSON-Daten.
   factory Spiel.fromJson(Map<String, dynamic> json, {void Function()? onStatusChanged}) {
     SpielStatus parsedStatus = SpielStatus.notPlayed;
@@ -86,11 +100,15 @@ class Spiel {
       onStatusChanged: onStatusChanged,
     );
   }
-
-
-
-
-
+  void listenForSpielUpdates() {
+    final supabase = Supabase.instance.client;
+    supabase
+        .from('spiele')
+        .stream(primaryKey: ['id'])
+        .listen((data) {
+      print("Neue Spieldaten empfangen: $data");
+    });
+  }
 
   Map<String, dynamic> toJson() {
     return {
@@ -108,13 +126,13 @@ class Spiel {
 
 class Spieltag {
   final int roundNumber;
-  List<Spiel> spiele; // Hier nicht final, da wir die Spiele aktualisieren wollen
-  late SpielStatus status;
+  SpielStatus status;
+  List<Spiel> spiele = [];
   void Function()? onStatusChanged;
 
   Spieltag({
     required this.roundNumber,
-    required this.spiele,
+    required this.status,
     this.onStatusChanged,
   }) {
     status = SpielStatus.notPlayed;
@@ -165,7 +183,7 @@ class Spieltag {
       parsedStatus = SpielStatus.values[json['status']]; // Enum aus Index holen
     }
 
-    return Spieltag(roundNumber: roundNumber, spiele: [], onStatusChanged: onStatusChanged)..status = parsedStatus;
+    return Spieltag(roundNumber: roundNumber,status: parsedStatus, onStatusChanged: onStatusChanged)..status = parsedStatus;
   }
 
 
@@ -176,4 +194,19 @@ class Spieltag {
       'status': status.index, // Speichern als int
     };
   }
+
+  /// **Spieltag in Supabase speichern**
+  Future<void> saveToSupabase() async {
+    final supabase = Supabase.instance.client;
+    await supabase.from('spieltage').upsert(toJson());
+  }
+
+  /// **Spieltage aus Supabase abrufen**
+  static Future<List<Spieltag>> fetchFromSupabase() async {
+    final supabase = Supabase.instance.client;
+    final response = await supabase.from('spieltage').select();
+
+    return response.map((json) => Spieltag.fromJson(json)).toList();
+  }
+
 }
