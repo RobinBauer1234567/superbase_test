@@ -1,48 +1,54 @@
 //player_screen.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'package:premier_league/provider/player_provider.dart';
 import 'package:premier_league/viewmodels/data_viewmodel.dart';
 import 'package:premier_league/screens/player_screen.dart';
 import 'package:premier_league/models/match.dart';
 import 'package:premier_league/data_service.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 
 
-class SpielListeScreen extends StatefulWidget {
+class SpieltageScreen extends StatefulWidget {
   @override
-  _SpielListeScreenState createState() => _SpielListeScreenState();
+  _SpieltageScreenState createState() => _SpieltageScreenState();
 }
 
-class _SpielListeScreenState extends State<SpielListeScreen> {
-  List<Spiel> spiele = [];
+class _SpieltageScreenState extends State<SpieltageScreen> {
+  List<dynamic> spieltage = [];
   final ApiService apiService = ApiService();
+  SupabaseService supabaseService = SupabaseService();
 
   @override
   void initState() {
     super.initState();
-    fetchSpiele();
+    fetchSpieltage();
   }
 
-  Future<void> fetchSpiele() async {
-    final fetchedSpiele = await Spiel.fetchFromSupabase();
+  Future<void> fetchSpieltage() async {
+    final response = await supabaseService.supabase.from('spieltag').select();
+
     setState(() {
-      spiele = fetchedSpiele;
+      spieltage = response;
     });
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Spiele Übersicht')),
-      body: ListView.builder(
-        itemCount: spiele.length,
+      appBar: AppBar(title: Text('Spieltag')),
+      body:
+      spieltage.isEmpty
+          ? Center(
+        child: CircularProgressIndicator(),
+      ) // Ladeanzeige, falls noch keine Daten geladen sind
+          : ListView.builder(
+        itemCount: spieltage.length,
         itemBuilder: (context, index) {
-          final spiel = spiele[index];
+          final spieltag = spieltage[index];
           return ListTile(
-            title: Text("${spiel.homeTeam} vs ${spiel.awayTeam}"),
-            subtitle: Text("Stand: ${spiel.homeScore} - ${spiel.awayScore}"),
-            onTap: () => apiService.fetchLineups(spiel.matchId),
+            title: Text("Spieltag ${spieltag['round']}"),
+            subtitle: Text("Status: ${spieltag['status']}"),
           );
         },
       ),
