@@ -53,9 +53,7 @@ class ApiService {
         }
         int matchId = event['id'];
         int homeTeamId = event['homeTeam']['id'];
-        String homeTeamName = event['homeTeam']['name']; // Heimteam-Name
         int awayTeamId = event['awayTeam']['id'];
-        String awayTeamName = event['awayTeam']['name']; // Auswärtsteam-Name
         int timestampInt =
         event['startTimestamp']; // Annahme: Der Wert ist ein Unix-Zeitstempel in Sekunden
         DateTime startTimestamp = DateTime.fromMillisecondsSinceEpoch(
@@ -148,7 +146,6 @@ class ApiService {
 
     if (position == 'G') {
 
-      // Passspiel (Gewichtung angepasst, um Genauigkeit stärker zu betonen)
       if (stats.containsKey('totalPass')) {
         bewertung += 0.002 * (stats['totalPass'] ?? 0);
       }
@@ -521,6 +518,6 @@ class SupabaseService {
       print('Fehler beim Speichern des Matchratings: $error');
     }
   }
-  // globale Statistiken updaten
+
 
 }

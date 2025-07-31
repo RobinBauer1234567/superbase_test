@@ -6,8 +6,7 @@ import 'package:premier_league/screens/player_screen.dart';
 import 'package:premier_league/models/match.dart';
 import 'package:premier_league/data_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-
-
+import 'package:premier_league/screens/spieltag_screen.dart';
 
 class SpieltageScreen extends StatefulWidget {
   @override
@@ -27,7 +26,6 @@ class _SpieltageScreenState extends State<SpieltageScreen> {
 
   Future<void> fetchSpieltage() async {
     final response = await supabaseService.supabase.from('spieltag').select();
-
     setState(() {
       spieltage = response;
     });
@@ -36,12 +34,9 @@ class _SpieltageScreenState extends State<SpieltageScreen> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Spieltag')),
-      body:
-      spieltage.isEmpty
-          ? Center(
-        child: CircularProgressIndicator(),
-      ) // Ladeanzeige, falls noch keine Daten geladen sind
+      appBar: AppBar(title: Text('Spieltage')), // Titel angepasst für Klarheit
+      body: spieltage.isEmpty
+          ? Center(child: CircularProgressIndicator())
           : ListView.builder(
         itemCount: spieltage.length,
         itemBuilder: (context, index) {
@@ -49,6 +44,19 @@ class _SpieltageScreenState extends State<SpieltageScreen> {
           return ListTile(
             title: Text("Spieltag ${spieltag['round']}"),
             subtitle: Text("Status: ${spieltag['status']}"),
+            trailing: Icon(Icons.arrow_forward_ios), // Optional: Ein Pfeil-Icon
+            onTap: () {
+              // HIER IST DIE NEUE LOGIK FÜR DIE NAVIGATION
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  // Navigiere zum HomeScreen (der die Spiele anzeigt)
+                  // und übergib die 'round' Nummer des angeklickten Spieltags.
+                  builder: (context) =>
+                      HomeScreen(round: spieltag['round']),
+                ),
+              );
+            },
           );
         },
       ),

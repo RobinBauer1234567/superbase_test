@@ -1,382 +1,473 @@
 import 'package:flutter/material.dart';
 import 'dart:math';
-import 'dart:ui' as ui; // Für lerpDouble benötigt
+import 'dart:ui' as ui;
 
+// =================================================================
+// NEUE, FLEXIBLE DATENSTRUKTUR
+// =================================================================
 
+/// Repräsentiert ein einzelnes Segment (einen "Balken") im Diagramm.
+class SegmentData {
+  final String name;
+  final double value;
 
-class RadialSegmentChart extends StatelessWidget {
-  final List<double> values;
+  const SegmentData({required this.name, required this.value});
+}
+
+/// Repräsentiert eine Gruppe von Segmenten mit einem gemeinsamen Hintergrund.
+class GroupData {
+  final String name;
+  final List<SegmentData> segments;
+  final Color backgroundColor;
+
+  const GroupData({
+    required this.name,
+    required this.segments,
+    required this.backgroundColor,
+  });
+}
+
+// =================================================================
+// WIDGET-KLASSE (JETZT STATEFUL UND MIT NEUER DATEN-API)
+// =================================================================
+class RadialSegmentChart extends StatefulWidget {
+  // Nimmt jetzt eine strukturierte Liste von Gruppen entgegen.
+  final List<GroupData> groups;
   final double maxAbsValue;
   final int? centerLabel;
-  final List<String> segmentNames;
   final double innerOuterRadiusRatio;
 
-  // KEIN 'const' mehr hier!
-  RadialSegmentChart({
+  const RadialSegmentChart({
     super.key,
-    required this.values,
+    required this.groups,
     required this.maxAbsValue,
     this.centerLabel,
-    this.segmentNames = kSegmentNames,
-    this.innerOuterRadiusRatio = 5.0,
-  }) : assert(values.length == 14, 'Values list must have 14 elements.'),
-        assert(segmentNames.length == 14, 'SegmentNames list must have 14 elements.'),
-  // Dieser Assert kann bleiben, da er auf top-level Konstanten basiert
-        assert(kGroupStructure.fold(0, (sum, group) => sum + group.segmentCount) == 14, 'Group structure must sum to 14 segments.'),
-        assert(kGroupBackgroundColors.length == kGroupStructure.length, 'Must have a background color for each group.'),
-        assert(innerOuterRadiusRatio > 1.0, 'innerOuterRadiusRatio must be > 1.0');
-  // assert(values.every((v) => v >= 0), 'All values must be positive or zero.'); // Laufzeit-Check wäre hier ok
+    this.innerOuterRadiusRatio = 2.5,
+  }) : assert(innerOuterRadiusRatio > 1.0);
+
+  @override
+  State<RadialSegmentChart> createState() => _RadialSegmentChartState();
+}
+
+class _RadialSegmentChartState extends State<RadialSegmentChart> {
+  OverlayEntry? _overlayEntry;
+  int? _selectedSegmentIndex;
+
+  // Hilfs-Getter, um eine flache Liste aller Segmente zu erhalten.
+  List<SegmentData> get _allSegments =>
+      widget.groups.expand((group) => group.segments).toList();
+
+  @override
+  void dispose() {
+    _removeOverlay();
+    super.dispose();
+  }
+
+  void _handleTap(Offset localPosition) {
+    final painter = _RadialSegmentPainter(
+      groups: widget.groups,
+      maxAbsValue: widget.maxAbsValue,
+      centerLabel: widget.centerLabel,
+      innerOuterRadiusRatio: widget.innerOuterRadiusRatio,
+    );
+
+    if (context.size == null) return;
+
+    final index = painter.getSegmentIndexAt(localPosition, context.size!);
+
+    _removeOverlay();
+
+    if (index != null && index != _selectedSegmentIndex) {
+      setState(() {
+        _selectedSegmentIndex = index;
+      });
+      _showOverlay(context, localPosition, index);
+    } else {
+      setState(() {
+        _selectedSegmentIndex = null;
+      });
+    }
+  }
+
+  void _removeOverlay() {
+    _overlayEntry?.remove();
+    _overlayEntry = null;
+  }
+
+  void _showOverlay(BuildContext context, Offset tapPosition, int segmentIndex) {
+    final overlayState = Overlay.of(context);
+    final segment = _allSegments[segmentIndex];
+
+    _overlayEntry = OverlayEntry(
+      builder: (context) {
+        return GestureDetector(
+          behavior: HitTestBehavior.translucent,
+          onTap: () {
+            _removeOverlay();
+            setState(() {
+              _selectedSegmentIndex = null;
+            });
+          },
+          child: Stack(
+            children: [
+              Positioned(
+                left: tapPosition.dx + 5,
+                top: tapPosition.dy + 5,
+                child: GestureDetector(
+                  onTap: () {},
+                  child: Material(
+                    color: Colors.transparent,
+                    child: Card(
+                      elevation: 4.0,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                      child: Padding(
+                        padding: const EdgeInsets.all(8.0),
+                        child: Column(
+                          mainAxisSize: MainAxisSize.min,
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(segment.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                            const SizedBox(height: 4),
+                            Text('Wert: ${segment.value.toStringAsFixed(2)}'),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          ),
+        );
+      },
+    );
+
+    overlayState.insert(_overlayEntry!);
+  }
 
   @override
   Widget build(BuildContext context) {
-    // Lässt die Größenbestimmung durch das Parent-Widget zu
-    return CustomPaint(
-      painter: _RadialSegmentPainter(
-        values: values,
-        maxAbsValue: maxAbsValue,
-        centerLabel: centerLabel,
-        segmentNames: segmentNames,
-        groupStructure: kGroupStructure,
-        groupBackgroundColors: kGroupBackgroundColors,
-        innerOuterRadiusRatio: innerOuterRadiusRatio,
+    return GestureDetector(
+      onTapDown: (details) => _handleTap(details.localPosition),
+      child: CustomPaint(
+        size: Size.infinite,
+        painter: _RadialSegmentPainter(
+          groups: widget.groups,
+          maxAbsValue: widget.maxAbsValue,
+          centerLabel: widget.centerLabel,
+          innerOuterRadiusRatio: widget.innerOuterRadiusRatio,
+          selectedSegmentIndex: _selectedSegmentIndex,
+        ),
       ),
     );
   }
 }
-// --- Datenstruktur für Gruppen (unverändert) ---
-class GroupInfo {
-  final String name;
-  final int segmentCount;
-  GroupInfo(this.name, this.segmentCount);
+
+// =================================================================
+// LAYOUT-KLASSE (unverändert)
+// =================================================================
+class _ChartLayout {
+  final double baseRadius;
+  final double maxSegmentRadius;
+  final double groupRingOuterRadius;
+  final double groupLabelPathRadius;
+  final TextStyle segmentLabelStyle;
+  final TextStyle groupLabelStyle;
+  final TextStyle centerLabelStyle;
+  final Paint borderPaint;
+  final Paint baseCirclePaint;
+
+  _ChartLayout({
+    required this.baseRadius, required this.maxSegmentRadius,
+    required this.groupRingOuterRadius, required this.groupLabelPathRadius,
+    required this.segmentLabelStyle, required this.groupLabelStyle,
+    required this.centerLabelStyle, required this.borderPaint,
+    required this.baseCirclePaint,
+  });
 }
 
-// --- Namen der 14 Segmente (unverändert) ---
-const List<String> kSegmentNames = [
-  'Abschlussvolumen', 'Abschlussqualität', 'Passvolumen', 'Passsicherheit',
-  'Kreative Pässe', 'Zweikampfaktivität', 'Zweikämpferfolg', 'Fouls',
-  'Ballberührungen', 'Ballverluste', 'Abgefangene Bälle', 'Tacklings',
-  'Klärende Aktionen', 'Fehler',
-];
-
-// --- Struktur der 5 Gruppen (unverändert) ---
-final List<GroupInfo> kGroupStructure = [
-  GroupInfo('Schießen', 2), GroupInfo('Passen', 3), GroupInfo('Duelle', 3),
-  GroupInfo('Ballbesitz', 3), GroupInfo('Defensive', 3),
-];
-
-// --- Dezente Hintergrundfarben (unverändert) ---
-final List<Color> kGroupBackgroundColors = [
-  Colors.blue.withOpacity(0.12), Colors.green.withOpacity(0.12),
-  Colors.orange.withOpacity(0.12), Colors.red.withOpacity(0.12),
-  Colors.purple.withOpacity(0.12),
-];
-
-
-
-// --- Der Painter für das Diagramm ---
+// =================================================================
+// PAINTER-KLASSE (komplett überarbeitet)
+// =================================================================
 class _RadialSegmentPainter extends CustomPainter {
-  // Input Daten
-  final List<double> values;
+  final List<GroupData> groups;
   final double maxAbsValue;
   final int? centerLabel;
-  final List<String> segmentNames;
-  final List<GroupInfo> groupStructure;
-  final List<Color> groupBackgroundColors;
   final double innerOuterRadiusRatio;
+  final int? selectedSegmentIndex;
 
-  // Referenzwerte für Skalierung (basierend auf einem Zieldurchmesser von ca. 360)
-  static const double _refTargetRadius = 280.0;
-  static const double _refSegmentLabelFontSize = 9.0;
-  static const double _refGroupLabelFontSize = 11.0;
-  static const double _refCenterLabelFontSize = 18.0;
-  static const double _refSegmentLabelRadialOffset = 5.0;
-  static const double _refGroupRingPaddingInner = 2.0;
-  static const double _refGroupRingExtraPadding = 10.0;
-  static const double _refGroupLabelPadding = 10.0;
-  static const double _refBaseCircleStrokeWidth = 1.5;
-  static const double _refBorderStrokeWidth = 1.0;
-  // Segment-Wachstumsfaktor (relativ zu baseRadius)
-  static const double _segmentGrowthFactor = 1.5;
-
+  // Hilfs-Getter
+  late final List<SegmentData> _allSegments =
+  groups.expand((group) => group.segments).toList();
+  late final int _totalSegments = _allSegments.length;
 
   _RadialSegmentPainter({
-    required this.values, required this.maxAbsValue, required this.centerLabel,
-    required this.segmentNames, required this.groupStructure,
-    required this.groupBackgroundColors, required this.innerOuterRadiusRatio,
+    required this.groups,
+    required this.maxAbsValue,
+    required this.centerLabel,
+    required this.innerOuterRadiusRatio,
+    this.selectedSegmentIndex,
   });
-
-  // --- Hilfsfunktionen ---
-  static Size _getTextSize(String text, TextStyle style) {
-    final TextPainter textPainter = TextPainter(
-        text: TextSpan(text: text, style: style),
-        maxLines: 1, textDirection: TextDirection.ltr)
-      ..layout(minWidth: 0, maxWidth: double.infinity);
-    return textPainter.size;
-  }
-
-  Color _getColorForValue(double value, double maxAbsValueRef) {
-    // Da nur positive Werte erwartet werden, vereinfacht sich die Opacity-Logik evtl.
-    // Hier wird aber `abs()` genutzt, was auch für nur positive Werte funktioniert.
-    final effectiveMax = maxAbsValueRef <= 0 ? 1.0 : maxAbsValueRef; // Vermeide Div/0
-    final t = (value.abs() / effectiveMax).clamp(0.0, 1.0);
-    final hue = ui.lerpDouble(120, 0, t)!; // Grün nach Rot
-    // Feste Opacity für positive Werte / Mittelkreis
-    const opacity = 0.95;
-    return HSVColor.fromAHSV(opacity, hue, 0.85, 0.9).toColor();
-  }
-
-  /// Berechnet alle dynamischen Größen basierend auf einem Basisradius und Skalierungsfaktor.
-  Map<String, dynamic> _calculateSizes(double currentBaseRadius, double currentScale) {
-    // Skalierte Größen
-    final segmentLabelFontSize = _refSegmentLabelFontSize * currentScale;
-    final groupLabelFontSize = _refGroupLabelFontSize * currentScale;
-    final centerLabelFontSize = _refCenterLabelFontSize * currentScale;
-    final segmentLabelRadialOffset = _refSegmentLabelRadialOffset * currentScale;
-    final groupRingPaddingInner = _refGroupRingPaddingInner * currentScale;
-    final groupRingExtraPadding = _refGroupRingExtraPadding * currentScale;
-    final groupLabelPadding = _refGroupLabelPadding * currentScale;
-    final baseCircleStrokeWidth = _refBaseCircleStrokeWidth * currentScale;
-    final borderStrokeWidth = _refBorderStrokeWidth * currentScale;
-
-    // Textstile
-    final segmentLabelStyle = TextStyle(fontSize: segmentLabelFontSize, color: Colors.black87);
-    final groupLabelStyle = TextStyle(fontSize: groupLabelFontSize, fontWeight: FontWeight.bold, color: Colors.black87);
-    final centerLabelStyle = TextStyle(fontSize: centerLabelFontSize, fontWeight: FontWeight.bold, color: Colors.black.withOpacity(0.8));
-
-    // Radien nach außen
-    // Max. Radius, bis zu dem die Segmente wachsen können
-    final maxPossibleSegmentRadius = currentBaseRadius + (currentBaseRadius * _segmentGrowthFactor);
-    final groupRingInnerRadius = currentBaseRadius + groupRingPaddingInner;
-    final groupRingOuterRadius = maxPossibleSegmentRadius + segmentLabelRadialOffset + groupRingExtraPadding;
-    final typicalGroupCharHeight = _getTextSize('T', groupLabelStyle).height;
-    // Äußerster Radius bis zur Baseline der Gruppenlabels
-    final groupLabelPathRadius = groupRingOuterRadius + groupLabelPadding + typicalGroupCharHeight / 2;
-
-    return {
-      'baseRadius': currentBaseRadius, 'scale': currentScale,
-      'segmentLabelFontSize': segmentLabelFontSize, 'groupLabelFontSize': groupLabelFontSize, 'centerLabelFontSize': centerLabelFontSize,
-      'segmentLabelRadialOffset': segmentLabelRadialOffset, 'groupRingPaddingInner': groupRingPaddingInner, 'groupRingExtraPadding': groupRingExtraPadding, 'groupLabelPadding': groupLabelPadding,
-      'baseCircleStrokeWidth': baseCircleStrokeWidth, 'borderStrokeWidth': borderStrokeWidth,
-      'segmentLabelStyle': segmentLabelStyle, 'groupLabelStyle': groupLabelStyle, 'centerLabelStyle': centerLabelStyle,
-      'maxPossibleSegmentRadius': maxPossibleSegmentRadius, 'groupRingInnerRadius': groupRingInnerRadius, 'groupRingOuterRadius': groupRingOuterRadius,
-      'groupLabelPathRadius': groupLabelPathRadius,
-    };
-  }
-
 
   @override
   void paint(Canvas canvas, Size size) {
-    if (size.isEmpty) return;
+    if (size.isEmpty || _totalSegments == 0) return;
 
-    final Offset center = Offset(size.width / 2, size.height / 2);
+    final Offset center = size.center(Offset.zero);
+    final layout = _calculateLayout(size);
+    final double anglePerSegment = 2 * pi / _totalSegments;
+
+    _drawGroupBackgrounds(canvas, center, layout, anglePerSegment);
+    _drawSegmentsAndLabels(canvas, center, layout, anglePerSegment);
+    _drawBaseCircle(canvas, center, layout);
+    _drawGroupLabels(canvas, center, layout, anglePerSegment);
+    _drawCenterContent(canvas, center, layout);
+  }
+
+  _ChartLayout _calculateLayout(Size size) {
     final double availableRadius = min(size.width, size.height) / 2;
-    final double targetOuterRadius = availableRadius * 0.95; // Zielradius mit Rand
+    const double refSize = 400.0;
+    final double scale = availableRadius / (refSize / 2);
 
-    // --- Schritt 1: Initiale Skalierung und Basis-Radius-Schätzung ---
-    double scale = max(0.5, targetOuterRadius / _refTargetRadius);
+    final groupLabelFontSize = 11.0 * scale;
+    final segmentLabelFontSize = 9.0 * scale;
+    final centerLabelFontSize = 18.0 * scale;
+    final groupLabelOffset = 15.0 * scale;
+    final segmentLabelOffset = 5.0 * scale;
 
-    // Schätze den Platz für äußere Elemente, um einen initialen maxSegmentRadius zu finden
-    final estGroupLabelFontSize = _refGroupLabelFontSize * scale;
-    final estGroupLabelStyle = TextStyle(fontSize: estGroupLabelFontSize, fontWeight: FontWeight.bold);
-    final estTypicalGroupCharHeight = _getTextSize('T', estGroupLabelStyle).height;
-    final estGroupLabelPadding = _refGroupLabelPadding * scale;
-    final estGroupRingExtraPadding = _refGroupRingExtraPadding * scale;
-    final estSegmentLabelRadialOffset = _refSegmentLabelRadialOffset * scale;
-    final outerSpaceEstimate = estGroupLabelPadding + estTypicalGroupCharHeight / 2
-        + estGroupRingExtraPadding + estSegmentLabelRadialOffset;
+    final groupLabelStyle = TextStyle(fontSize: groupLabelFontSize, fontWeight: FontWeight.bold, color: Colors.black87);
+    final segmentLabelStyle = TextStyle(fontSize: segmentLabelFontSize, color: Colors.black87);
+    final centerLabelStyle = TextStyle(fontSize: centerLabelFontSize, fontWeight: FontWeight.bold, color: Colors.black.withOpacity(0.8));
 
-    // Schätze den Radius, an dem Segmente maximal enden können
-    double initialMaxPossibleSegmentRadius = max(1.0, targetOuterRadius - outerSpaceEstimate);
-    // Berechne den initialen Basisradius basierend auf dem Verhältnis
-    double initialBaseRadius = max(1.0, initialMaxPossibleSegmentRadius / innerOuterRadiusRatio);
+    final groupLabelHeight = _getTextSize('T', groupLabelStyle).height;
+    final groupLabelPathRadius = availableRadius - (groupLabelHeight / 2);
+    final groupRingOuterRadius = groupLabelPathRadius - groupLabelOffset;
 
+    final segmentLabelHeight = _getTextSize('T', segmentLabelStyle).height;
+    final maxSegmentRadius = groupRingOuterRadius - segmentLabelHeight - segmentLabelOffset;
+    final baseRadius = maxSegmentRadius / innerOuterRadiusRatio;
 
-    // --- Schritt 2: Erste Berechnung aller Größen ---
-    var sizes = _calculateSizes(initialBaseRadius, scale);
-    double calculatedOuterRadius = sizes['groupLabelPathRadius'];
+    final borderPaint = Paint()..color = Colors.black.withOpacity(0.1)..style = PaintingStyle.stroke..strokeWidth = 1.0 * scale;
+    final baseCirclePaint = Paint()..color = Colors.grey.shade500..style = PaintingStyle.stroke..strokeWidth = 1.5 * scale;
 
-    // --- Schritt 3: Prüfen und ggf. herunterskalieren ---
-    if (calculatedOuterRadius > targetOuterRadius && calculatedOuterRadius > 0) {
-      final double downScaleFactor = targetOuterRadius / calculatedOuterRadius;
-      // Passe baseRadius und scale an
-      initialBaseRadius *= downScaleFactor;
-      scale *= downScaleFactor;
-      // Berechne alle Größen NEU mit den angepassten Werten
-      sizes = _calculateSizes(initialBaseRadius, scale);
+    return _ChartLayout(
+      baseRadius: baseRadius,
+      maxSegmentRadius: maxSegmentRadius,
+      groupRingOuterRadius: groupRingOuterRadius,
+      groupLabelPathRadius: groupLabelPathRadius,
+      segmentLabelStyle: segmentLabelStyle,
+      groupLabelStyle: groupLabelStyle,
+      centerLabelStyle: centerLabelStyle,
+      borderPaint: borderPaint,
+      baseCirclePaint: baseCirclePaint,
+    );
+  }
+
+  void _drawGroupBackgrounds(Canvas canvas, Offset center, _ChartLayout layout, double anglePerSegment) {
+    final paint = Paint()..style = PaintingStyle.stroke;
+    int currentSegmentIndex = 0;
+
+    for (final group in groups) {
+      final startAngle = currentSegmentIndex * anglePerSegment;
+      final sweepAngle = group.segments.length * anglePerSegment;
+
+      paint.color = group.backgroundColor;
+      paint.strokeWidth = layout.groupRingOuterRadius - layout.baseRadius;
+      final drawRadius = layout.baseRadius + paint.strokeWidth / 2;
+
+      canvas.drawArc(Rect.fromCircle(center: center, radius: drawRadius), startAngle, sweepAngle, false, paint);
+      currentSegmentIndex += group.segments.length;
     }
+  }
 
-    // --- Schritt 4: Finale Größen aus der Map holen ---
-    // (Variablennamen wie im vorherigen Schritt, werden hier übersichtlich aufgelistet)
-    final double baseRadius = sizes['baseRadius'];
-    final double segmentLabelFontSize = sizes['segmentLabelFontSize'];
-    final double groupLabelFontSize = sizes['groupLabelFontSize'];
-    final double centerLabelFontSize = sizes['centerLabelFontSize'];
-    final double segmentLabelRadialOffset = sizes['segmentLabelRadialOffset'];
-    // final double groupRingPaddingInner = sizes['groupRingPaddingInner']; // Nicht direkt gebraucht
-    // final double groupRingExtraPadding = sizes['groupRingExtraPadding']; // Nicht direkt gebraucht
-    // final double groupLabelPadding = sizes['groupLabelPadding']; // Nicht direkt gebraucht
-    final double baseCircleStrokeWidth = sizes['baseCircleStrokeWidth'];
-    final double borderStrokeWidth = sizes['borderStrokeWidth'];
-    final TextStyle segmentLabelStyle = sizes['segmentLabelStyle'];
-    final TextStyle groupLabelStyle = sizes['groupLabelStyle'];
-    final TextStyle centerLabelStyle = sizes['centerLabelStyle'];
-    final double maxPossibleSegmentRadius = sizes['maxPossibleSegmentRadius'];
-    final double groupRingInnerRadius = sizes['groupRingInnerRadius'];
-    final double groupRingOuterRadius = sizes['groupRingOuterRadius'];
-    final double groupLabelPathRadius = sizes['groupLabelPathRadius'];
+  void _drawSegmentsAndLabels(Canvas canvas, Offset center, _ChartLayout layout, double anglePerSegment) {
+    final fillPaint = Paint()..style = PaintingStyle.fill;
 
+    for (int i = 0; i < _totalSegments; i++) {
+      final segment = _allSegments[i];
+      final double value = segment.value.clamp(0.0, maxAbsValue);
+      final startAngle = i * anglePerSegment;
+      final midAngle = startAngle + anglePerSegment / 2;
 
-    // --- Schritt 5: Zeichnen mit finalen Größen ---
+      final segmentOuterRadius = ui.lerpDouble(layout.baseRadius, layout.maxSegmentRadius, value / maxAbsValue)!;
+      final segmentPath = Path()
+        ..addArc(Rect.fromCircle(center: center, radius: layout.baseRadius), startAngle, anglePerSegment)
+        ..arcTo(Rect.fromCircle(center: center, radius: segmentOuterRadius), startAngle + anglePerSegment, -anglePerSegment, false);
 
-    // Paints vorbereiten
-    const int segmentCount = 14;
-    const double anglePerSegment = 2 * pi / segmentCount;
-    final Paint fillPaint = Paint()..style = PaintingStyle.fill;
-    final Paint borderPaint = Paint()..color = Colors.black.withOpacity(0.1)..style = PaintingStyle.stroke..strokeWidth = borderStrokeWidth;
-    final Paint groupBackgroundPaint = Paint()..style = PaintingStyle.fill;
-    final Paint centerFillPaint = Paint()..style = PaintingStyle.fill;
-    final Paint baseCirclePaint = Paint()..color = Colors.grey.shade500..style = PaintingStyle.stroke..strokeWidth = baseCircleStrokeWidth;
+      final baseColor = _getColorForValue(value);
+      final highlightColor = HSLColor.fromColor(baseColor).withLightness(min(1.0, HSLColor.fromColor(baseColor).lightness + 0.2)).toColor();
+      final segmentBounds = segmentPath.getBounds();
 
-    // 0. Gruppen-Hintergrundringe
-    int currentSegmentIndexBg = 0;
-    for (int i = 0; i < groupStructure.length; i++) {
-      final group = groupStructure[i];
-      final groupStartAngle = currentSegmentIndexBg * anglePerSegment - (pi / 2);
-      final groupSweepAngle = group.segmentCount * anglePerSegment;
-      groupBackgroundPaint.color = groupBackgroundColors[i];
-      final path = Path();
-      path.addArc( Rect.fromCircle(center: center, radius: groupRingOuterRadius), groupStartAngle, groupSweepAngle);
-      path.arcTo( Rect.fromCircle(center: center, radius: groupRingInnerRadius), groupStartAngle + groupSweepAngle, -groupSweepAngle, false);
-      path.close();
-      canvas.drawPath(path, groupBackgroundPaint);
-      currentSegmentIndexBg += group.segmentCount;
-    }
+      fillPaint.shader = RadialGradient(
+        center: const Alignment(-0.5, -0.5),
+        radius: 0.8,
+        colors: [highlightColor, baseColor],
+        stops: const [0.0, 1.0],
+      ).createShader(segmentBounds);
 
-    // 0.5 Inneren Kreis füllen
-    if (centerLabel != null) {
-      centerFillPaint.color = _getColorForValue(centerLabel!.toDouble(), maxAbsValue);
-    } else {
-      centerFillPaint.color = Colors.grey.withOpacity(0.1);
-    }
-    canvas.drawCircle(center, baseRadius, centerFillPaint); // Finaler baseRadius
-
-    // 1. Segmente (nur positive Werte) und Labels
-    for (int i = 0; i < segmentCount; i++) {
-      // Sicherstellen, dass der Wert nicht negativ ist (obwohl nicht erwartet)
-      final value = max(0.0, values[i].clamp(0, maxAbsValue)); // Clamp 0 bis max
-      final startAngle = i * anglePerSegment - (pi / 2);
-      final sweepAngle = anglePerSegment;
-      final midAngle = startAngle + sweepAngle / 2;
-
-      // Delta Radius (nur positiv)
-      final deltaRadius = (value / maxAbsValue) * baseRadius * _segmentGrowthFactor;
-      // Radien (vereinfacht für nur positive Werte)
-      final double innerRadius = baseRadius; // Startet immer am Basisradius
-      final double outerRadius = baseRadius + deltaRadius; // Wächst immer nach außen
-
-      // Segment-Pfad
-      final segmentPath = Path();
-      const steps = 20;
-      for (int j = 0; j <= steps; j++) {
-        final angle = startAngle + sweepAngle * j / steps;
-        final x = center.dx + cos(angle) * outerRadius;
-        final y = center.dy + sin(angle) * outerRadius;
-        if (j == 0) segmentPath.moveTo(x, y); else segmentPath.lineTo(x, y);
-      }
-      for (int j = steps; j >= 0; j--) {
-        final angle = startAngle + sweepAngle * j / steps;
-        final x = center.dx + cos(angle) * innerRadius;
-        final y = center.dy + sin(angle) * innerRadius;
-        segmentPath.lineTo(x, y);
-      }
-      segmentPath.close();
-
-      // Zeichnen
-      fillPaint.color = _getColorForValue(value.toDouble(), maxAbsValue);
       canvas.drawPath(segmentPath, fillPaint);
+      fillPaint.shader = null;
+
+      final isSelected = i == selectedSegmentIndex;
+      final borderPaint = isSelected
+          ? (Paint()..color = Colors.white..style = PaintingStyle.stroke..strokeWidth = layout.borderPaint.strokeWidth * 2.5)
+          : layout.borderPaint;
       canvas.drawPath(segmentPath, borderPaint);
 
-      // Segment-Label
-      final labelRadius = maxPossibleSegmentRadius + segmentLabelRadialOffset;
-      final labelX = center.dx + cos(midAngle) * labelRadius;
-      final labelY = center.dy + sin(midAngle) * labelRadius;
-      final labelText = segmentNames[i];
-      final labelSize = _getTextSize(labelText, segmentLabelStyle);
+      final labelRadius = layout.maxSegmentRadius + layout.segmentLabelStyle.fontSize!;
+      _drawCurvedText(
+        canvas: canvas,
+        center: center,
+        text: segment.name,
+        style: layout.segmentLabelStyle,
+        radius: labelRadius,
+        centerAngle: midAngle,
+      );
+    }
+  }
+
+  void _drawBaseCircle(Canvas canvas, Offset center, _ChartLayout layout) {
+    canvas.drawCircle(center, layout.baseRadius, layout.baseCirclePaint);
+  }
+
+  void _drawGroupLabels(Canvas canvas, Offset center, _ChartLayout layout, double anglePerSegment) {
+    int currentSegmentIndex = 0;
+    for (final group in groups) {
+      final groupStartAngle = currentSegmentIndex * anglePerSegment;
+      final groupMidAngle = groupStartAngle + (group.segments.length * anglePerSegment) / 2;
+      _drawCurvedText(
+        canvas: canvas,
+        center: center,
+        text: group.name.toUpperCase(),
+        style: layout.groupLabelStyle,
+        radius: layout.groupLabelPathRadius,
+        centerAngle: groupMidAngle,
+      );
+      currentSegmentIndex += group.segments.length;
+    }
+  }
+
+  void _drawCenterContent(Canvas canvas, Offset center, _ChartLayout layout) {
+    final centerPaint = Paint();
+    final baseColor = centerLabel != null ? _getColorForValue(centerLabel!.toDouble()) : Colors.grey.withOpacity(0.1);
+
+    if (centerLabel != null) {
+      final highlightColor = HSLColor.fromColor(baseColor).withLightness(min(1.0, HSLColor.fromColor(baseColor).lightness + 0.2)).toColor();
+      centerPaint.shader = RadialGradient(
+        center: const Alignment(-0.4, -0.4),
+        radius: 1.5,
+        colors: [highlightColor, baseColor],
+      ).createShader(Rect.fromCircle(center: center, radius: layout.baseRadius));
+    } else {
+      centerPaint.color = baseColor;
+    }
+
+    canvas.drawCircle(center, layout.baseRadius, centerPaint);
+    centerPaint.shader = null;
+
+    if (centerLabel != null) {
+      final textPainter = TextPainter(
+          text: TextSpan(text: centerLabel.toString(), style: layout.centerLabelStyle),
+          textDirection: TextDirection.ltr, textAlign: TextAlign.center)
+        ..layout();
+      textPainter.paint(canvas, center - Offset(textPainter.width / 2, textPainter.height / 2));
+    }
+  }
+
+  Color _getColorForValue(double value) {
+    final effectiveMax = maxAbsValue <= 0 ? 1.0 : maxAbsValue;
+    final t = (value.abs() / effectiveMax).clamp(0.0, 1.0);
+
+    final colorSequence = TweenSequence<Color?>([
+      TweenSequenceItem(tween: ColorTween(begin: Colors.red.shade800, end: Colors.orange.shade700), weight: 40.0),
+      TweenSequenceItem(tween: ColorTween(begin: Colors.orange.shade700, end: const Color(0xFFFFD700)), weight: 30.0),
+      TweenSequenceItem(tween: ColorTween(begin: const Color(0xFFFFD700), end: Colors.green.shade500), weight: 30.0),
+    ]);
+    return colorSequence.transform(t)!;
+  }
+
+  Size _getTextSize(String text, TextStyle style) {
+    final textPainter = TextPainter(text: TextSpan(text: text, style: style), maxLines: 1, textDirection: TextDirection.ltr)..layout();
+    return textPainter.size;
+  }
+
+  void _drawCurvedText({
+    required Canvas canvas, required Offset center, required String text,
+    required TextStyle style, required double radius, required double centerAngle,
+  }) {
+    double totalTextWidth = 0;
+    final List<Size> charSizes = [];
+    for (int i = 0; i < text.length; i++) {
+      final charSize = _getTextSize(text[i], style);
+      charSizes.add(charSize);
+      totalTextWidth += charSize.width;
+    }
+
+    final double totalAngle = totalTextWidth / radius;
+    double currentAngle = centerAngle - totalAngle / 2;
+
+    for (int i = 0; i < text.length; i++) {
+      final char = text[i];
+      final charSize = charSizes[i];
+      final charWidth = charSize.width;
+      final double charAngle = charWidth / radius;
+      final double charCenterAngle = currentAngle + charAngle / 2;
 
       canvas.save();
-      canvas.translate(labelX, labelY);
-      canvas.rotate(midAngle + pi);
-      final labelPainter = TextPainter(
-          text: TextSpan(text: labelText, style: segmentLabelStyle),
+      final position = center + Offset.fromDirection(charCenterAngle, radius);
+      canvas.translate(position.dx, position.dy);
+
+      canvas.rotate(charCenterAngle + pi / 2);
+      final textPainter = TextPainter(
+          text: TextSpan(text: char, style: style),
           textAlign: TextAlign.center, textDirection: TextDirection.ltr)
         ..layout();
-      labelPainter.paint(canvas, Offset(0, -labelSize.height / 2));
+      textPainter.paint(canvas, Offset(-charWidth / 2, -charSize.height / 2));
       canvas.restore();
+      currentAngle += charAngle;
+    }
+  }
+
+  // =================================================================
+  // ÜBERARBEITETE TREFFER-LOGIK (HIT-TESTING)
+  // =================================================================
+  int? getSegmentIndexAt(Offset localPosition, Size size) {
+    final center = size.center(Offset.zero);
+    final layout = _calculateLayout(size);
+    if (_totalSegments == 0) return null;
+    final anglePerSegment = 2 * pi / _totalSegments;
+
+    final dx = localPosition.dx - center.dx;
+    final dy = localPosition.dy - center.dy;
+
+    final distance = sqrt(dx * dx + dy * dy);
+    var angle = atan2(dy, dx);
+
+    if (angle < 0) {
+      angle += 2 * pi;
     }
 
-    // 2. Basis-Kreis (Null-Linie)
-    canvas.drawCircle(center, baseRadius, baseCirclePaint);
+    // Prüft, ob der Klick innerhalb des gesamten interaktiven Rings liegt.
+    if (distance >= layout.baseRadius && distance <= layout.groupRingOuterRadius) {
+      // Berechnet den Index direkt aus dem Winkel.
+      final index = (angle / anglePerSegment).floor();
 
-    // 3. Gruppen-Labels auf Kreisbahn
-    int currentSegmentIndexLabel = 0;
-    for (var group in groupStructure) {
-      final groupName = group.name.toUpperCase();
-      final groupStartAngle = currentSegmentIndexLabel * anglePerSegment - (pi / 2);
-      final groupSweepAngle = group.segmentCount * anglePerSegment;
-      final groupMidAngle = groupStartAngle + groupSweepAngle / 2;
-
-      double totalTextWidth = 0;
-      for (int charIndex = 0; charIndex < groupName.length; charIndex++) {
-        totalTextWidth += _getTextSize(groupName[charIndex], groupLabelStyle).width;
+      if (index >= 0 && index < _totalSegments) {
+        return index;
       }
-      final totalAngularWidth = totalTextWidth / groupLabelPathRadius;
-      double currentCharacterAngle = groupMidAngle - totalAngularWidth / 2;
-
-      for (int charIndex = 0; charIndex < groupName.length; charIndex++) {
-        final character = groupName[charIndex];
-        final charSize = _getTextSize(character, groupLabelStyle);
-        final charWidth = charSize.width;
-        final charHeight = charSize.height;
-        final charAngularWidth = charWidth / groupLabelPathRadius;
-        final charCenterAngle = currentCharacterAngle + charAngularWidth / 2;
-        final charX = center.dx + cos(charCenterAngle) * groupLabelPathRadius;
-        final charY = center.dy + sin(charCenterAngle) * groupLabelPathRadius;
-        final charRotation = charCenterAngle + pi / 2;
-
-        canvas.save();
-        canvas.translate(charX, charY);
-        canvas.rotate(charRotation);
-        final charPainter = TextPainter(
-            text: TextSpan(text: character, style: groupLabelStyle),
-            textAlign: TextAlign.center, textDirection: TextDirection.ltr)
-          ..layout();
-        charPainter.paint(canvas, Offset(-charWidth / 2, -charHeight / 2));
-        canvas.restore();
-        currentCharacterAngle += charAngularWidth;
-      }
-      currentSegmentIndexLabel += group.segmentCount;
     }
 
-    // 4. Mittelwert / Label als Text
-    if (centerLabel != null) {
-      final centerTextPainter = TextPainter(
-          text: TextSpan( text: centerLabel.toString(), style: centerLabelStyle ),
-          textDirection: TextDirection.ltr, textAlign: TextAlign.center )
-        ..layout();
-      centerTextPainter.paint( canvas,
-          Offset(center.dx - centerTextPainter.width / 2, center.dy - centerTextPainter.height / 2) );
-    }
+    return null; // Kein Treffer
   }
 
   @override
   bool shouldRepaint(covariant _RadialSegmentPainter oldDelegate) {
-    // Vergleicht alle relevanten Input-Parameter
-    return oldDelegate.values.toString() != values.toString() ||
-        oldDelegate.centerLabel != centerLabel ||
+    // Die Daten werden jetzt als Ganzes verglichen.
+    return oldDelegate is! _RadialSegmentPainter ||
+        oldDelegate.groups != groups ||
         oldDelegate.maxAbsValue != maxAbsValue ||
-        oldDelegate.innerOuterRadiusRatio != innerOuterRadiusRatio || // Verhältnis prüfen
-        oldDelegate.segmentNames != segmentNames ||
-        oldDelegate.groupStructure != groupStructure ||
-        oldDelegate.groupBackgroundColors != groupBackgroundColors;
+        oldDelegate.centerLabel != centerLabel ||
+        oldDelegate.innerOuterRadiusRatio != innerOuterRadiusRatio ||
+        oldDelegate.selectedSegmentIndex != selectedSegmentIndex;
   }
 }
