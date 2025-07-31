@@ -2,6 +2,8 @@ import 'package:flutter/material.dart';
 import 'dart:math';
 import 'dart:ui' as ui; // Für lerpDouble benötigt
 
+
+
 class RadialSegmentChart extends StatelessWidget {
   final List<double> values;
   final double maxAbsValue;
@@ -83,7 +85,7 @@ class _RadialSegmentPainter extends CustomPainter {
   final double innerOuterRadiusRatio;
 
   // Referenzwerte für Skalierung (basierend auf einem Zieldurchmesser von ca. 360)
-  static const double _refTargetRadius = 180.0;
+  static const double _refTargetRadius = 280.0;
   static const double _refSegmentLabelFontSize = 9.0;
   static const double _refGroupLabelFontSize = 11.0;
   static const double _refCenterLabelFontSize = 18.0;
