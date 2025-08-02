@@ -94,6 +94,8 @@ class _HomeScreenState extends State<HomeScreen> {
     );
   }
 }
+
+
 class GameScreen extends StatefulWidget {
   final Map<String, dynamic> spiel;
   GameScreen({required this.spiel});
@@ -172,6 +174,7 @@ class _GameScreenState extends State<GameScreen> {
     );
   }
 }
+
 class PlayerScreen extends StatefulWidget {
   final int playerId;
   PlayerScreen({required this.playerId});
