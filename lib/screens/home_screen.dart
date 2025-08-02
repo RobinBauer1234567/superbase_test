@@ -25,7 +25,7 @@ class _SpieltageScreenState extends State<SpieltageScreen> {
   }
 
   Future<void> fetchSpieltage() async {
-    final response = await supabaseService.supabase.from('spieltag').select();
+    final response = await supabaseService.supabase.from('spieltag').select().order('round', ascending: true);
     setState(() {
       spieltage = response;
     });

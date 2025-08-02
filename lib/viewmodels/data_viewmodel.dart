@@ -122,4 +122,90 @@ class DataManagement {
 
     return spielstatus;
   }
+
+  Future<void> updateRatingsForSingleGame(int spielId) async {
+    print('Starte Update für Spiel-ID: $spielId');
+    try {
+      // 1. Hole die Team-IDs für das spezifische Spiel
+      final spielResponse = await _supabase
+          .from('spiel')
+          .select('heimteam_id, auswärtsteam_id')
+          .eq('id', spielId)
+          .single(); // .single() erwartet genau einen Datensatz
+
+      final hometeamId = spielResponse['heimteam_id'];
+      final awayteamId = spielResponse['auswärtsteam_id'];
+
+      if (hometeamId == null || awayteamId == null) {
+        print('Fehler: Team-IDs für Spiel $spielId konnten nicht gefunden werden.');
+        return;
+      }
+
+      // 2. Rufe die bestehende Funktion auf, um die neuesten Spieler- und Rating-Daten
+      // von der API zu holen und in Supabase zu speichern (upsert aktualisiert sie).
+      await apiService.fetchAndStoreSpielerundMatchratings(spielId, hometeamId, awayteamId);
+
+      print('Update für Spiel-ID: $spielId erfolgreich abgeschlossen.');
+    } catch (error) {
+      print('Fehler beim Aktualisieren der Ratings für Spiel $spielId: $error');
+    }
+  }
+
+  Future<void> aggregateUniversalStats() async {
+    print('Starte Aggregation der Universal Stats...');
+    try {
+      // 1. Alle relevanten Match-Ratings mit Position und Statistiken abrufen
+      final allRatings = await _supabase
+          .from('matchrating')
+          .select('match_position, statistics');
+
+      // 2. Map zur Zwischenspeicherung der aggregierten Daten erstellen
+      final Map<String, Map<String, dynamic>> aggregatedData = {};
+
+      // 3. Alle Match-Ratings durchlaufen und die Stats pro Position aufaddieren
+      for (final rating in allRatings) {
+        final position = rating['match_position'] as String?;
+        final stats = rating['statistics'] as Map<String, dynamic>?;
+
+        // Überspringe, falls Position oder Stats fehlen
+        if (position == null || stats == null || ['SUB', 'N/A', ''].contains(position)) {
+          continue;
+        }
+
+        // Initialisiere den Eintrag für die Position, falls er noch nicht existiert
+        aggregatedData.putIfAbsent(position, () => {'statistics': <String, double>{}, 'anzahl': 0});
+
+        // Die einzelnen Statistik-Werte aufaddieren
+        final currentStats = aggregatedData[position]!['statistics'] as Map<String, double>;
+        stats.forEach((key, value) {
+          double statValue = 0;
+          if (value is num) {
+            statValue = value.toDouble();
+          } else if (value is Map && value.containsKey('total')) {
+            statValue = (value['total'] as num? ?? 0).toDouble();
+          }
+          currentStats[key] = (currentStats[key] ?? 0.0) + statValue;
+        });
+
+        // Die Anzahl der Spiele für diese Position um 1 erhöhen
+        aggregatedData[position]!['anzahl'] = (aggregatedData[position]!['anzahl'] as int) + 1;
+      }
+
+      // 4. Die finalen, aggregierten Daten in die 'universal_stats'-Tabelle speichern
+      for (final entry in aggregatedData.entries) {
+        final position = entry.key;
+        final stats = entry.value['statistics'] as Map<String, double>;
+        final anzahl = entry.value['anzahl'] as int;
+
+        // Konvertiere double-Werte zurück in num für die JSON-Speicherung
+        final Map<String, num> finalStats = stats.map((key, value) => MapEntry(key, value));
+
+        await supabaseService.saveUniversalStats(position, finalStats, anzahl);
+      }
+
+      print('Aggregation der Universal Stats erfolgreich abgeschlossen.');
+    } catch (error) {
+      print('Ein Fehler ist bei der Aggregation der Universal Stats aufgetreten: $error');
+    }
+  }
 }

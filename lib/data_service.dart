@@ -91,54 +91,160 @@ class ApiService {
     }
   }
 
-  Future<void> fetchAndStoreSpielerundMatchratings(int spielId, hometeamId,
-      awayteamId) async {
+  Future<void> fetchAndStoreSpielerundMatchratings(int spielId, hometeamId, awayteamId) async {
     final url = 'https://www.sofascore.com/api/v1/event/$spielId/lineups';
     final response = await http.get(Uri.parse(url));
 
     if (response.statusCode == 200) {
       final parsedJson = json.decode(response.body);
+      final String homeFormation = parsedJson['home']?['formation'] ?? '4-4-2';
+      final String awayFormation = parsedJson['away']?['formation'] ?? '4-4-2';
+      await supabaseService.updateSpielFormation(spielId, homeFormation, awayFormation);
 
-      // Heim- und Auswärtsteam-Spieler extrahieren
       List<dynamic> homePlayers = parsedJson['home']['players'] ?? [];
       List<dynamic> awayPlayers = parsedJson['away']['players'] ?? [];
 
-      // Spieler-Daten verarbeiten (Heimteam)
-      for (var playerData in homePlayers) {
-        await processPlayerData(playerData, hometeamId, spielId);
+      for (int i = 0; i < homePlayers.length; i++) {
+        // ✅ Übergibt die Formation und den Index (i)
+        await processPlayerData(homePlayers[i], hometeamId, spielId, homeFormation, i);
       }
-
-      // Spieler-Daten verarbeiten (Auswärtsteam)
-      for (var playerData in awayPlayers) {
-        await processPlayerData(playerData, awayteamId, spielId);
+      for (int i = 0; i < awayPlayers.length; i++) {
+        // ✅ Übergibt die Formation und den Index (i)
+        await processPlayerData(awayPlayers[i], awayteamId, spielId, awayFormation, i);
       }
     } else {
-      throw Exception(
-          "Fehler beim Abrufen der Spieler für Spiel $spielId: ${response
-              .statusCode}");
+      throw Exception("Fehler beim Abrufen der Spieler für Spiel $spielId: ${response.statusCode}");
     }
   }
 
 // Hilfsfunktion zur Verarbeitung und Speicherung eines Spielers
-  Future<void> processPlayerData(Map<String, dynamic> playerData, int teamId,
-      int spielId) async {
+  Future<void> processPlayerData(Map<String, dynamic> playerData, int teamId, int spielId, String formation, int formationIndex) async {
     var player = playerData['player'];
-
     int playerId = player['id'];
     String playerName = player['name'];
-    String position = player['position'];
-    double rating = playerData['statistics']?['rating'] ??
-        6.0; // Falls kein Rating vorhanden
-    double punkte = (rating - 6) * 100;
-    int punktzahl = punkte.round();
+    // Die generische Position aus der API (z.B. 'D', 'M', 'F'), wichtig für die Rating-Berechnung
+    String apiPosition = player['position'];
+
+    // Die spezifische Position für dieses eine Spiel ermitteln
+    String matchPosition = _getPositionFromFormation(formation, formationIndex);
+
+    // --- NEUE LOGIK ZUR POSITIONS-AKTUALISIERUNG ---
+    String finalPositionsToSave = apiPosition; // Standardwert ist die generische Position
+    try {
+      // 1. Aktuellen Spieler aus der DB holen, um die bisherigen Positionen zu lesen
+      final playerResponse = await supabaseService.supabase
+          .from('spieler')
+          .select('position')
+          .eq('id', playerId)
+          .maybeSingle();
+
+      String currentPositions = apiPosition;
+      if (playerResponse != null && playerResponse['position'] != null) {
+        currentPositions = playerResponse['position'];
+      }
+
+      // 2. Prüfen, ob die neue, spezifische Position bereits enthalten ist
+      //    Wir teilen den String auf, um Teil-Übereinstimmungen zu vermeiden (z.B. 'M' in 'ZDM')
+      List<String> positionList = currentPositions.split(',').map((p) => p.trim()).toList();
+      bool positionExists = positionList.contains(matchPosition);
+
+      // 3. Wenn die Position neu ist und eine gültige Feldspieler-Position ist, hinzufügen
+      if (!positionExists && !['TW', 'G', 'N/A', 'SUB'].contains(matchPosition)) {
+        finalPositionsToSave = '$currentPositions, $matchPosition';
+      } else {
+        finalPositionsToSave = currentPositions;
+      }
+    } catch (e) {
+      print('Fehler beim Überprüfen der Spielerposition für ID $playerId: $e');
+      // Im Fehlerfall wird einfach die ursprüngliche Position gespeichert
+    }
+
+    String primaryPosition = player['position']; // Die generelle Position
+    double rating = playerData['statistics']?['rating'] ?? 6.0;
+    int punktzahl = ((rating - 6) * 100).round();
     int ratingId = int.parse('$spielId$playerId');
-    Map<String, dynamic> stats = playerData['statistics'] != null
-        ? playerData['statistics'] as Map<String, dynamic>
-        : {};
-    int newRating = buildNewRating(position, stats);
-      await supabaseService.saveSpieler(playerId, playerName, position, teamId);
-      await supabaseService.saveMatchrating(
-          ratingId, spielId, playerId, punktzahl, stats, newRating);
+    Map<String, dynamic> stats = playerData['statistics'] as Map<String, dynamic>? ?? {};
+    int newRating = buildNewRating(primaryPosition, stats);
+
+    await supabaseService.saveSpieler(playerId, playerName, primaryPosition, teamId, null /*imageUrl*/);
+
+    // ✅ Die neue Position und der Index werden übergeben
+    await supabaseService.saveMatchrating(ratingId, spielId, playerId, punktzahl, stats, newRating, formationIndex, matchPosition);
+  }
+
+  String _getPositionFromFormation(String formation, int index) {
+    if (index == 0) return 'TW'; // Index 0 (erster Spieler in der API-Liste) ist immer der Torwart.
+
+    final parts = formation.split('-').map(int.tryParse).where((i) => i != null).cast<int>().toList();
+    if (parts.length < 2) return 'N/A'; // Ungültige Formation
+
+    final defenders = parts.first;
+    final attackers = parts.last;
+    final midfielders = parts.sublist(1, parts.length - 1);
+
+
+    int defenseEndIndex = defenders;
+    if (index > 0 && index <= defenseEndIndex) {
+      int posIndex = index;
+      if (defenders == 3) return 'IV';
+      if (defenders == 4) {
+        if (posIndex == 1) return 'RV';
+        if (posIndex == 4) return 'LV';
+        return 'IV';
+      }
+      if (defenders == 5) {
+        if (posIndex == 1) return 'RV';
+        if (posIndex == 5) return 'LV';
+        return 'IV';
+      }
+    }
+
+    int midfieldEndIndex = defenseEndIndex + midfielders.reduce((a, b) => a + b);
+    if (index > defenseEndIndex && index <= midfieldEndIndex) {
+      int posIndex = index - defenseEndIndex;
+      if(midfielders.length == 1) {
+        if (midfielders.first > 3){
+          if (posIndex == 1) return 'RA';
+          if (posIndex == midfielders.first) return 'LA';
+        }
+        return 'ZM';
+      }
+
+      if (posIndex <= midfielders.first){
+        if (midfielders.first >= 3) {
+          if(posIndex == 1) return 'RV';
+          if(posIndex == midfielders.first) return 'LV';
+        }
+        if (midfielders.first == 3) return 'ZM';
+        return 'ZDM';
+      }
+      if (posIndex <= midfielders[0] + midfielders[1]) {
+        if (midfielders[1] >= 3) {
+          if (posIndex == midfielders.first + 1) return 'RA';
+          if (posIndex == midfielders[0] + midfielders[1]) return 'LA';
+          if (midfielders[1] == 3) return 'ZOM';
+          return 'ZM';
+        }
+        if (midfielders.length >= 3) return 'ZM';
+        return 'ZOM';
+      }
+      if (posIndex <= midfielders[0] + midfielders[1]+ midfielders[2]){
+        return 'ZOM';
+      }
+      return 'M';
+    }
+
+    int attackerEndIndex = midfieldEndIndex + attackers;
+    if (index > midfieldEndIndex && index <= attackerEndIndex) {
+      int posIndex = index - midfieldEndIndex;
+      if (attackers <= 2) return 'ST';
+      if (attackers == 3) {
+        if (posIndex == 1) return 'RA';
+        if (posIndex == 3) return 'LA';
+        return 'ST';
+      }
+    }
+    return 'SUB'; // Fallback für Ersatzspieler
   }
 
   int buildNewRating(String position, Map<String, dynamic> stats) {
@@ -484,15 +590,22 @@ class SupabaseService {
         .eq('round', round); // Nur das Spiel mit der passenden ID aktualisieren
   }
   // Spieler speichern
-  Future<void> saveSpieler(int id, String name, String position, int teamId) async {
+  Future<void> saveSpieler(int id, String name, String position, int teamId, String? profilbildUrl) async {
     try {
+      final updateData = {
+        'id': id,
+        'name': name,
+        'position': position,
+        'team_id': teamId,
+      };
+
+      // Füge die URL nur hinzu, wenn sie nicht null ist, um bestehende Bilder nicht zu überschreiben
+      if (profilbildUrl != null) {
+        updateData['profilbild_url'] = profilbildUrl;
+      }
+
       await supabase.from('spieler').upsert(
-          {
-            'id': id, // Unique Key
-            'name': name,
-            'position': position,
-            'team_id': teamId
-          },
+          updateData,
           onConflict: 'id'
       );
     } catch (error) {
@@ -500,7 +613,10 @@ class SupabaseService {
     }
   }
   // Matchrating speichern
-  Future<void> saveMatchrating(int id, int spielId, int spielerId, int rating, statistics, int newRating) async {
+  // In der Klasse SupabaseService in lib/data_service.dart
+
+// ✅ saveMatchrating speichert jetzt auch den formationsindex
+  Future<void> saveMatchrating(int id, int spielId, int spielerId, int rating, statistics, int newRating, int formationIndex, String matchPosition) async {
     try {
       await supabase.from('matchrating').upsert(
           {
@@ -510,14 +626,42 @@ class SupabaseService {
             'punkte': rating,
             'statistics': statistics,
             'neuepunkte': newRating,
+            'formationsindex': formationIndex,
+            'match_position': matchPosition, // Neue Spalte wird hier befüllt
           },
-          onConflict: 'id'
-      );
-
+          onConflict: 'id');
     } catch (error) {
       print('Fehler beim Speichern des Matchratings: $error');
     }
   }
 
+  // In der Klasse SupabaseService in lib/data_service.dart
 
+// ✅ NEUE FUNKTION: Aktualisiert ein Spiel mit den Formations-Daten
+  Future<void> updateSpielFormation(int spielId, String homeFormation, String awayFormation) async {
+    try {
+      await supabase
+          .from('spiel')
+          .update({
+        'hometeam_formation': homeFormation,
+        'awayteam_formation': awayFormation,
+      })
+          .eq('id', spielId);
+    } catch (error) {
+      print('Fehler beim Speichern der Formationen: $error');
+    }
+  }
+
+
+  Future<void> saveUniversalStats(String position, Map<String, num> stats, int anzahl) async {
+    try {
+      await supabase.from('universal_stats').upsert({
+        'position': position,
+        'statistics': stats,
+        'anzahl': anzahl,
+      }, onConflict: 'position'); // Wichtig: 'position' muss der Primary Key sein
+    } catch (error) {
+      print('Fehler beim Speichern der Universal Stats für Position $position: $error');
+    }
+  }
 }
