@@ -152,7 +152,7 @@ class DataManagement {
   }
 
   Future<void> aggregateUniversalStats() async {
-    print('Starte Aggregation der Universal Stats...');
+    print('Starte Aggregation der Universal Stats für spezifische Positionen...');
     try {
       // 1. Alle relevanten Match-Ratings mit Position und Statistiken abrufen
       final allRatings = await _supabase
@@ -167,7 +167,7 @@ class DataManagement {
         final position = rating['match_position'] as String?;
         final stats = rating['statistics'] as Map<String, dynamic>?;
 
-        // Überspringe, falls Position oder Stats fehlen
+        // Überspringe, falls Position oder Stats ungültig sind
         if (position == null || stats == null || ['SUB', 'N/A', ''].contains(position)) {
           continue;
         }
@@ -197,7 +197,6 @@ class DataManagement {
         final stats = entry.value['statistics'] as Map<String, double>;
         final anzahl = entry.value['anzahl'] as int;
 
-        // Konvertiere double-Werte zurück in num für die JSON-Speicherung
         final Map<String, num> finalStats = stats.map((key, value) => MapEntry(key, value));
 
         await supabaseService.saveUniversalStats(position, finalStats, anzahl);

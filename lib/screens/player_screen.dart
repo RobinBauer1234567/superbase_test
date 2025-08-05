@@ -89,10 +89,9 @@ class _PlayerScreenState extends State<PlayerScreen>
       }
     }
   }
-
   Future<void> _calculateRadarChartData() async {
     if (matchRatingsRaw.isEmpty) {
-      if(mounted) {
+      if (mounted) {
         setState(() {
           isLoading = false;
         });
@@ -100,56 +99,51 @@ class _PlayerScreenState extends State<PlayerScreen>
       return;
     }
 
+    // Schritt 1: Spielerstatistiken aggregieren (bleibt unverändert)
     Map<String, double> playerTotalStats = {};
     for (var rating in matchRatingsRaw) {
       final stats = rating['statistics'] as Map<String, dynamic>? ?? {};
       stats.forEach((key, value) {
-
-        // ✅ KORREKTUR: Prüft den Typ des Statistik-Wertes
         double statValue = 0;
         if (value is num) {
-          // Wenn es eine einfache Zahl ist, direkt verwenden
           statValue = value.toDouble();
         } else if (value is Map && value.containsKey('total')) {
-          // Wenn es ein Objekt ist, den 'total'-Wert extrahieren
           statValue = (value['total'] as num? ?? 0).toDouble();
         }
-
         playerTotalStats[key] = (playerTotalStats[key] ?? 0.0) + statValue;
       });
     }
     final int matchCount = matchRatingsRaw.length;
-    Map<String, double> playerAverageStats = playerTotalStats.map((key, value) => MapEntry(key, value / matchCount));
+    Map<String, double> playerAverageStats =
+    playerTotalStats.map((key, value) => MapEntry(key, value / matchCount));
 
-    // Schritt 2: Universelle Statistiken NUR für die Position des Spielers abrufen
-    // ✅ KORREKTUR: Die Abfrage filtert jetzt nach der spezifischen Spielerposition
+    // ✅ Schritt 2: Lade die Vergleichsdaten für die exakte, primäre Position des Spielers
+    //    Die primäre Position wird aus dem 'position'-String extrahiert (z.B. "IV" aus "D, IV")
+    String primaryPosition = position.split(',').last.trim();
+
+    Map<String, double> universalAverageStats = {};
+
     final universalStatsResponse = await supabase
         .from('universal_stats')
         .select('statistics, anzahl')
-        .eq('position', position); // Filtert z.B. nur nach 'M'
+        .eq('position', primaryPosition) // Filtert z.B. exakt nach 'ZDM'
+        .maybeSingle(); // .maybeSingle() holt einen einzelnen Datensatz oder null
 
-    Map<String, double> universalTotalStats = {};
-    int universalMatchCount = 0;
+    if (universalStatsResponse != null) {
+      final stats = universalStatsResponse['statistics'] as Map<String, dynamic>? ?? {};
+      final anzahl = (universalStatsResponse['anzahl'] as int?) ?? 1;
 
-    for (var row in universalStatsResponse) {
-      final stats = row['statistics'] as Map<String, dynamic>? ?? {};
       stats.forEach((key, value) {
-        universalTotalStats[key] = (universalTotalStats[key] ?? 0.0) + (value as num).toDouble();
+        universalAverageStats[key] = (value as num).toDouble() / anzahl;
       });
-      universalMatchCount += (row['anzahl'] as int?) ?? 0;
     }
 
-    // Falls keine Positionsdaten vorhanden sind, um Teilung durch Null zu vermeiden
-    if (universalMatchCount == 0) universalMatchCount = 1;
-
-    Map<String, double> universalAverageStats = universalTotalStats.map((key, value) => MapEntry(key, value / universalMatchCount));
-
-    // Schritt 3: Index berechnen und Kategorien für Radar Chart erstellen
+    // Schritt 3: Index berechnen (bleibt unverändert)
     double calculateStat(String key) {
       final playerValue = playerAverageStats[key] ?? 0.0;
       final universalValue = universalAverageStats[key] ?? 1.0; // Teilen durch 0 vermeiden
-      if (universalValue == 0) return 50.0; // Neutraler Wert, falls keine Vergleichsdaten existieren
-      return min(100, (playerValue / universalValue) * 50); // Index berechnen und auf 100 begrenzen
+      if (universalValue == 0) return 50.0;
+      return min(100, (playerValue / universalValue) * 50);
     }
 
     setState(() {
