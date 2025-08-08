@@ -19,7 +19,6 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   // Player Info
   String playerName = "";
-  String position = "";
   String teamName = "";
   String? profileImageUrl;
 
@@ -27,6 +26,11 @@ class _PlayerScreenState extends State<PlayerScreen>
   bool isLoading = true;
   List<dynamic> matchRatingsRaw = [];
   List<GroupData> radarChartData = [];
+
+  // ✅ NEUE STATE-VARIABLEN
+  List<String> availablePositions = [];
+  String? selectedPosition;
+  double averagePlayerRating = 0.0;
 
   @override
   void initState() {
@@ -48,7 +52,6 @@ class _PlayerScreenState extends State<PlayerScreen>
     });
 
     try {
-      // 1. Spieler- und Team-Daten abrufen
       final playerResponse = await supabase
           .from('spieler')
           .select('name, position, team_id, profilbild_url')
@@ -61,7 +64,6 @@ class _PlayerScreenState extends State<PlayerScreen>
           .eq('id', playerResponse['team_id'])
           .single();
 
-      // 2. Alle Match-Ratings inklusive der Statistiken abrufen
       final matchRatingsResponse = await supabase
           .from('matchrating')
           .select('spiel_id, punkte, statistics')
@@ -69,17 +71,39 @@ class _PlayerScreenState extends State<PlayerScreen>
 
       if (!mounted) return;
 
+      // ✅ NEU: Positionen extrahieren und Durchschnittsrating berechnen
+      String rawPositions = playerResponse['position'] ?? 'N/A';
+      List<String> parsedPositions = rawPositions.split(',').map((p) =>
+          p.trim()).toList();
+
+      double totalRating = 0;
+      for (var rating in matchRatingsResponse) {
+        totalRating += (rating['punkte'] as num? ?? 0.0).toDouble();
+      }
+
       setState(() {
         playerName = playerResponse['name'];
-        position = playerResponse['position'];
         teamName = teamResponse['name'];
         profileImageUrl = playerResponse['profilbild_url'] ??
             'https://rcfetlzldccwjnuabfgj.supabase.co/storage/v1/object/public/spielerbilder//Photo-Missing.png';
         matchRatingsRaw = matchRatingsResponse;
+
+        availablePositions = parsedPositions;
+        // Die letzte (spezifischste) Position als Standard auswählen
+        if (parsedPositions.isNotEmpty) {
+          selectedPosition = parsedPositions.last;
+        }
+        if (matchRatingsResponse.isNotEmpty) {
+          averagePlayerRating = totalRating / matchRatingsResponse.length;
+        }
       });
 
-      // 3. Radar-Chart-Daten berechnen
-      await _calculateRadarChartData();
+      // Radar-Chart mit der initialen Position berechnen
+      if (selectedPosition != null) {
+        await _calculateRadarChartData(selectedPosition!);
+      } else {
+        setState(() => isLoading = false);
+      }
     } catch (error) {
       print("Fehler beim Laden der Spielerdaten: $error");
       if (mounted) {
@@ -89,17 +113,22 @@ class _PlayerScreenState extends State<PlayerScreen>
       }
     }
   }
-  Future<void> _calculateRadarChartData() async {
+
+  // ✅ FUNKTION AKZEPTIERT JETZT EINE POSITION
+// In der Klasse _PlayerScreenState
+
+// In der Klasse _PlayerScreenState in lib/screens/player_screen.dart
+
+// In der Klasse _PlayerScreenState
+
+  Future<void> _calculateRadarChartData(String comparisonPosition) async {
     if (matchRatingsRaw.isEmpty) {
-      if (mounted) {
-        setState(() {
-          isLoading = false;
-        });
-      }
+      if (mounted) setState(() => isLoading = false);
       return;
     }
 
-    // Schritt 1: Spielerstatistiken aggregieren (bleibt unverändert)
+    // --- Schritt 1 & 2: Datenbeschaffung (bleibt unverändert) ---
+    Map<String, double> playerAverageStats = {};
     Map<String, double> playerTotalStats = {};
     for (var rating in matchRatingsRaw) {
       final stats = rating['statistics'] as Map<String, dynamic>? ?? {};
@@ -114,90 +143,224 @@ class _PlayerScreenState extends State<PlayerScreen>
       });
     }
     final int matchCount = matchRatingsRaw.length;
-    Map<String, double> playerAverageStats =
-    playerTotalStats.map((key, value) => MapEntry(key, value / matchCount));
+    playerAverageStats = playerTotalStats.map((key, value) => MapEntry(key, value / matchCount));
 
-    // ✅ Schritt 2: Lade die Vergleichsdaten für die exakte, primäre Position des Spielers
-    //    Die primäre Position wird aus dem 'position'-String extrahiert (z.B. "IV" aus "D, IV")
-    String primaryPosition = position.split(',').last.trim();
+    final allRatingsForPosition = await supabase
+        .from('matchrating')
+        .select('spieler_id, statistics')
+        .eq('match_position', '"$comparisonPosition"');
 
-    Map<String, double> universalAverageStats = {};
-
-    final universalStatsResponse = await supabase
-        .from('universal_stats')
-        .select('statistics, anzahl')
-        .eq('position', primaryPosition) // Filtert z.B. exakt nach 'ZDM'
-        .maybeSingle(); // .maybeSingle() holt einen einzelnen Datensatz oder null
-
-    if (universalStatsResponse != null) {
-      final stats = universalStatsResponse['statistics'] as Map<String, dynamic>? ?? {};
-      final anzahl = (universalStatsResponse['anzahl'] as int?) ?? 1;
-
+    Map<int, Map<String, double>> comparisonPlayerAverages = {};
+    final Map<int, Map<String, dynamic>> playerAggregates = {};
+    for (var rating in allRatingsForPosition) {
+      final playerId = rating['spieler_id'] as int;
+      final stats = rating['statistics'] as Map<String, dynamic>? ?? {};
+      playerAggregates.putIfAbsent(playerId, () => {'total_stats': <String, double>{}, 'game_count': 0});
+      final currentAggregates = playerAggregates[playerId]!;
+      final currentTotalStats = currentAggregates['total_stats'] as Map<String, double>;
       stats.forEach((key, value) {
-        universalAverageStats[key] = (value as num).toDouble() / anzahl;
+        double statValue = 0;
+        if (value is num) statValue = value.toDouble();
+        else if (value is Map && value.containsKey('total')) statValue = (value['total'] as num? ?? 0).toDouble();
+        currentTotalStats[key] = (currentTotalStats[key] ?? 0.0) + statValue;
+      });
+      currentAggregates['game_count'] = (currentAggregates['game_count'] as int) + 1;
+    }
+    playerAggregates.forEach((playerId, data) {
+      final totalStats = data['total_stats'] as Map<String, double>;
+      final gameCount = data['game_count'] as int;
+      if (gameCount > 0) {
+        comparisonPlayerAverages[playerId] = totalStats.map((key, value) => MapEntry(key, value / gameCount));
+      }
+    });
+
+    // --- Schritt 3: ✅ Angepasste Funktion mit Invertierung für negative Stats ---
+    double calculatePercentileRankForCategory(Map<String, double> weightedStatKeys, {bool higherIsBetter = true}) {
+      double getCategoryScore(Map<String, double> stats) {
+        double score = 0;
+        weightedStatKeys.forEach((key, weight) {
+          score += (stats[key] ?? 0.0) * weight;
+        });
+        return score;
+      }
+
+      final currentPlayerCategoryScore = getCategoryScore(playerAverageStats);
+      if (comparisonPlayerAverages.isEmpty) return 50.0;
+
+      final allCategoryScores = comparisonPlayerAverages.values
+          .map((playerStats) => getCategoryScore(playerStats))
+          .toList();
+
+      // Sortierung anpassen: Wenn niedriger besser ist (z.B. bei Fehlern), wird aufsteigend sortiert.
+      allCategoryScores.sort((a, b) => higherIsBetter ? b.compareTo(a) : a.compareTo(b));
+
+      int playersBetter = allCategoryScores.where((score) => higherIsBetter ? score > currentPlayerCategoryScore : score < currentPlayerCategoryScore).length;
+
+      double percentile = (playersBetter / allCategoryScores.length) * 100.0;
+      return 100.0 - percentile;
+    }
+
+    // --- Schritt 4: ✅ Logik zur Unterscheidung zwischen Torwart und Feldspieler ---
+    if (mounted) {
+      List<GroupData> finalRadarChartData = [];
+      String genericPosition = availablePositions.first.trim();
+
+      if (genericPosition == 'G' || genericPosition == 'TW') {
+        // --- DATENSTRUKTUR FÜR TORHÜTER ---
+        finalRadarChartData = [
+          GroupData(
+            name: 'Torwartspiel',
+            backgroundColor: Colors.cyan.withOpacity(0.12),
+            segments: [
+              SegmentData(name: 'Abgewehrte Schüsse', value: calculatePercentileRankForCategory({'saves': 1.0, 'punches' : 1.0})),
+              SegmentData(name: 'Paraden', value: calculatePercentileRankForCategory({'savedShotsFromInsideTheBox': 1.0, 'goalsPrevented': 3.0, 'penaltySave' : 2.0})),
+              SegmentData(name: 'Fehlerressistenz', value: calculatePercentileRankForCategory({'errorLeadToAShot': 1.0, 'errorLeadToAGoal' : 5.0, 'penaltyConceded' : 3.0}, higherIsBetter: false)),
+            ],
+          ),
+          GroupData(
+            name: 'Strafraumbeherrschung',
+            backgroundColor: Colors.green.withOpacity(0.12),
+            segments: [
+              SegmentData(name: 'Hohe Bälle', value: calculatePercentileRankForCategory({'goodHighClaim': 1.0, 'aerialWon': 1.0, 'aerialLost' : -1.0})),
+              SegmentData(name: 'Herauslaufen', value: calculatePercentileRankForCategory({'accurateKeeperSweeper': 2.0, 'totalKeeperSweeper' : -1.0, 'totalTackle' : 2.0, 'lastManTackle' : 5.0, 'interceptionWon' : 2.0})),
+            ],
+          ),
+          GroupData(
+            name: 'Ballverteilung',
+            backgroundColor: Colors.orange.withOpacity(0.12),
+            segments: [
+              SegmentData(name: 'Ballbesitz', value: calculatePercentileRankForCategory({'touches': 2.0, 'dispossessed': -5.0})),
+              SegmentData(name: 'Passspiel', value: calculatePercentileRankForCategory({'accurateLongBalls': 4.0, 'totalLongBalls' : -1.0,'accuratePass': 2.0, 'totalPass': -1.0, 'bigChanceCreated' : 10.0, 'keyPass' : 5.0})),
+            ],
+          ),
+        ];
+      } else {
+        // --- DATENSTRUKTUR FÜR FELDSPIELER (deine bestehende Logik) ---
+        finalRadarChartData = [
+    // Schritt 5: Radar-Chart-Daten mit der neuen Logik erstellen
+          GroupData(
+            name: 'Schießen',
+            backgroundColor: Colors.blue.withOpacity(0.12),
+            segments: [
+              SegmentData(
+                  name: 'Abschlussvolumen',
+                  value: calculatePercentileRankForCategory({
+                    'onTargetScoringAttempt': 1.0,
+                    'blockedScoringAttempt': 1.0,
+                    'shotOffTarget': 1.0,
+                    'hitWoodwork': 1.0,
+                  })
+              ),
+              SegmentData(
+                  name: 'Abschlussqualität',
+                  value: calculatePercentileRankForCategory({
+                    'goals': 10.0,
+                    'expectedGoals' : -5.0,
+                    'bigChanceMissed' : -3.0,
+                    'onTargetScoringAttempt' : 1.0,
+                    'blockedScoringAttempt' : 1.0,
+                    'hitWoodwork' : 1.0,
+                    'penaltyMiss' : -5.0,
+                    'shotOffTarget' : 1.0
+                  })
+              ),
+            ],
+          ),
+          GroupData(
+            name: 'Passen',
+            backgroundColor: Colors.green.withOpacity(0.12),
+            segments: [
+              SegmentData(name: 'Passvolumen', value: calculatePercentileRankForCategory({'totalPass': 1.0})),
+              SegmentData(
+                  name: 'Passsicherheit',
+                  value: calculatePercentileRankForCategory({
+                    'accuratePass': 1.0,
+                    'possessionLostCtrl': -1.0,
+                    'accurateCross' : 1.5,
+                    'accurateLongBalls' : 1.5
+                  })
+              ),
+              SegmentData(name: 'Kreative Pässe', value: calculatePercentileRankForCategory({
+                'keyPass': 1.5,
+                'bigChanceCreated': 1.5,
+                'expectedAssists': 1.0,
+                'goalAssist' : 1.0,
+              })),
+            ],
+          ),
+          GroupData(
+            name: 'Duelle',
+            backgroundColor: Colors.orange.withOpacity(0.12),
+            segments: [
+              SegmentData(name: 'Zweikampfaktivität', value: calculatePercentileRankForCategory({
+                'duelWon': 1.0,
+                'duelLost': 1.0,
+                'aerialWon': 1.0,
+                'aerialLost': 1.0
+              })),
+              SegmentData(name: 'Zweikämpferfolg', value: calculatePercentileRankForCategory({
+                'duelWon': 1.0,
+                'duelLost': -1.0,
+                'aerialWon': 1.0,
+                'aerialLost': -1.0
+
+              })),
+              SegmentData(name: 'Foulstatistik', value: calculatePercentileRankForCategory({
+                'fouls': -1.0,
+                'wasFouled' : 1.0,
+                'penaltyWon' : 5.0,
+                'penaltyConceded' : -5.0
+              })),
+            ],
+          ),
+          GroupData(
+            name: 'Ballbesitz',
+            backgroundColor: Colors.red.withOpacity(0.12),
+            segments: [
+              SegmentData(name: 'Ballaktionen', value: calculatePercentileRankForCategory({
+                'touches': 2.0,
+                'wonContest' : 1.0
+              })),
+              SegmentData(name: 'Ballsicherheit', value: calculatePercentileRankForCategory({
+                'dispossessed': -1.0,
+                'possessionLostCtrl': -1.0,
+                'challengeLost' : -1.0,
+                'totalOffside' : -1.0
+              })),
+              SegmentData(name: 'Ballgewinne', value: calculatePercentileRankForCategory({
+                'interceptionWon': 1.0
+              })),
+            ],
+          ),
+          GroupData(
+            name: 'Defensive',
+            backgroundColor: Colors.purple.withOpacity(0.12),
+            segments: [
+              SegmentData(name: 'Tacklings', value: calculatePercentileRankForCategory({
+                'totalTackle': 1.0,
+                'lastManTackle': 20.0
+              })),
+              SegmentData(name: 'Klärende Aktionen', value: calculatePercentileRankForCategory({
+                'totalClearance': 1.0,
+                'outfielderBlock': 1.0,
+                'clearanceOffLine': 20
+              })),
+              SegmentData(name: 'Fehlerresistenz', value: calculatePercentileRankForCategory({
+                'errorLeadToAGoal': 5.0,
+                'errorLeadToAShot': 1.0,
+                'ownGoals': 3.0
+              })),
+            ],
+          ),
+        ];
+      }
+
+      setState(() {
+        radarChartData = finalRadarChartData;
+        isLoading = false;
       });
     }
-
-    // Schritt 3: Index berechnen (bleibt unverändert)
-    double calculateStat(String key) {
-      final playerValue = playerAverageStats[key] ?? 0.0;
-      final universalValue = universalAverageStats[key] ?? 1.0; // Teilen durch 0 vermeiden
-      if (universalValue == 0) return 50.0;
-      return min(100, (playerValue / universalValue) * 50);
-    }
-
-    setState(() {
-      radarChartData = [
-        GroupData(
-          name: 'Schießen',
-          backgroundColor: Colors.blue.withOpacity(0.12),
-          segments: [
-            SegmentData(name: 'Abschlussvolumen', value: calculateStat('onTargetScoringAttempt') + calculateStat('blockedScoringAttempt') + calculateStat('shotOffTarget') + calculateStat('hitWoodwork')),
-            SegmentData(name: 'Abschlussqualität', value: (2*calculateStat('goals') - calculateStat('expectedGoals'))),
-          ],
-        ),
-        GroupData(
-          name: 'Passen',
-          backgroundColor: Colors.green.withOpacity(0.12),
-          segments: [
-            SegmentData(name: 'Passvolumen', value: calculateStat('totalPass')),
-            SegmentData(name: 'Passsicherheit', value: calculateStat('accuratePass')),
-            SegmentData(name: 'Kreative Pässe', value: calculateStat('keyPass')),
-          ],
-        ),
-        GroupData(
-          name: 'Duelle',
-          backgroundColor: Colors.orange.withOpacity(0.12),
-          segments: [
-            SegmentData(name: 'Zweikampfaktivität', value: calculateStat('duelWon') + calculateStat('duelLost')),
-            SegmentData(name: 'Zweikämpferfolg', value: calculateStat('duelWon')),
-            SegmentData(name: 'Fouls', value: calculateStat('fouls')),
-          ],
-        ),
-        GroupData(
-          name: 'Ballbesitz',
-          backgroundColor: Colors.red.withOpacity(0.12),
-          segments: [
-            SegmentData(name: 'Ballberührungen', value: calculateStat('touches')),
-            SegmentData(name: 'Ballverluste', value: calculateStat('dispossessed')),
-            SegmentData(name: 'Abgefangene Bälle', value: calculateStat('interceptionWon')),
-          ],
-        ),
-        GroupData(
-          name: 'Defensive',
-          backgroundColor: Colors.purple.withOpacity(0.12),
-          segments: [
-            SegmentData(name: 'Tacklings', value: calculateStat('totalTackle')),
-            SegmentData(name: 'Klärende Aktionen', value: calculateStat('totalClearance')),
-            SegmentData(name: 'Fehler', value: calculateStat('errorLeadToAGoal')),
-          ],
-        ),
-      ];
-      isLoading = false;
-    });
   }
-
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -208,7 +371,6 @@ class _PlayerScreenState extends State<PlayerScreen>
           ? const Center(child: CircularProgressIndicator())
           : Column(
         children: [
-          // Statischer oberer Teil
           Padding(
             padding: const EdgeInsets.all(16.0),
             child: Column(
@@ -218,24 +380,25 @@ class _PlayerScreenState extends State<PlayerScreen>
                     child: profileImageUrl != null
                         ? Image.network(
                       profileImageUrl!,
-                      width: 150, // Etwas kleiner für bessere Optik
+                      width: 150,
                       height: 150,
                       fit: BoxFit.cover,
                       errorBuilder: (context, error, stackTrace) {
-                        return const Icon(Icons.error, size: 120, color: Colors.red);
+                        return const Icon(Icons.error, size: 120, color: Colors
+                            .red);
                       },
                     )
-                        : const Icon(Icons.person, size: 120, color: Colors.grey),
+                        : const Icon(
+                        Icons.person, size: 120, color: Colors.grey),
                   ),
                 ),
                 const SizedBox(height: 16),
                 Text("Team: $teamName", style: const TextStyle(fontSize: 18)),
-                Text("Position: $position", style: const TextStyle(fontSize: 18)),
+                Text("Positionen: ${availablePositions.join(', ')}",
+                    style: const TextStyle(fontSize: 18)),
               ],
             ),
           ),
-
-          // Tab-Bar für die wischbare Ansicht
           TabBar(
             controller: _tabController,
             tabs: const [
@@ -243,34 +406,62 @@ class _PlayerScreenState extends State<PlayerScreen>
               Tab(text: 'Radar Chart'),
             ],
           ),
-
-          // Wischbarer Inhalt
           Expanded(
             child: TabBarView(
               controller: _tabController,
               children: [
-                // View 1: Match Ratings
                 matchRatingsRaw.isEmpty
                     ? const Center(child: Text("Keine Bewertungen vorhanden"))
                     : ListView(
                   children: matchRatingsRaw.map((rating) {
                     return ListTile(
                       title: Text("Match ID: ${rating['spiel_id']}"),
-                      trailing: Text("Rating: ${(rating['punkte'] as num).toDouble().toStringAsFixed(1)}"),
+                      trailing: Text("Rating: ${(rating['punkte'] as num)
+                          .toDouble()
+                          .toStringAsFixed(1)}"),
                     );
                   }).toList(),
                 ),
-
-                // View 2: Radar Chart
                 radarChartData.isEmpty
                     ? const Center(child: Text("Statistiken nicht verfügbar."))
-                    : Padding(
-                  padding: const EdgeInsets.all(16.0),
-                  child: RadialSegmentChart(
-                    groups: radarChartData,
-                    maxAbsValue: 100.0,
-                    centerLabel: 72, // Kann dynamisch sein
-                  ),
+                    : Column(
+                  children: [
+                    Padding(
+                      padding: const EdgeInsets.symmetric(
+                          vertical: 8.0, horizontal: 16.0),
+                      child: DropdownButton<String>(
+                        value: selectedPosition,
+                        isExpanded: true,
+                        hint: const Text("Vergleichsposition wählen"),
+                        items: availablePositions.map((String value) {
+                          return DropdownMenuItem<String>(
+                            value: value,
+                            child: Text(value),
+                          );
+                        }).toList(),
+                        onChanged: (newValue) {
+                          if (newValue != null) {
+                            setState(() {
+                              selectedPosition = newValue;
+                              isLoading = true;
+                            });
+                            _calculateRadarChartData(newValue);
+                          }
+                        },
+                      ),
+                    ),
+                    Expanded(
+                      child: Padding(
+                        padding: const EdgeInsets.all(16.0),
+                        // ✅ KORREKTUR: "const" vor RadialSegmentChart entfernt
+                        child: RadialSegmentChart(
+                          groups: radarChartData,
+                          maxAbsValue: 100.0,
+                          centerLabel: averagePlayerRating.round(),
+                        ),
+                      ),
+                    ),
+                  ],
                 ),
               ],
             ),

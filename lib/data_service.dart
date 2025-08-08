@@ -117,6 +117,28 @@ class ApiService {
     }
   }
 
+  Future<void> fetchAndStoreTeams() async {
+    final url = '$baseUrl/unique-tournament/17/season/61627/teams';
+    final response = await http.get(Uri.parse(url));
+
+    if (response.statusCode == 200) {
+      final parsedJson = json.decode(response.body);
+      List<dynamic> teamsJson = parsedJson['teams'] ?? [];
+
+      for (var teamData in teamsJson) {
+        int teamId = teamData['id'];
+        String teamName = teamData['name'];
+        // Das Bild-URL-Handling könntest du hier ebenfalls hinzufügen, falls benötigt.
+        await supabaseService.saveTeam(teamId, teamName);
+      }
+      print('Alle Teams wurden erfolgreich in der Datenbank gespeichert.');
+    } else {
+      throw Exception(
+        "Fehler beim Abrufen der Teams: ${response.statusCode}",
+      );
+    }
+  }
+
 // Hilfsfunktion zur Verarbeitung und Speicherung eines Spielers
   Future<void> processPlayerData(Map<String, dynamic> playerData, int teamId, int spielId, String formation, int formationIndex) async {
     var player = playerData['player'];
@@ -128,7 +150,6 @@ class ApiService {
     // Die spezifische Position für dieses eine Spiel ermitteln
     String matchPosition = _getPositionFromFormation(formation, formationIndex);
 
-    // --- NEUE LOGIK ZUR POSITIONS-AKTUALISIERUNG ---
     String finalPositionsToSave = apiPosition; // Standardwert ist die generische Position
     try {
       // 1. Aktuellen Spieler aus der DB holen, um die bisherigen Positionen zu lesen
@@ -143,13 +164,11 @@ class ApiService {
         currentPositions = playerResponse['position'];
       }
 
-      // 2. Prüfen, ob die neue, spezifische Position bereits enthalten ist
-      //    Wir teilen den String auf, um Teil-Übereinstimmungen zu vermeiden (z.B. 'M' in 'ZDM')
       List<String> positionList = currentPositions.split(',').map((p) => p.trim()).toList();
       bool positionExists = positionList.contains(matchPosition);
 
       // 3. Wenn die Position neu ist und eine gültige Feldspieler-Position ist, hinzufügen
-      if (!positionExists && !['TW', 'G', 'N/A', 'SUB'].contains(matchPosition)) {
+      if (!positionExists && !['G', 'N/A', 'SUB'].contains(matchPosition)) {
         finalPositionsToSave = '$currentPositions, $matchPosition';
       } else {
         finalPositionsToSave = currentPositions;
@@ -166,7 +185,7 @@ class ApiService {
     Map<String, dynamic> stats = playerData['statistics'] as Map<String, dynamic>? ?? {};
     int newRating = buildNewRating(primaryPosition, stats);
 
-    await supabaseService.saveSpieler(playerId, playerName, primaryPosition, teamId, null /*imageUrl*/);
+    await supabaseService.saveSpieler(playerId, playerName, finalPositionsToSave, teamId, null /*imageUrl*/);
 
     // ✅ Die neue Position und der Index werden übergeben
     await supabaseService.saveMatchrating(ratingId, spielId, playerId, punktzahl, stats, newRating, formationIndex, matchPosition);

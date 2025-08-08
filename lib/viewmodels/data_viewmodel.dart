@@ -12,15 +12,27 @@ class DataManagement {
   ApiService apiService = ApiService();
   SupabaseService supabaseService = SupabaseService();
 
+  // In der Klasse DataManagement in lib/viewmodels/data_viewmodel.dart
+
   Future<void> collectNewData() async {
     print('start: collectnewData');
+
+    // SCHRITT 1: Zuerst alle Teams abrufen und speichern
+    await apiService.fetchAndStoreTeams();
+    print('Teams gespeichert');
+
+    // SCHRITT 2: Danach die Spieltage abrufen
     await apiService.fetchAndStoreSpieltage();
     print('spieltage gespeichert');
+
+    // SCHRITT 3: Und dann die Spiele für jeden Spieltag
     List<int> spieltage = await supabaseService.fetchAllSpieltagIds();
     await Future.wait(spieltage.map((spieltag) async {
       await apiService.fetchAndStoreSpiele(spieltag);
       print('spiele für Spieltag $spieltag gespeichert');
     }));
+
+    // SCHRITT 4: Zum Schluss die Daten aktualisieren
     await updateData();
     print('finish');
   }

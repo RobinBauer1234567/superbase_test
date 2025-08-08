@@ -2,10 +2,6 @@ import 'package:flutter/material.dart';
 import 'dart:math';
 import 'dart:ui' as ui;
 
-// =================================================================
-// NEUE, FLEXIBLE DATENSTRUKTUR
-// =================================================================
-
 /// Repräsentiert ein einzelnes Segment (einen "Balken") im Diagramm.
 class SegmentData {
   final String name;
