@@ -31,6 +31,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   List<String> availablePositions = [];
   String? selectedPosition;
   double averagePlayerRating = 0.0;
+  double averagePlayerRatingPercentile = 0.0; // Der neue Vergleichswert
 
   @override
   void initState() {
@@ -71,7 +72,6 @@ class _PlayerScreenState extends State<PlayerScreen>
 
       if (!mounted) return;
 
-      // ✅ NEU: Positionen extrahieren und Durchschnittsrating berechnen
       String rawPositions = playerResponse['position'] ?? 'N/A';
       List<String> parsedPositions = rawPositions.split(',').map((p) =>
           p.trim()).toList();
@@ -87,18 +87,18 @@ class _PlayerScreenState extends State<PlayerScreen>
         profileImageUrl = playerResponse['profilbild_url'] ??
             'https://rcfetlzldccwjnuabfgj.supabase.co/storage/v1/object/public/spielerbilder//Photo-Missing.png';
         matchRatingsRaw = matchRatingsResponse;
-
         availablePositions = parsedPositions;
-        // Die letzte (spezifischste) Position als Standard auswählen
+
         if (parsedPositions.isNotEmpty) {
           selectedPosition = parsedPositions.last;
         }
         if (matchRatingsResponse.isNotEmpty) {
           averagePlayerRating = totalRating / matchRatingsResponse.length;
+        } else {
+          averagePlayerRating = 0;
         }
       });
 
-      // Radar-Chart mit der initialen Position berechnen
       if (selectedPosition != null) {
         await _calculateRadarChartData(selectedPosition!);
       } else {
@@ -114,20 +114,14 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
   }
 
-  // ✅ FUNKTION AKZEPTIERT JETZT EINE POSITION
-// In der Klasse _PlayerScreenState
-
-// In der Klasse _PlayerScreenState in lib/screens/player_screen.dart
-
-// In der Klasse _PlayerScreenState
 
   Future<void> _calculateRadarChartData(String comparisonPosition) async {
-    if (matchRatingsRaw.isEmpty) {
-      if (mounted) setState(() => isLoading = false);
-      return;
-    }
+    if (!mounted) return;
 
-    // --- Schritt 1 & 2: Datenbeschaffung (bleibt unverändert) ---
+    // --- Schritt 1 & 2: Datenbeschaffung ---
+    // (Bleibt größtenteils gleich, aber fügen die Berechnung für den Perzentilwert hinzu)
+
+    // Durchschnittliche Stats des aktuellen Spielers
     Map<String, double> playerAverageStats = {};
     Map<String, double> playerTotalStats = {};
     for (var rating in matchRatingsRaw) {
@@ -143,16 +137,43 @@ class _PlayerScreenState extends State<PlayerScreen>
       });
     }
     final int matchCount = matchRatingsRaw.length;
-    playerAverageStats = playerTotalStats.map((key, value) => MapEntry(key, value / matchCount));
+    if (matchCount > 0) {
+      playerAverageStats = playerTotalStats.map((key, value) => MapEntry(key, value / matchCount));
+    }
 
-    final allRatingsForPosition = await supabase
+
+    // ✅ DATEN FÜR VERGLEICH ALLER SPIELER HOLEN
+    final allRatingsForPositionResponse = await supabase
         .from('matchrating')
-        .select('spieler_id, statistics')
+        .select('spieler_id, statistics, punkte') // 'punkte' mit abfragen
         .eq('match_position', '"$comparisonPosition"');
 
+
+    // Durchschnittswerte für alle Vergleichsspieler berechnen
     Map<int, Map<String, double>> comparisonPlayerAverages = {};
     final Map<int, Map<String, dynamic>> playerAggregates = {};
-    for (var rating in allRatingsForPosition) {
+
+    // ✅ Durchschnittliche Punktzahl für alle Vergleichsspieler berechnen
+    final Map<int, List<double>> allPlayerPoints = {};
+    for (var rating in allRatingsForPositionResponse) {
+      final playerId = rating['spieler_id'] as int;
+      final points = (rating['punkte'] as num? ?? 0.0).toDouble();
+      allPlayerPoints.putIfAbsent(playerId, () => []).add(points);
+    }
+    final List<double> averagePointsPerPlayer = allPlayerPoints.values.map((points) {
+      return points.reduce((a, b) => a + b) / points.length;
+    }).toList();
+
+    // ✅ PERZENTIL FÜR DIE MITTE BERECHNEN
+    double calculatedPercentile = 0;
+    if (averagePointsPerPlayer.isNotEmpty) {
+      averagePointsPerPlayer.sort();
+      int playersBetter = averagePointsPerPlayer.where((score) => score > averagePlayerRating).length;
+      calculatedPercentile = (1 - (playersBetter / averagePointsPerPlayer.length)) * 100.0;
+    }
+
+
+    for (var rating in allRatingsForPositionResponse) {
       final playerId = rating['spieler_id'] as int;
       final stats = rating['statistics'] as Map<String, dynamic>? ?? {};
       playerAggregates.putIfAbsent(playerId, () => {'total_stats': <String, double>{}, 'game_count': 0});
@@ -174,7 +195,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       }
     });
 
-    // --- Schritt 3: ✅ Angepasste Funktion mit Invertierung für negative Stats ---
+    // --- Schritt 3: Perzentil-Berechnung (bleibt gleich) ---
     double calculatePercentileRankForCategory(Map<String, double> weightedStatKeys, {bool higherIsBetter = true}) {
       double getCategoryScore(Map<String, double> stats) {
         double score = 0;
@@ -191,22 +212,17 @@ class _PlayerScreenState extends State<PlayerScreen>
           .map((playerStats) => getCategoryScore(playerStats))
           .toList();
 
-      // Sortierung anpassen: Wenn niedriger besser ist (z.B. bei Fehlern), wird aufsteigend sortiert.
-      allCategoryScores.sort((a, b) => higherIsBetter ? b.compareTo(a) : a.compareTo(b));
-
       int playersBetter = allCategoryScores.where((score) => higherIsBetter ? score > currentPlayerCategoryScore : score < currentPlayerCategoryScore).length;
-
       double percentile = (playersBetter / allCategoryScores.length) * 100.0;
       return 100.0 - percentile;
     }
 
-    // --- Schritt 4: ✅ Logik zur Unterscheidung zwischen Torwart und Feldspieler ---
+    // --- Schritt 4 & 5: Radar-Chart-Daten erstellen (bleibt gleich) ---
     if (mounted) {
-      List<GroupData> finalRadarChartData = [];
+      List<GroupData> finalRadarChartData;
       String genericPosition = availablePositions.first.trim();
 
       if (genericPosition == 'G' || genericPosition == 'TW') {
-        // --- DATENSTRUKTUR FÜR TORHÜTER ---
         finalRadarChartData = [
           GroupData(
             name: 'Torwartspiel',
@@ -235,9 +251,7 @@ class _PlayerScreenState extends State<PlayerScreen>
           ),
         ];
       } else {
-        // --- DATENSTRUKTUR FÜR FELDSPIELER (deine bestehende Logik) ---
         finalRadarChartData = [
-    // Schritt 5: Radar-Chart-Daten mit der neuen Logik erstellen
           GroupData(
             name: 'Schießen',
             backgroundColor: Colors.blue.withOpacity(0.12),
@@ -349,14 +363,16 @@ class _PlayerScreenState extends State<PlayerScreen>
                 'errorLeadToAGoal': 5.0,
                 'errorLeadToAShot': 1.0,
                 'ownGoals': 3.0
-              })),
+              }, higherIsBetter: false)), // Fehler werden als "niedriger ist besser" markiert
             ],
           ),
         ];
       }
 
+
       setState(() {
         radarChartData = finalRadarChartData;
+        averagePlayerRatingPercentile = calculatedPercentile; // ✅ State aktualisieren
         isLoading = false;
       });
     }
@@ -453,11 +469,12 @@ class _PlayerScreenState extends State<PlayerScreen>
                     Expanded(
                       child: Padding(
                         padding: const EdgeInsets.all(16.0),
-                        // ✅ KORREKTUR: "const" vor RadialSegmentChart entfernt
+                        // ✅ BEIDE WERTE AN DAS DIAGRAMM ÜBERGEBEN
                         child: RadialSegmentChart(
                           groups: radarChartData,
                           maxAbsValue: 100.0,
-                          centerLabel: averagePlayerRating.round(),
+                          centerDisplayValue: averagePlayerRating.round(),
+                          centerComparisonValue: averagePlayerRatingPercentile,
                         ),
                       ),
                     ),

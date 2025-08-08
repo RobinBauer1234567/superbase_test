@@ -110,11 +110,15 @@ class _GameScreenState extends State<GameScreen> {
 
 // In der Klasse _GameScreenState in lib/screens/spieltag_screen.dart
 
+// In der Klasse _GameScreenState in lib/screens/spieltag_screen.dart
+
   Future<void> fetchSpieler() async {
     try {
       final heimTeamId = widget.spiel['heimteam_id'];
       final auswaertsTeamId = widget.spiel['auswärtsteam_id'];
       final spielId = widget.spiel['id'];
+
+      print("--- DEBUG: Starte fetchSpieler für Spiel-ID $spielId ---");
 
       // ✅ Abfrage um die neue Spalte 'match_position' erweitert
       final data = await Supabase.instance.client
@@ -122,6 +126,15 @@ class _GameScreenState extends State<GameScreen> {
           .select('*, matchrating!inner(formationsindex, match_position)') // JOIN
           .eq('matchrating.spiel_id', spielId)
           .filter('team_id', 'in', '($heimTeamId, $auswaertsTeamId)');
+
+      print("--- DEBUG: Rohdaten von Supabase erhalten (${data.length} Spieler) ---");
+      // Logge die Rohdaten, um zu sehen, was ankommt
+      for (var spieler in data) {
+        final index = spieler['matchrating']?[0]?['formationsindex'];
+        print("Spieler: ${spieler['name']}, Team: ${spieler['team_id']}, Formationsindex: $index");
+      }
+      print("----------------------------------------------------------");
+
 
       List<Map<String, dynamic>> tempHomePlayersData = [];
       List<Map<String, dynamic>> tempAwayPlayersData = [];
@@ -134,10 +147,29 @@ class _GameScreenState extends State<GameScreen> {
         }
       }
 
-      tempHomePlayersData.sort((a, b) => a['matchrating'][0]['formationsindex'].compareTo(b['matchrating'][0]['formationsindex']));
-      tempAwayPlayersData.sort((a, b) => a['matchrating'][0]['formationsindex'].compareTo(b['matchrating'][0]['formationsindex']));
+      // ✅ ROBUSTERE SORTIERUNG HINZUGEFÜGT
+      // Diese Sortierung fängt null-Werte ab und sortiert sie ans Ende.
+      tempHomePlayersData.sort((a, b) {
+        final indexA = a['matchrating']?[0]?['formationsindex'] ?? 99;
+        final indexB = b['matchrating']?[0]?['formationsindex'] ?? 99;
+        return indexA.compareTo(indexB);
+      });
 
-      // ✅ Erstellt PlayerInfo-Objekte mit der neuen, spezifischen 'match_position'
+      tempAwayPlayersData.sort((a, b) {
+        final indexA = a['matchrating']?[0]?['formationsindex'] ?? 99;
+        final indexB = b['matchrating']?[0]?['formationsindex'] ?? 99;
+        return indexA.compareTo(indexB);
+      });
+
+      print("\n--- DEBUG: Sortierte Heim-Mannschaft ---");
+      tempHomePlayersData.forEach((p) => print("Index: ${p['matchrating'][0]['formationsindex']}, Name: ${p['name']}"));
+      print("----------------------------------------\n");
+
+      print("\n--- DEBUG: Sortierte Auswärts-Mannschaft ---");
+      tempAwayPlayersData.forEach((p) => print("Index: ${p['matchrating'][0]['formationsindex']}, Name: ${p['name']}"));
+      print("----------------------------------------\n");
+
+
       final List<PlayerInfo> finalHomePlayers = tempHomePlayersData
           .map((spieler) => PlayerInfo(id: spieler['id'], name: spieler['name'], position: spieler['matchrating'][0]['match_position']))
           .toList();
@@ -152,12 +184,13 @@ class _GameScreenState extends State<GameScreen> {
       });
     } catch (error) {
       print("Fehler beim Abruf der Spieler: $error");
-      setState(() {
-        isLoading = false;
-      });
+      if(mounted) {
+        setState(() {
+          isLoading = false;
+        });
+      }
     }
-  }
-  @override
+  }  @override
   Widget build(BuildContext context) {
     final heimTeamName = widget.spiel['heimteam']?['name'] ?? 'Team A';
     final auswaertsTeamName = widget.spiel['auswaertsteam']?['name'] ?? 'Team B';

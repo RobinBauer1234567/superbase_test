@@ -27,17 +27,19 @@ class GroupData {
 // WIDGET-KLASSE (JETZT STATEFUL UND MIT NEUER DATEN-API)
 // =================================================================
 class RadialSegmentChart extends StatefulWidget {
-  // Nimmt jetzt eine strukturierte Liste von Gruppen entgegen.
   final List<GroupData> groups;
   final double maxAbsValue;
-  final int? centerLabel;
+  // ✅ UM BENANNT UND ERWEITERT
+  final int? centerDisplayValue; // Der Wert, der in der Mitte angezeigt wird (z.B. die Punktzahl)
+  final double? centerComparisonValue; // Der Wert für die Farbe und das Pop-up (z.B. der Perzentil-Rang)
   final double innerOuterRadiusRatio;
 
   const RadialSegmentChart({
     super.key,
     required this.groups,
     required this.maxAbsValue,
-    this.centerLabel,
+    this.centerDisplayValue,
+    this.centerComparisonValue, // Neuer Parameter
     this.innerOuterRadiusRatio = 2.5,
   }) : assert(innerOuterRadiusRatio > 1.0);
 
@@ -49,7 +51,6 @@ class _RadialSegmentChartState extends State<RadialSegmentChart> {
   OverlayEntry? _overlayEntry;
   int? _selectedSegmentIndex;
 
-  // Hilfs-Getter, um eine flache Liste aller Segmente zu erhalten.
   List<SegmentData> get _allSegments =>
       widget.groups.expand((group) => group.segments).toList();
 
@@ -63,7 +64,8 @@ class _RadialSegmentChartState extends State<RadialSegmentChart> {
     final painter = _RadialSegmentPainter(
       groups: widget.groups,
       maxAbsValue: widget.maxAbsValue,
-      centerLabel: widget.centerLabel,
+      centerDisplayValue: widget.centerDisplayValue,
+      centerComparisonValue: widget.centerComparisonValue,
       innerOuterRadiusRatio: widget.innerOuterRadiusRatio,
     );
 
@@ -73,6 +75,7 @@ class _RadialSegmentChartState extends State<RadialSegmentChart> {
 
     _removeOverlay();
 
+    // index can now be null, a segment index, or -1 for the center
     if (index != null && index != _selectedSegmentIndex) {
       setState(() {
         _selectedSegmentIndex = index;
@@ -92,7 +95,20 @@ class _RadialSegmentChartState extends State<RadialSegmentChart> {
 
   void _showOverlay(BuildContext context, Offset tapPosition, int segmentIndex) {
     final overlayState = Overlay.of(context);
-    final segment = _allSegments[segmentIndex];
+
+    // ✅ Logik für das Overlay erweitert
+    String title;
+    String valueText;
+
+    if (segmentIndex == -1) { // Center was tapped
+      title = "Vergleichswert";
+      valueText = "Besser als ${widget.centerComparisonValue?.toStringAsFixed(0) ?? 'N/A'}% der Spieler";
+    } else {
+      final segment = _allSegments[segmentIndex];
+      title = segment.name;
+      valueText = 'Wert: ${segment.value.toStringAsFixed(1)}';
+    }
+
 
     _overlayEntry = OverlayEntry(
       builder: (context) {
@@ -122,9 +138,9 @@ class _RadialSegmentChartState extends State<RadialSegmentChart> {
                           mainAxisSize: MainAxisSize.min,
                           crossAxisAlignment: CrossAxisAlignment.start,
                           children: [
-                            Text(segment.name, style: const TextStyle(fontWeight: FontWeight.bold)),
+                            Text(title, style: const TextStyle(fontWeight: FontWeight.bold)),
                             const SizedBox(height: 4),
-                            Text('Wert: ${segment.value.toStringAsFixed(2)}'),
+                            Text(valueText),
                           ],
                         ),
                       ),
@@ -150,7 +166,8 @@ class _RadialSegmentChartState extends State<RadialSegmentChart> {
         painter: _RadialSegmentPainter(
           groups: widget.groups,
           maxAbsValue: widget.maxAbsValue,
-          centerLabel: widget.centerLabel,
+          centerDisplayValue: widget.centerDisplayValue,
+          centerComparisonValue: widget.centerComparisonValue,
           innerOuterRadiusRatio: widget.innerOuterRadiusRatio,
           selectedSegmentIndex: _selectedSegmentIndex,
         ),
@@ -188,7 +205,9 @@ class _ChartLayout {
 class _RadialSegmentPainter extends CustomPainter {
   final List<GroupData> groups;
   final double maxAbsValue;
-  final int? centerLabel;
+  // ✅ UM BENANNT UND ERWEITERT
+  final int? centerDisplayValue;
+  final double? centerComparisonValue;
   final double innerOuterRadiusRatio;
   final int? selectedSegmentIndex;
 
@@ -200,7 +219,8 @@ class _RadialSegmentPainter extends CustomPainter {
   _RadialSegmentPainter({
     required this.groups,
     required this.maxAbsValue,
-    required this.centerLabel,
+    required this.centerDisplayValue,
+    required this.centerComparisonValue,
     required this.innerOuterRadiusRatio,
     this.selectedSegmentIndex,
   });
@@ -323,7 +343,12 @@ class _RadialSegmentPainter extends CustomPainter {
   }
 
   void _drawBaseCircle(Canvas canvas, Offset center, _ChartLayout layout) {
-    canvas.drawCircle(center, layout.baseRadius, layout.baseCirclePaint);
+    final isSelected = selectedSegmentIndex == -1;
+    final baseCirclePaint = isSelected
+        ? (Paint()..color = Colors.white..style = PaintingStyle.stroke..strokeWidth = layout.baseCirclePaint.strokeWidth * 2.5)
+        : layout.baseCirclePaint;
+
+    canvas.drawCircle(center, layout.baseRadius, baseCirclePaint);
   }
 
   void _drawGroupLabels(Canvas canvas, Offset center, _ChartLayout layout, double anglePerSegment) {
@@ -345,9 +370,12 @@ class _RadialSegmentPainter extends CustomPainter {
 
   void _drawCenterContent(Canvas canvas, Offset center, _ChartLayout layout) {
     final centerPaint = Paint();
-    final baseColor = centerLabel != null ? _getColorForValue(centerLabel!.toDouble()) : Colors.grey.withOpacity(0.1);
+    // ✅ FARBE BASIERT JETZT AUF DEM VERGLEICHSWERT
+    final baseColor = centerComparisonValue != null
+        ? _getColorForValue(centerComparisonValue!)
+        : Colors.grey.withOpacity(0.1);
 
-    if (centerLabel != null) {
+    if (centerComparisonValue != null) {
       final highlightColor = HSLColor.fromColor(baseColor).withLightness(min(1.0, HSLColor.fromColor(baseColor).lightness + 0.2)).toColor();
       centerPaint.shader = RadialGradient(
         center: const Alignment(-0.4, -0.4),
@@ -361,14 +389,16 @@ class _RadialSegmentPainter extends CustomPainter {
     canvas.drawCircle(center, layout.baseRadius, centerPaint);
     centerPaint.shader = null;
 
-    if (centerLabel != null) {
+    // ✅ TEXT BASIERT AUF DEM ANZEIGEWERT
+    if (centerDisplayValue != null) {
       final textPainter = TextPainter(
-          text: TextSpan(text: centerLabel.toString(), style: layout.centerLabelStyle),
+          text: TextSpan(text: centerDisplayValue.toString(), style: layout.centerLabelStyle),
           textDirection: TextDirection.ltr, textAlign: TextAlign.center)
         ..layout();
       textPainter.paint(canvas, center - Offset(textPainter.width / 2, textPainter.height / 2));
     }
   }
+
 
   Color _getColorForValue(double value) {
     final effectiveMax = maxAbsValue <= 0 ? 1.0 : maxAbsValue;
@@ -424,9 +454,6 @@ class _RadialSegmentPainter extends CustomPainter {
     }
   }
 
-  // =================================================================
-  // ÜBERARBEITETE TREFFER-LOGIK (HIT-TESTING)
-  // =================================================================
   int? getSegmentIndexAt(Offset localPosition, Size size) {
     final center = size.center(Offset.zero);
     final layout = _calculateLayout(size);
@@ -437,32 +464,35 @@ class _RadialSegmentPainter extends CustomPainter {
     final dy = localPosition.dy - center.dy;
 
     final distance = sqrt(dx * dx + dy * dy);
-    var angle = atan2(dy, dx);
 
+    // ✅ PRÜFUNG FÜR DEN MITTELKREIS HINZUGEFÜGT
+    if (distance < layout.baseRadius) {
+      return -1; // Spezieller Wert für die Mitte
+    }
+
+    var angle = atan2(dy, dx);
     if (angle < 0) {
       angle += 2 * pi;
     }
 
-    // Prüft, ob der Klick innerhalb des gesamten interaktiven Rings liegt.
     if (distance >= layout.baseRadius && distance <= layout.groupRingOuterRadius) {
-      // Berechnet den Index direkt aus dem Winkel.
       final index = (angle / anglePerSegment).floor();
-
       if (index >= 0 && index < _totalSegments) {
         return index;
       }
     }
 
-    return null; // Kein Treffer
+    return null;
   }
+
 
   @override
   bool shouldRepaint(covariant _RadialSegmentPainter oldDelegate) {
-    // Die Daten werden jetzt als Ganzes verglichen.
     return oldDelegate is! _RadialSegmentPainter ||
         oldDelegate.groups != groups ||
         oldDelegate.maxAbsValue != maxAbsValue ||
-        oldDelegate.centerLabel != centerLabel ||
+        oldDelegate.centerDisplayValue != centerDisplayValue || // ✅ ERWEITERT
+        oldDelegate.centerComparisonValue != centerComparisonValue || // ✅ ERWEITERT
         oldDelegate.innerOuterRadiusRatio != innerOuterRadiusRatio ||
         oldDelegate.selectedSegmentIndex != selectedSegmentIndex;
   }
