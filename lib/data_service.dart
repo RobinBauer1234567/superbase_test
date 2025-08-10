@@ -91,32 +91,50 @@ class ApiService {
     }
   }
 
+// In der Klasse ApiService in lib/data_service.dart
+
   Future<void> fetchAndStoreSpielerundMatchratings(int spielId, hometeamId, awayteamId) async {
     final url = 'https://www.sofascore.com/api/v1/event/$spielId/lineups';
     final response = await http.get(Uri.parse(url));
 
     if (response.statusCode == 200) {
-      final parsedJson = json.decode(response.body);
-      final String homeFormation = parsedJson['home']?['formation'] ?? '4-4-2';
-      final String awayFormation = parsedJson['away']?['formation'] ?? '4-4-2';
-      await supabaseService.updateSpielFormation(spielId, homeFormation, awayFormation);
+      try {
+        final parsedJson = json.decode(response.body);
 
-      List<dynamic> homePlayers = parsedJson['home']['players'] ?? [];
-      List<dynamic> awayPlayers = parsedJson['away']['players'] ?? [];
+        // Überprüfen, ob die Aufstellungsdaten überhaupt vorhanden sind
+        if (parsedJson['home'] == null || parsedJson['away'] == null) {
+          print(">>> FEHLER bei Spiel $spielId: 'home' oder 'away' Sektion in API-Antwort nicht gefunden.");
+          return; // Funktion für dieses Spiel abbrechen
+        }
 
-      for (int i = 0; i < homePlayers.length; i++) {
-        // ✅ Übergibt die Formation und den Index (i)
-        await processPlayerData(homePlayers[i], hometeamId, spielId, homeFormation, i);
-      }
-      for (int i = 0; i < awayPlayers.length; i++) {
-        // ✅ Übergibt die Formation und den Index (i)
-        await processPlayerData(awayPlayers[i], awayteamId, spielId, awayFormation, i);
+        final String homeFormation = parsedJson['home']?['formation'] ?? 'N/A';
+        final String awayFormation = parsedJson['away']?['formation'] ?? 'N/A';
+        await supabaseService.updateSpielFormation(spielId, homeFormation, awayFormation);
+
+        List<dynamic> homePlayers = parsedJson['home']['players'] ?? [];
+        List<dynamic> awayPlayers = parsedJson['away']['players'] ?? [];
+
+        print("Spiel $spielId: Formation Heim: $homeFormation (${homePlayers.length} Spieler), Auswärts: $awayFormation (${awayPlayers.length} Spieler)");
+
+        if (homePlayers.isEmpty || awayPlayers.isEmpty) {
+          print(">>> WARNUNG bei Spiel $spielId: Eine der Spielerlisten ist leer.");
+        }
+
+        for (int i = 0; i < homePlayers.length; i++) {
+          await processPlayerData(homePlayers[i], hometeamId, spielId, homeFormation, i);
+        }
+        for (int i = 0; i < awayPlayers.length; i++) {
+          await processPlayerData(awayPlayers[i], awayteamId, spielId, awayFormation, i);
+        }
+        print("--- ERFOLGREICH gespeichert für Spiel-ID: $spielId ---");
+
+      } catch (e) {
+        print("!!! KRITISCHER FEHLER bei der Verarbeitung von Spiel $spielId: $e");
       }
     } else {
-      throw Exception("Fehler beim Abrufen der Spieler für Spiel $spielId: ${response.statusCode}");
+      print(">>> FEHLER bei Spiel $spielId: Konnte Aufstellung nicht von API laden (Statuscode: ${response.statusCode})");
     }
   }
-
   Future<void> fetchAndStoreTeams() async {
     final url = '$baseUrl/unique-tournament/17/season/61627/teams';
     final response = await http.get(Uri.parse(url));
@@ -632,9 +650,6 @@ class SupabaseService {
     }
   }
   // Matchrating speichern
-  // In der Klasse SupabaseService in lib/data_service.dart
-
-// ✅ saveMatchrating speichert jetzt auch den formationsindex
   Future<void> saveMatchrating(int id, int spielId, int spielerId, int rating, statistics, int newRating, int formationIndex, String matchPosition) async {
     try {
       await supabase.from('matchrating').upsert(
@@ -646,17 +661,13 @@ class SupabaseService {
             'statistics': statistics,
             'neuepunkte': newRating,
             'formationsindex': formationIndex,
-            'match_position': matchPosition, // Neue Spalte wird hier befüllt
+            'match_position': matchPosition,
           },
           onConflict: 'id');
     } catch (error) {
-      print('Fehler beim Speichern des Matchratings: $error');
+      print("!!! DATENBANK-FEHLER beim Speichern des Matchratings für Spieler $spielerId in Spiel $spielId: $error");
     }
   }
-
-  // In der Klasse SupabaseService in lib/data_service.dart
-
-// ✅ NEUE FUNKTION: Aktualisiert ein Spiel mit den Formations-Daten
   Future<void> updateSpielFormation(int spielId, String homeFormation, String awayFormation) async {
     try {
       await supabase
@@ -670,8 +681,6 @@ class SupabaseService {
       print('Fehler beim Speichern der Formationen: $error');
     }
   }
-
-
   Future<void> saveUniversalStats(String position, Map<String, num> stats, int anzahl) async {
     try {
       await supabase.from('universal_stats').upsert({
