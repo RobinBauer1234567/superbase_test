@@ -37,7 +37,7 @@ class _HomeScreenState extends State<HomeScreen> {
       // ✅ KORREKTUR: Abfrage um hometeam_formation und awayteam_formation erweitert
       final data = await Supabase.instance.client
           .from('spiel')
-          .select('*, heimteam_id, auswärtsteam_id, hometeam_formation, awayteam_formation, heimteam:spiel_heimteam_id_fkey(name), auswaertsteam:spiel_auswärtsteam_id_fkey(name)')
+          .select('*, heimteam_id, auswärtsteam_id, hometeam_formation, awayteam_formation, status, heimteam:spiel_heimteam_id_fkey(name), auswaertsteam:spiel_auswärtsteam_id_fkey(name)')
           .eq('round', widget.round)
           .order('id', ascending: true);
 
@@ -90,7 +90,7 @@ class _HomeScreenState extends State<HomeScreen> {
 }
 
 class GameScreen extends StatefulWidget {
-  final spiel;
+  final Map<String, dynamic> spiel;
   GameScreen({required this.spiel});
   @override
   _GameScreenState createState() => _GameScreenState();
@@ -100,19 +100,55 @@ class _GameScreenState extends State<GameScreen> {
   List<PlayerInfo> homePlayers = [];
   List<PlayerInfo> awayPlayers = [];
   bool isLoading = true;
-  final DataManagement _dataManagement = DataManagement(); // Instanz erstellen
+  final DataManagement _dataManagement = DataManagement();
 
   @override
   void initState() {
     super.initState();
-    fetchSpieler();
+    // NEU: Diese Methode prüft die Daten und aktualisiert sie bei Bedarf.
+    _checkAndUpdateData();
   }
 
-// In der Klasse _GameScreenState in lib/screens/spieltag_screen.dart
+  /// **NEU: Überprüft die Spieleranzahl und den Spielstatus.**
+  /// Ruft bei Bedarf ein Update auf, bevor die Spielerdaten geladen werden.
+  Future<void> _checkAndUpdateData() async {
+    final spielId = widget.spiel['id'];
+    final heimTeamId = widget.spiel['heimteam_id'];
+    final auswaertsTeamId = widget.spiel['auswärtsteam_id'];
+    final status = widget.spiel['status'];
 
-// In der Klasse _GameScreenState in lib/screens/spieltag_screen.dart
+    // Rufe die von dir bereitgestellte Methode auf
+    final spielerAnzahl = await getSpieleranzahl(spielId, heimTeamId, auswaertsTeamId);
+
+    // Prüfe die Bedingungen
+    if (spielerAnzahl < 40 || status != 'final') {
+      print("--- DATEN UNVOLLSTÄNDIG ($spielerAnzahl Spieler, Status: $status). Starte Update für Spiel $spielId ---");
+      // Zeige dem Benutzer, dass etwas passiert
+      setState(() {
+        isLoading = true;
+      });
+      // Rufe die Update-Funktion auf
+      await _dataManagement.updateRatingsForSingleGame(spielId);
+      print("--- Update für Spiel $spielId abgeschlossen ---");
+    }
+
+    // Lade die (jetzt aktuellen) Spielerdaten für die Anzeige
+    await fetchSpieler();
+  }
+
+  /// **NEU: Deine Methode zur Zählung der Spieler, hier integriert.**
+  Future<int> getSpieleranzahl(int spielId, int heimTeamId, int auswaertsTeamId) async {
+    final data = await Supabase.instance.client
+        .from('spieler')
+        .select('*, matchrating!inner(formationsindex, match_position)')
+        .eq('matchrating.spiel_id', spielId)
+        .filter('team_id', 'in', '($heimTeamId, $auswaertsTeamId)');
+
+    return data.length;
+  }
 
   Future<void> fetchSpieler() async {
+    // ... (Diese Methode bleibt unverändert)
     try {
       final heimTeamId = widget.spiel['heimteam_id'];
       final auswaertsTeamId = widget.spiel['auswärtsteam_id'];
@@ -190,8 +226,11 @@ class _GameScreenState extends State<GameScreen> {
         });
       }
     }
-  }  @override
+  }
+
+  @override
   Widget build(BuildContext context) {
+    // ... (Diese Methode bleibt unverändert)
     final heimTeamName = widget.spiel['heimteam']?['name'] ?? 'Team A';
     final auswaertsTeamName = widget.spiel['auswaertsteam']?['name'] ?? 'Team B';
     final homeFormation = widget.spiel['hometeam_formation'] ?? 'N/A';

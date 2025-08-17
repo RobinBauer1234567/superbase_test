@@ -47,6 +47,7 @@ dependencies:
   intl: ^0.20.2
   postgrest: ^2.4.1
   gotrue: ^2.11.1
+  pool: ^1.5.1
 
 dev_dependencies:
   flutter_test:

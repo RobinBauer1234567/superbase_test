@@ -1,7 +1,7 @@
-//match_service.dart
 import 'dart:convert';
 import 'package:flutter/cupertino.dart';
 import 'package:http/http.dart' as http;
+import 'package:pool/pool.dart'; // Import für die Pool-Klasse
 import 'package:premier_league/models/player.dart';
 import 'package:premier_league/models/match.dart';
 import 'package:premier_league/data_service.dart';
@@ -12,109 +12,124 @@ class DataManagement {
   ApiService apiService = ApiService();
   SupabaseService supabaseService = SupabaseService();
 
-  // In der Klasse DataManagement in lib/viewmodels/data_viewmodel.dart
-
   Future<void> collectNewData() async {
     print('start: collectnewData');
 
-    // SCHRITT 1: Zuerst alle Teams abrufen und speichern
+    // SCHRITT 1: Teams abrufen
     await apiService.fetchAndStoreTeams();
     print('Teams gespeichert');
 
-    // SCHRITT 2: Danach die Spieltage abrufen
+    // SCHRITT 2: Spieltage abrufen
     await apiService.fetchAndStoreSpieltage();
     print('spieltage gespeichert');
 
-    // SCHRITT 3: Und dann die Spiele für jeden Spieltag
+    // SCHRITT 3: Spiele für jeden Spieltag abrufen und sicherstellen, dass alles gespeichert ist
     List<int> spieltage = await supabaseService.fetchAllSpieltagIds();
     await Future.wait(spieltage.map((spieltag) async {
       await apiService.fetchAndStoreSpiele(spieltag);
       print('spiele für Spieltag $spieltag gespeichert');
     }));
 
-    // SCHRITT 4: Zum Schluss die Daten aktualisieren
+    // Kurze Pause, um der Datenbank Zeit zur Synchronisierung zu geben
+    await Future.delayed(const Duration(seconds: 5));
+
+    // SCHRITT 4: Daten aktualisieren
     await updateData();
     print('finish');
   }
 
+  /// Teilt eine Liste in kleinere Teillisten (Batches) einer bestimmten Größe auf.
+  List<List<T>> _partition<T>(List<T> list, int size) {
+    if (list.isEmpty) return [];
+    final partitions = <List<T>>[];
+    final partitionCount = (list.length / size).ceil();
+    for (var i = 0; i < partitionCount; i++) {
+      final start = i * size;
+      final end = (start + size < list.length) ? start + size : list.length;
+      partitions.add(list.sublist(start, end));
+    }
+    return partitions;
+  }
+
+  /// **Die optimierte updateData-Funktion**
   Future<void> updateData() async {
     List<int> spieltage = await supabaseService.fetchAllSpieltagIds();
     print('Update gestartet');
 
-    await Future.wait(spieltage.map((spieltagId) async {
-      final response = await _supabase
-          .from('spieltag')
-          .select('status')
-          .eq('round', spieltagId)
-          .maybeSingle();
+    // Erstellt einen Pool, der die Anzahl gleichzeitiger Anfragen begrenzt (z.B. auf 10)
+    // Dieser Wert kann je nach Bedarf angepasst werden.
+    final pool = Pool(20);
+    final batches = _partition(spieltage, 5); // Spieltage in 5er-Batches verarbeiten
 
-      if (response == null || response['status'] == null) {
-        print('Kein Status für Spieltag $spieltagId gefunden.');
-        return;
-      }
+    for (final batch in batches) {
+      await Future.wait(batch.map((spieltagId) async {
+        final response = await _supabase
+            .from('spieltag')
+            .select('status')
+            .eq('round', spieltagId)
+            .maybeSingle();
 
-      String spieltagStatus = response['status'];
-      if (spieltagStatus == 'final') {
-        print('Spieltag: $spieltagId ist bereits final');
-        return;
-      }
-
-      List<int> spiele = await supabaseService.fetchSpielIdsForRound(spieltagId);
-
-      // ⚡ Parallel alle Spiele abfragen
-      List<Map<String, dynamic>?> spielDaten = await Future.wait(
-        spiele.map((spiel) async {
-          return await _supabase
-              .from('spiel')
-              .select('id, status, heimteam_id, auswärtsteam_id')
-              .eq('id', spiel)
-              .maybeSingle();
-        }),
-      );
-
-      List<String> spielStatusSpieltag = [];
-
-      // ⚡ Parallel alle Spiele verarbeiten
-      await Future.wait(spielDaten.map((spielResponse) async {
-        if (spielResponse == null) return;
-
-        String status = spielResponse['status'] ?? 'unbekannt';
-        int hometeamId = spielResponse['heimteam_id'] ?? -1;
-        int awayteamId = spielResponse['auswärtsteam_id'] ?? -1;
-        int spielId = spielResponse['id'];
-
-        if (status != 'final') {
-          String neuerStatus = await getSpielStatus(spielId);
-          if (status != neuerStatus) {
-            await supabaseService.updateSpielStatus(spielId, neuerStatus);
-            status = neuerStatus;
+        if (response == null || response['status'] == null || response['status'] == 'final') {
+          if (response != null && response['status'] == 'final') {
+            print('Spieltag: $spieltagId ist bereits final');
+          } else {
+            print('Kein Status für Spieltag $spieltagId gefunden.');
           }
-          if (neuerStatus != 'nicht gestartet'){
-            await apiService.fetchAndStoreSpielerundMatchratings(spielId, hometeamId, awayteamId);
-          }
+          return;
         }
 
-        spielStatusSpieltag.add(status);
+        final spieleResponse = await _supabase
+            .from('spiel')
+            .select('id, status, heimteam_id, auswärtsteam_id')
+            .eq('round', spieltagId);
+
+        List<String> spielStatusSpieltag = [];
+        List<Future> gameUpdateFutures = [];
+
+        for (final spielData in spieleResponse) {
+          final future = pool.withResource(() async {
+            int spielId = spielData['id'];
+            String status = spielData['status'] ?? 'unbekannt';
+            int hometeamId = spielData['heimteam_id'] ?? -1;
+            int awayteamId = spielData['auswärtsteam_id'] ?? -1;
+
+            if (status != 'final') {
+              String neuerStatus = await getSpielStatus(spielId);
+              if (status != neuerStatus) {
+                await supabaseService.updateSpielStatus(spielId, neuerStatus);
+                status = neuerStatus;
+              }
+              if (neuerStatus != 'nicht gestartet') {
+                await apiService.fetchAndStoreSpielerundMatchratings(
+                    spielId, hometeamId, awayteamId);
+              }
+            }
+            spielStatusSpieltag.add(status);
+          });
+          gameUpdateFutures.add(future);
+        }
+
+        await Future.wait(gameUpdateFutures);
+
+        // Spieltag-Status setzen
+        if (spielStatusSpieltag.every((s) => s == 'final')) {
+          await supabaseService.updateSpieltagStatus(spieltagId, 'final');
+        } else if (spielStatusSpieltag.every((s) => s == 'nicht gestartet')) {
+          await supabaseService.updateSpieltagStatus(spieltagId, 'nicht gestartet');
+        } else if (spielStatusSpieltag.any((s) => s == 'nicht gestartet') ||
+            spielStatusSpieltag.any((s) => s == 'läuft')) {
+          await supabaseService.updateSpieltagStatus(spieltagId, 'läuft');
+        } else {
+          await supabaseService.updateSpieltagStatus(spieltagId, 'beendet');
+        }
+
+        print('Spieltag $spieltagId wurde geupdated');
       }));
-
-      // ✅ Spieltag-Status setzen
-      if (spielStatusSpieltag.every((s) => s == 'final')) {
-        await supabaseService.updateSpieltagStatus(spieltagId, 'final');
-      } else if (spielStatusSpieltag.every((s) => s == 'nicht gestartet')) {
-        await supabaseService.updateSpieltagStatus(spieltagId, 'nicht gestartet');
-      } else if (spielStatusSpieltag.any((s) => s == 'nicht gestartet') || spielStatusSpieltag.any((s) => s == 'läuft')) {
-        await supabaseService.updateSpieltagStatus(spieltagId, 'läuft');
-      } else {
-        await supabaseService.updateSpieltagStatus(spieltagId, 'beendet');
-      }
-
-      print('Spieltag $spieltagId wurde geupdated');
-    }));
+      await Future.delayed(const Duration(seconds: 1)); // Kurze Pause zwischen den Batches
+    }
   }
 
-
-
-  Future <String> getSpielStatus (spielId) async {
+  Future<String> getSpielStatus(spielId) async {
     String spielstatus;
     DateTime spielDatum = await supabaseService.fetchSpieldatum(spielId);
     DateTime jetzt = DateTime.now();
@@ -138,12 +153,11 @@ class DataManagement {
   Future<void> updateRatingsForSingleGame(int spielId) async {
     print('Starte Update für Spiel-ID: $spielId');
     try {
-      // 1. Hole die Team-IDs für das spezifische Spiel
       final spielResponse = await _supabase
           .from('spiel')
           .select('heimteam_id, auswärtsteam_id')
           .eq('id', spielId)
-          .single(); // .single() erwartet genau einen Datensatz
+          .single();
 
       final hometeamId = spielResponse['heimteam_id'];
       final awayteamId = spielResponse['auswärtsteam_id'];
@@ -153,8 +167,6 @@ class DataManagement {
         return;
       }
 
-      // 2. Rufe die bestehende Funktion auf, um die neuesten Spieler- und Rating-Daten
-      // von der API zu holen und in Supabase zu speichern (upsert aktualisiert sie).
       await apiService.fetchAndStoreSpielerundMatchratings(spielId, hometeamId, awayteamId);
 
       print('Update für Spiel-ID: $spielId erfolgreich abgeschlossen.');
@@ -163,60 +175,4 @@ class DataManagement {
     }
   }
 
-  Future<void> aggregateUniversalStats() async {
-    print('Starte Aggregation der Universal Stats für spezifische Positionen...');
-    try {
-      // 1. Alle relevanten Match-Ratings mit Position und Statistiken abrufen
-      final allRatings = await _supabase
-          .from('matchrating')
-          .select('match_position, statistics');
-
-      // 2. Map zur Zwischenspeicherung der aggregierten Daten erstellen
-      final Map<String, Map<String, dynamic>> aggregatedData = {};
-
-      // 3. Alle Match-Ratings durchlaufen und die Stats pro Position aufaddieren
-      for (final rating in allRatings) {
-        final position = rating['match_position'] as String?;
-        final stats = rating['statistics'] as Map<String, dynamic>?;
-
-        // Überspringe, falls Position oder Stats ungültig sind
-        if (position == null || stats == null || ['SUB', 'N/A', ''].contains(position)) {
-          continue;
-        }
-
-        // Initialisiere den Eintrag für die Position, falls er noch nicht existiert
-        aggregatedData.putIfAbsent(position, () => {'statistics': <String, double>{}, 'anzahl': 0});
-
-        // Die einzelnen Statistik-Werte aufaddieren
-        final currentStats = aggregatedData[position]!['statistics'] as Map<String, double>;
-        stats.forEach((key, value) {
-          double statValue = 0;
-          if (value is num) {
-            statValue = value.toDouble();
-          } else if (value is Map && value.containsKey('total')) {
-            statValue = (value['total'] as num? ?? 0).toDouble();
-          }
-          currentStats[key] = (currentStats[key] ?? 0.0) + statValue;
-        });
-
-        // Die Anzahl der Spiele für diese Position um 1 erhöhen
-        aggregatedData[position]!['anzahl'] = (aggregatedData[position]!['anzahl'] as int) + 1;
-      }
-
-      // 4. Die finalen, aggregierten Daten in die 'universal_stats'-Tabelle speichern
-      for (final entry in aggregatedData.entries) {
-        final position = entry.key;
-        final stats = entry.value['statistics'] as Map<String, double>;
-        final anzahl = entry.value['anzahl'] as int;
-
-        final Map<String, num> finalStats = stats.map((key, value) => MapEntry(key, value));
-
-        await supabaseService.saveUniversalStats(position, finalStats, anzahl);
-      }
-
-      print('Aggregation der Universal Stats erfolgreich abgeschlossen.');
-    } catch (error) {
-      print('Ein Fehler ist bei der Aggregation der Universal Stats aufgetreten: $error');
-    }
-  }
 }

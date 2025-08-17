@@ -681,15 +681,14 @@ class SupabaseService {
       print('Fehler beim Speichern der Formationen: $error');
     }
   }
-  Future<void> saveUniversalStats(String position, Map<String, num> stats, int anzahl) async {
-    try {
-      await supabase.from('universal_stats').upsert({
-        'position': position,
-        'statistics': stats,
-        'anzahl': anzahl,
-      }, onConflict: 'position'); // Wichtig: 'position' muss der Primary Key sein
-    } catch (error) {
-      print('Fehler beim Speichern der Universal Stats für Position $position: $error');
-    }
+  Future<int> getSpieleranzahl(int spielId, int heimTeamId, int auswaertsTeamId) async {
+    final data = await Supabase.instance.client
+        .from('spieler')
+        .select('*, matchrating!inner(formationsindex, match_position)')
+        .eq('matchrating.spiel_id', spielId)
+        .filter('team_id', 'in', '($heimTeamId, $auswaertsTeamId)');
+
+    print("--- DEBUG: Rohdaten von Supabase erhalten (${data.length} Spieler) ---");
+    return data.length;
   }
 }
