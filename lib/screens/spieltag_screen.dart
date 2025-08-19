@@ -3,6 +3,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:premier_league/screens/screenelements/match_screen/formations.dart';
 import 'package:premier_league/viewmodels/data_viewmodel.dart';
 import 'package:premier_league/screens/player_screen.dart';
+import 'package:premier_league/screens/screenelements/match_screen/matchrating_screen.dart';
 
 // HomeScreen: Zeigt jetzt die Spiele für einen bestimmten Spieltag an.
 class HomeScreen extends StatefulWidget {
@@ -31,13 +32,16 @@ class _HomeScreenState extends State<HomeScreen> {
   /// Diese Funktion holt die Spieldaten und verknüpft sie direkt mit den Teamnamen.
   /// Das ist die effizienteste Methode.
   Future<void> fetchSpieleAndTeamNames() async {
-    setState(() { isLoading = true; });
+    setState(() {
+      isLoading = true;
+    });
 
     try {
       // ✅ KORREKTUR: Abfrage um hometeam_formation und awayteam_formation erweitert
       final data = await Supabase.instance.client
           .from('spiel')
-          .select('*, heimteam_id, auswärtsteam_id, hometeam_formation, awayteam_formation, heimteam:spiel_heimteam_id_fkey(name), auswaertsteam:spiel_auswärtsteam_id_fkey(name)')
+          .select(
+          '*, heimteam_id, auswärtsteam_id, hometeam_formation, awayteam_formation, heimteam:spiel_heimteam_id_fkey(name), auswaertsteam:spiel_auswärtsteam_id_fkey(name)')
           .eq('round', widget.round)
           .order('id', ascending: true);
 
@@ -49,14 +53,14 @@ class _HomeScreenState extends State<HomeScreen> {
       print("Fehler beim Abruf der Spiele: $error");
       if (mounted) {
         ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Fehler: ${error.toString()}'))
-        );
+            SnackBar(content: Text('Fehler: ${error.toString()}')));
       }
       setState(() {
         isLoading = false;
       });
     }
   }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -68,9 +72,9 @@ class _HomeScreenState extends State<HomeScreen> {
         itemBuilder: (context, index) {
           final spiel = spiele[index];
 
-
           final heimTeamName = spiel['heimteam']['name'] ?? 'Unbekannt';
-          final auswaertsTeamName = spiel['auswaertsteam']['name'] ?? 'Unbekannt';
+          final auswaertsTeamName =
+              spiel['auswaertsteam']['name'] ?? 'Unbekannt';
 
           return ListTile(
             title: Text("$heimTeamName vs $auswaertsTeamName"),
@@ -79,7 +83,8 @@ class _HomeScreenState extends State<HomeScreen> {
             onTap: () {
               Navigator.push(
                 context,
-                MaterialPageRoute(builder: (context) => GameScreen(spiel: spiel)),
+                MaterialPageRoute(
+                    builder: (context) => GameScreen(spiel: spiel)),
               );
             },
           );
@@ -101,10 +106,12 @@ class _GameScreenState extends State<GameScreen> {
   List<PlayerInfo> homeSubstitutes = [];
   List<PlayerInfo> awayPlayers = [];
   List<PlayerInfo> awaySubstitutes = [];
+  List<dynamic> data = [];
   bool isLoading = true;
   final DataManagement _dataManagement = DataManagement(); // Instanz erstellen
 
-  String? _expandedBench; // Hält den Zustand, welche Bank ausgeklappt ist ('home' oder 'away')
+  String?
+  _expandedBench; // Hält den Zustand, welche Bank ausgeklappt ist ('home' oder 'away')
   double playerAvatarRadiusOnField = 20.0; // Standardwert
 
   @override
@@ -123,20 +130,22 @@ class _GameScreenState extends State<GameScreen> {
       print("--- DEBUG: Starte fetchSpieler für Spiel-ID $spielId ---");
 
       // ✅ Abfrage um die neue Spalte 'match_position' erweitert
-      final data = await Supabase.instance.client
+      data = await Supabase.instance.client
           .from('spieler')
-          .select('*, profilbild_url, matchrating!inner(formationsindex, match_position, punkte, statistics)') // JOIN und punkte hinzugefügt
+          .select(
+          '*, profilbild_url, matchrating!inner(formationsindex, match_position, punkte, statistics)') // JOIN und punkte hinzugefügt
           .eq('matchrating.spiel_id', spielId)
           .filter('team_id', 'in', '($heimTeamId, $auswaertsTeamId)');
 
-      print("--- DEBUG: Rohdaten von Supabase erhalten (${data.length} Spieler) ---");
+      print(
+          "--- DEBUG: Rohdaten von Supabase erhalten (${data.length} Spieler) ---");
       // Logge die Rohdaten, um zu sehen, was ankommt
       for (var spieler in data) {
         final index = spieler['matchrating']?[0]?['formationsindex'];
-        print("Spieler: ${spieler['name']}, Team: ${spieler['team_id']}, Formationsindex: $index");
+        print(
+            "Spieler: ${spieler['name']}, Team: ${spieler['team_id']}, Formationsindex: $index");
       }
       print("----------------------------------------------------------");
-
 
       List<Map<String, dynamic>> tempHomePlayersData = [];
       List<Map<String, dynamic>> tempAwayPlayersData = [];
@@ -164,11 +173,13 @@ class _GameScreenState extends State<GameScreen> {
       });
 
       print("\n--- DEBUG: Sortierte Heim-Mannschaft ---");
-      tempHomePlayersData.forEach((p) => print("Index: ${p['matchrating'][0]['formationsindex']}, Name: ${p['name']}"));
+      tempHomePlayersData.forEach((p) => print(
+          "Index: ${p['matchrating'][0]['formationsindex']}, Name: ${p['name']}"));
       print("----------------------------------------\n");
 
       print("\n--- DEBUG: Sortierte Auswärts-Mannschaft ---");
-      tempAwayPlayersData.forEach((p) => print("Index: ${p['matchrating'][0]['formationsindex']}, Name: ${p['name']}"));
+      tempAwayPlayersData.forEach((p) => print(
+          "Index: ${p['matchrating'][0]['formationsindex']}, Name: ${p['name']}"));
       print("----------------------------------------\n");
 
       PlayerInfo _mapToPlayerInfo(Map<String, dynamic> spieler) {
@@ -187,8 +198,6 @@ class _GameScreenState extends State<GameScreen> {
         );
       }
 
-
-
       final List<PlayerInfo> finalHomePlayers = tempHomePlayersData
           .where((s) => s['matchrating'][0]['formationsindex'] < 11)
           .map(_mapToPlayerInfo)
@@ -206,6 +215,11 @@ class _GameScreenState extends State<GameScreen> {
           .map(_mapToPlayerInfo)
           .toList();
 
+      if (data.length != 40){
+        _dataManagement.updateRatingsForSingleGame(spielId);
+        fetchSpieler();
+        return;
+      }
       setState(() {
         homePlayers = finalHomePlayers;
         homeSubstitutes = finalHomeSubstitutes;
@@ -213,9 +227,10 @@ class _GameScreenState extends State<GameScreen> {
         awaySubstitutes = finalAwaySubstitutes;
         isLoading = false;
       });
+
     } catch (error) {
       print("Fehler beim Abruf der Spieler: $error");
-      if(mounted) {
+      if (mounted) {
         setState(() {
           isLoading = false;
         });
@@ -223,7 +238,8 @@ class _GameScreenState extends State<GameScreen> {
     }
   }
 
-  Widget _buildSubstitutesContent(List<PlayerInfo> substitutes, Color teamColor) {
+  Widget _buildSubstitutesContent(
+      List<PlayerInfo> substitutes, Color teamColor) {
     return Card(
       margin: EdgeInsets.zero,
       child: ListView.builder(
@@ -236,10 +252,21 @@ class _GameScreenState extends State<GameScreen> {
             player: player,
             teamColor: teamColor,
             avatarRadius: playerAvatarRadiusOnField,
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(builder: (context) => PlayerScreen(playerId: player.id)),
-            ),
+            onTap: () {
+              final spielerDaten =
+              data.firstWhere((element) => element['id'] == player.id);
+              final matchStatistics =
+              spielerDaten['matchrating'][0]['statistics'];
+              showDialog(
+                context: context,
+                builder: (BuildContext context) {
+                  return MatchRatingScreen(
+                    playerInfo: player,
+                    matchStatistics: matchStatistics,
+                  );
+                },
+              );
+            },
           );
         },
       ),
@@ -249,11 +276,12 @@ class _GameScreenState extends State<GameScreen> {
   @override
   Widget build(BuildContext context) {
     final heimTeamName = widget.spiel['heimteam']?['name'] ?? 'Team A';
-    final auswaertsTeamName = widget.spiel['auswaertsteam']?['name'] ?? 'Team B';
+    final auswaertsTeamName =
+        widget.spiel['auswaertsteam']?['name'] ?? 'Team B';
     final homeFormation = widget.spiel['hometeam_formation'] ?? 'N/A';
     final awayFormation = widget.spiel['awayteam_formation'] ?? 'N/A';
     final homeColor = Colors.blue.shade700; // Heimteam-Farbe
-    final awayColor = Colors.red.shade700;   // Auswärtsteam-Farbe
+    final awayColor = Colors.red.shade700; // Auswärtsteam-Farbe
 
     return Scaffold(
       appBar: AppBar(
@@ -263,9 +291,10 @@ class _GameScreenState extends State<GameScreen> {
             icon: const Icon(Icons.refresh),
             onPressed: () async {
               setState(() => isLoading = true);
-              await _dataManagement.updateRatingsForSingleGame(widget.spiel['id']);
+              await _dataManagement
+                  .updateRatingsForSingleGame(widget.spiel['id']);
               await fetchSpieler();
-              if(mounted) {
+              if (mounted) {
                 setState(() => isLoading = false);
                 ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text('Daten wurden aktualisiert!')),
@@ -277,130 +306,149 @@ class _GameScreenState extends State<GameScreen> {
       ),
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
-          : LayoutBuilder(
-          builder: (context, constraints) {
-            // Aktualisiere den Radius basierend auf der verfügbaren Breite
-            playerAvatarRadiusOnField = constraints.maxHeight / 40;
+          : LayoutBuilder(builder: (context, constraints) {
+        // Aktualisiere den Radius basierend auf der verfügbaren Breite
+        playerAvatarRadiusOnField = constraints.maxHeight / 40;
 
-            return Stack(
-              children: [
-                // Spielfeld im Hintergrund
-                Positioned.fill(
-                  bottom: 48, // Platz für die Bank-Titel
-                  child: (homePlayers.length >= 11 && awayPlayers.length >= 11)
-                      ? Center(
-                    child: MatchFormationDisplay(
-                      homeFormation: homeFormation,
-                      homePlayers: homePlayers,
-                      homeColor: homeColor,
-                      awayFormation: awayFormation,
-                      awayPlayers: awayPlayers,
-                      awayColor: awayColor,
-                      onPlayerTap: (playerId) {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => PlayerScreen(playerId: playerId),
-                          ),
-                        );
-                      },
-                    ),
-                  )
-                      : const Center(
-                    child: Text("Nicht genügend Spielerdaten für die Formationsanzeige."),
-                  ),
-                ),
-
-                // Ausgeklappte Bank-Inhalte (über dem Spielfeld)
-                Positioned(
-                  bottom: 48, // Direkt über den Titeln
-                  left: 0,
-                  right: 0,
-                  child: AnimatedSwitcher(
-                    duration: const Duration(milliseconds: 200),
-                    transitionBuilder: (child, animation) {
-                      return SizeTransition(
-                        sizeFactor: animation,
-                        axisAlignment: -1.0,
-                        child: child,
+        return Stack(
+          children: [
+            // Spielfeld im Hintergrund
+            Positioned.fill(
+              bottom: 48, // Platz für die Bank-Titel
+              child: (homePlayers.length >= 11 &&
+                  awayPlayers.length >= 11)
+                  ? Center(
+                  child: MatchFormationDisplay(
+                    homeFormation: homeFormation,
+                    homePlayers: homePlayers,
+                    homeColor: homeColor,
+                    awayFormation: awayFormation,
+                    awayPlayers: awayPlayers,
+                    awayColor: awayColor,
+                    onPlayerTap: (player) {
+                      final spielerDaten = data.firstWhere(
+                              (element) => element['id'] == player.id);
+                      final matchStatistics =
+                      spielerDaten['matchrating'][0]['statistics'];
+                      showDialog(
+                        context: context,
+                        builder: (BuildContext context) {
+                          return MatchRatingScreen(
+                            playerInfo: player,
+                            matchStatistics: matchStatistics,
+                          );
+                        },
                       );
                     },
-                    child: _expandedBench == 'home'
-                        ? _buildSubstitutesContent(homeSubstitutes, homeColor)
-                        : _expandedBench == 'away'
-                        ? _buildSubstitutesContent(awaySubstitutes, awayColor)
-                        : const SizedBox.shrink(),
-                  ),
-                ),
+                  ))
+                  : const Center(
+                child: Text(
+                    "Nicht genügend Spielerdaten für die Formationsanzeige."),
+              ),
+            ),
 
-                // Klickbare Titel der Ersatzbänke am unteren Rand
-                Positioned(
-                  bottom: 0,
-                  left: 0,
-                  right: 0,
-                  child: Row(
-                    children: [
-                      if (homeSubstitutes.isNotEmpty)
-                        Expanded(
-                          child: GestureDetector(
-                            onTap: () {
-                              setState(() {
-                                _expandedBench = (_expandedBench == 'home') ? null : 'home';
-                              });
-                            },
-                            child: Card(
-                              margin: EdgeInsets.zero,
-                              elevation: 4,
-                              child: Container(
-                                height: 48,
-                                alignment: Alignment.center,
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    const Text("Ersatzbank Heim", style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
-                                    Icon(_expandedBench == 'home' ? Icons.keyboard_arrow_down : Icons.keyboard_arrow_up),
-                                  ],
-                                ),
-                              ),
+            // Ausgeklappte Bank-Inhalte (über dem Spielfeld)
+            Positioned(
+              bottom: 48, // Direkt über den Titeln
+              left: 0,
+              right: 0,
+              child: AnimatedSwitcher(
+                duration: const Duration(milliseconds: 200),
+                transitionBuilder: (child, animation) {
+                  return SizeTransition(
+                    sizeFactor: animation,
+                    axisAlignment: -1.0,
+                    child: child,
+                  );
+                },
+                child: _expandedBench == 'home'
+                    ? _buildSubstitutesContent(
+                    homeSubstitutes, homeColor)
+                    : _expandedBench == 'away'
+                    ? _buildSubstitutesContent(
+                    awaySubstitutes, awayColor)
+                    : const SizedBox.shrink(),
+              ),
+            ),
+
+            // Klickbare Titel der Ersatzbänke am unteren Rand
+            Positioned(
+              bottom: 0,
+              left: 0,
+              right: 0,
+              child: Row(
+                children: [
+                  if (homeSubstitutes.isNotEmpty)
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () {
+                          setState(() {
+                            _expandedBench =
+                            (_expandedBench == 'home') ? null : 'home';
+                          });
+                        },
+                        child: Card(
+                          margin: EdgeInsets.zero,
+                          elevation: 4,
+                          child: Container(
+                            height: 48,
+                            alignment: Alignment.center,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Text("Ersatzbank Heim",
+                                    style: TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.bold)),
+                                Icon(_expandedBench == 'home'
+                                    ? Icons.keyboard_arrow_down
+                                    : Icons.keyboard_arrow_up),
+                              ],
                             ),
                           ),
                         ),
-                      if (awaySubstitutes.isNotEmpty)
-                        Expanded(
-                          child: GestureDetector(
-                            onTap: () {
-                              setState(() {
-                                _expandedBench = (_expandedBench == 'away') ? null : 'away';
-                              });
-                            },
-                            child: Card(
-                              margin: EdgeInsets.zero,
-                              elevation: 4,
-                              child: Container(
-                                height: 48,
-                                alignment: Alignment.center,
-                                child: Row(
-                                  mainAxisAlignment: MainAxisAlignment.center,
-                                  children: [
-                                    const Text("Ersatzbank Auswärts", style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
-                                    Icon(_expandedBench == 'away' ? Icons.keyboard_arrow_down : Icons.keyboard_arrow_up),
-                                  ],
-                                ),
-                              ),
+                      ),
+                    ),
+                  if (awaySubstitutes.isNotEmpty)
+                    Expanded(
+                      child: GestureDetector(
+                        onTap: () {
+                          setState(() {
+                            _expandedBench =
+                            (_expandedBench == 'away') ? null : 'away';
+                          });
+                        },
+                        child: Card(
+                          margin: EdgeInsets.zero,
+                          elevation: 4,
+                          child: Container(
+                            height: 48,
+                            alignment: Alignment.center,
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.center,
+                              children: [
+                                const Text("Ersatzbank Auswärts",
+                                    style: TextStyle(
+                                        fontSize: 14,
+                                        fontWeight: FontWeight.bold)),
+                                Icon(_expandedBench == 'away'
+                                    ? Icons.keyboard_arrow_down
+                                    : Icons.keyboard_arrow_up),
+                              ],
                             ),
                           ),
                         ),
-                    ],
-                  ),
-                ),
-              ],
-            );
-          }
-      ),
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ],
+        );
+      }),
     );
   }
 }
-
 
 /// Widget für eine einzelne Spieler-Zeile auf der Ersatzbank
 class SubstitutePlayerRow extends StatelessWidget {
@@ -435,7 +483,8 @@ class SubstitutePlayerRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bool isGoalkeeper = player.position.toUpperCase() == 'TW' || player.position.toUpperCase() == 'G';
+    final bool isGoalkeeper =
+        player.position.toUpperCase() == 'TW' || player.position.toUpperCase() == 'G';
     // Dynamische Schriftgrößen
     final double titleFontSize = avatarRadius * 0.8;
     final double ratingFontSize = avatarRadius * 0.8;
@@ -444,7 +493,7 @@ class SubstitutePlayerRow extends StatelessWidget {
       dense: true,
       onTap: onTap,
       // Die Höhe der Zeile passt sich jetzt an die Größe des Avatars an
-      visualDensity: VisualDensity(vertical: avatarRadius / 50 ),
+      visualDensity: VisualDensity(vertical: avatarRadius / 50),
       contentPadding: EdgeInsets.symmetric(
         horizontal: 16.0, // Horizontaler Abstand bleibt fest
         vertical: 0, // Vertikaler Abstand ist jetzt dynamisch
@@ -480,7 +529,8 @@ class SubstitutePlayerRow extends StatelessWidget {
         ],
       ),
       trailing: Container(
-        padding: EdgeInsets.symmetric(horizontal: avatarRadius * 0.3, vertical: avatarRadius * 0.1),
+        padding: EdgeInsets.symmetric(
+            horizontal: avatarRadius * 0.3, vertical: avatarRadius * 0.1),
         decoration: BoxDecoration(
           color: _getColorForRating(player.rating),
           borderRadius: BorderRadius.circular(4),
