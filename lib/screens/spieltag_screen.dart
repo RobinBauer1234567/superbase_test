@@ -37,7 +37,7 @@ class _HomeScreenState extends State<HomeScreen> {
       // ✅ KORREKTUR: Abfrage um hometeam_formation und awayteam_formation erweitert
       final data = await Supabase.instance.client
           .from('spiel')
-          .select('*, heimteam_id, auswärtsteam_id, hometeam_formation, awayteam_formation, status, heimteam:spiel_heimteam_id_fkey(name), auswaertsteam:spiel_auswärtsteam_id_fkey(name)')
+          .select('*, heimteam_id, auswärtsteam_id, hometeam_formation, awayteam_formation, heimteam:spiel_heimteam_id_fkey(name), auswaertsteam:spiel_auswärtsteam_id_fkey(name)')
           .eq('round', widget.round)
           .order('id', ascending: true);
 
@@ -90,7 +90,7 @@ class _HomeScreenState extends State<HomeScreen> {
 }
 
 class GameScreen extends StatefulWidget {
-  final Map<String, dynamic> spiel;
+  final dynamic spiel;
   GameScreen({required this.spiel});
   @override
   _GameScreenState createState() => _GameScreenState();
@@ -98,57 +98,22 @@ class GameScreen extends StatefulWidget {
 
 class _GameScreenState extends State<GameScreen> {
   List<PlayerInfo> homePlayers = [];
+  List<PlayerInfo> homeSubstitutes = [];
   List<PlayerInfo> awayPlayers = [];
+  List<PlayerInfo> awaySubstitutes = [];
   bool isLoading = true;
-  final DataManagement _dataManagement = DataManagement();
+  final DataManagement _dataManagement = DataManagement(); // Instanz erstellen
+
+  String? _expandedBench; // Hält den Zustand, welche Bank ausgeklappt ist ('home' oder 'away')
 
   @override
   void initState() {
     super.initState();
-    // NEU: Diese Methode prüft die Daten und aktualisiert sie bei Bedarf.
-    _checkAndUpdateData();
-  }
-
-  /// **NEU: Überprüft die Spieleranzahl und den Spielstatus.**
-  /// Ruft bei Bedarf ein Update auf, bevor die Spielerdaten geladen werden.
-  Future<void> _checkAndUpdateData() async {
-    final spielId = widget.spiel['id'];
-    final heimTeamId = widget.spiel['heimteam_id'];
-    final auswaertsTeamId = widget.spiel['auswärtsteam_id'];
-    final status = widget.spiel['status'];
-
-    // Rufe die von dir bereitgestellte Methode auf
-    final spielerAnzahl = await getSpieleranzahl(spielId, heimTeamId, auswaertsTeamId);
-
-    // Prüfe die Bedingungen
-    if (spielerAnzahl < 40 || status != 'final') {
-      print("--- DATEN UNVOLLSTÄNDIG ($spielerAnzahl Spieler, Status: $status). Starte Update für Spiel $spielId ---");
-      // Zeige dem Benutzer, dass etwas passiert
-      setState(() {
-        isLoading = true;
-      });
-      // Rufe die Update-Funktion auf
-      await _dataManagement.updateRatingsForSingleGame(spielId);
-      print("--- Update für Spiel $spielId abgeschlossen ---");
-    }
-
-    // Lade die (jetzt aktuellen) Spielerdaten für die Anzeige
-    await fetchSpieler();
-  }
-
-  /// **NEU: Deine Methode zur Zählung der Spieler, hier integriert.**
-  Future<int> getSpieleranzahl(int spielId, int heimTeamId, int auswaertsTeamId) async {
-    final data = await Supabase.instance.client
-        .from('spieler')
-        .select('*, matchrating!inner(formationsindex, match_position)')
-        .eq('matchrating.spiel_id', spielId)
-        .filter('team_id', 'in', '($heimTeamId, $auswaertsTeamId)');
-
-    return data.length;
+    fetchSpieler();
   }
 
   Future<void> fetchSpieler() async {
-    // ... (Diese Methode bleibt unverändert)
+    // ... (Datenabruf bleibt unverändert)
     try {
       final heimTeamId = widget.spiel['heimteam_id'];
       final auswaertsTeamId = widget.spiel['auswärtsteam_id'];
@@ -159,7 +124,7 @@ class _GameScreenState extends State<GameScreen> {
       // ✅ Abfrage um die neue Spalte 'match_position' erweitert
       final data = await Supabase.instance.client
           .from('spieler')
-          .select('*, matchrating!inner(formationsindex, match_position)') // JOIN
+          .select('*, profilbild_url, matchrating!inner(formationsindex, match_position, punkte, statistics)') // JOIN und punkte hinzugefügt
           .eq('matchrating.spiel_id', spielId)
           .filter('team_id', 'in', '($heimTeamId, $auswaertsTeamId)');
 
@@ -205,17 +170,46 @@ class _GameScreenState extends State<GameScreen> {
       tempAwayPlayersData.forEach((p) => print("Index: ${p['matchrating'][0]['formationsindex']}, Name: ${p['name']}"));
       print("----------------------------------------\n");
 
+      PlayerInfo _mapToPlayerInfo(Map<String, dynamic> spieler) {
+        final ratingData = spieler['matchrating'][0];
+        final stats = ratingData['statistics'] as Map<String, dynamic>? ?? {};
+
+        return PlayerInfo(
+          id: spieler['id'],
+          name: spieler['name'],
+          position: ratingData['match_position'],
+          rating: ratingData['punkte'],
+          profileImageUrl: spieler['profilbild_url'],
+          goals: (stats['goals'] as int?) ?? 0,
+          assists: (stats['assists'] as int?) ?? 0,
+          ownGoals: (stats['ownGoals'] as int?) ?? 0,
+        );
+      }
+
+
 
       final List<PlayerInfo> finalHomePlayers = tempHomePlayersData
-          .map((spieler) => PlayerInfo(id: spieler['id'], name: spieler['name'], position: spieler['matchrating'][0]['match_position']))
+          .where((s) => s['matchrating'][0]['formationsindex'] < 11)
+          .map(_mapToPlayerInfo)
+          .toList();
+      final List<PlayerInfo> finalHomeSubstitutes = tempHomePlayersData
+          .where((s) => s['matchrating'][0]['formationsindex'] >= 11)
+          .map(_mapToPlayerInfo)
           .toList();
       final List<PlayerInfo> finalAwayPlayers = tempAwayPlayersData
-          .map((spieler) => PlayerInfo(id: spieler['id'], name: spieler['name'], position: spieler['matchrating'][0]['match_position']))
+          .where((s) => s['matchrating'][0]['formationsindex'] < 11)
+          .map(_mapToPlayerInfo)
+          .toList();
+      final List<PlayerInfo> finalAwaySubstitutes = tempAwayPlayersData
+          .where((s) => s['matchrating'][0]['formationsindex'] >= 11)
+          .map(_mapToPlayerInfo)
           .toList();
 
       setState(() {
         homePlayers = finalHomePlayers;
+        homeSubstitutes = finalHomeSubstitutes;
         awayPlayers = finalAwayPlayers;
+        awaySubstitutes = finalAwaySubstitutes;
         isLoading = false;
       });
     } catch (error) {
@@ -228,67 +222,174 @@ class _GameScreenState extends State<GameScreen> {
     }
   }
 
+  Widget _buildSubstitutesContent(List<PlayerInfo> substitutes, Color teamColor) {
+    return Card(
+      margin: EdgeInsets.zero,
+      child: ListView.builder(
+        itemCount: substitutes.length,
+        shrinkWrap: true,
+        physics: const NeverScrollableScrollPhysics(),
+        itemBuilder: (context, index) {
+          final player = substitutes[index];
+          return ListTile(
+            dense: true,
+            leading: PlayerAvatar(player: player, teamColor: teamColor, radius: 20),
+            title: Text(player.name, style: TextStyle(fontSize: 12)),
+            subtitle: Text('Pos: ${player.position}', style: TextStyle(fontSize: 10)),
+            trailing: Text('Rating: ${player.rating}', style: TextStyle(fontSize: 12)),
+            onTap: () => Navigator.push(
+              context,
+              MaterialPageRoute(builder: (context) => PlayerScreen(playerId: player.id)),
+            ),
+          );
+        },
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
-    // ... (Diese Methode bleibt unverändert)
     final heimTeamName = widget.spiel['heimteam']?['name'] ?? 'Team A';
     final auswaertsTeamName = widget.spiel['auswaertsteam']?['name'] ?? 'Team B';
     final homeFormation = widget.spiel['hometeam_formation'] ?? 'N/A';
     final awayFormation = widget.spiel['awayteam_formation'] ?? 'N/A';
+    final homeColor = Colors.blue.shade700; // Heimteam-Farbe
+    final awayColor = Colors.red.shade700;   // Auswärtsteam-Farbe
+
     return Scaffold(
       appBar: AppBar(
         title: Text("$heimTeamName vs $auswaertsTeamName"),
-        // ✅ NEU: Refresh-Button in der AppBar
         actions: [
           IconButton(
             icon: Icon(Icons.refresh),
             onPressed: () async {
-              // Zeige einen Ladeindikator während der Aktualisierung
-              setState(() {
-                isLoading = true;
-              });
-
-              // Rufe die neue Update-Funktion auf
+              setState(() => isLoading = true);
               await _dataManagement.updateRatingsForSingleGame(widget.spiel['id']);
-
-              // Lade die Spielerdaten neu, um die Formation zu aktualisieren
               await fetchSpieler();
-
-              // Verstecke den Ladeindikator
-              setState(() {
-                isLoading = false;
-              });
-
-              // Zeige eine Bestätigung an
-              ScaffoldMessenger.of(context).showSnackBar(
-                SnackBar(content: Text('Daten wurden aktualisiert!')),
-              );
+              if(mounted) {
+                setState(() => isLoading = false);
+                ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text('Daten wurden aktualisiert!')),
+                );
+              }
             },
           ),
         ],
       ),
       body: isLoading
           ? Center(child: CircularProgressIndicator())
-          : (homePlayers.length >= 11 && awayPlayers.length >= 11)
-          ? MatchFormationDisplay(
-        homeFormation: homeFormation,
-        homePlayers: homePlayers,
-        homeColor: Colors.red.shade700,
-        awayFormation: awayFormation,
-        awayPlayers: awayPlayers,
-        awayColor: Colors.blue.shade300,
-        onPlayerTap: (playerId) {
-          Navigator.push(
-            context,
-            MaterialPageRoute(
-              builder: (context) => PlayerScreen(playerId: playerId),
+          : Stack(
+        children: [
+          // Spielfeld im Hintergrund
+          Positioned.fill(
+            bottom: 48, // Platz für die Bank-Titel
+            child: (homePlayers.length >= 11 && awayPlayers.length >= 11)
+                ? Center(
+              child: MatchFormationDisplay(
+                homeFormation: homeFormation,
+                homePlayers: homePlayers,
+                homeColor: homeColor,
+                awayFormation: awayFormation,
+                awayPlayers: awayPlayers,
+                awayColor: awayColor,
+                onPlayerTap: (playerId) {
+                  Navigator.push(
+                    context,
+                    MaterialPageRoute(
+                      builder: (context) => PlayerScreen(playerId: playerId),
+                    ),
+                  );
+                },
+              ),
+            )
+                : Center(
+              child: Text("Nicht genügend Spielerdaten für die Formationsanzeige."),
             ),
-          );
-        },
-      )
-          : Center(
-        child: Text(
-            "Nicht genügend Spielerdaten für die Formationsanzeige."),
+          ),
+
+          // Ausgeklappte Bank-Inhalte (über dem Spielfeld)
+          Positioned(
+            bottom: 48, // Direkt über den Titeln
+            left: 0,
+            right: 0,
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 200),
+              transitionBuilder: (child, animation) {
+                return SizeTransition(
+                  sizeFactor: animation,
+                  axisAlignment: -1.0,
+                  child: child,
+                );
+              },
+              child: _expandedBench == 'home'
+                  ? _buildSubstitutesContent(homeSubstitutes, homeColor)
+                  : _expandedBench == 'away'
+                  ? _buildSubstitutesContent(awaySubstitutes, awayColor)
+                  : const SizedBox.shrink(),
+            ),
+          ),
+
+          // Klickbare Titel der Ersatzbänke am unteren Rand
+          Positioned(
+            bottom: 0,
+            left: 0,
+            right: 0,
+            child: Row(
+              children: [
+                if (homeSubstitutes.isNotEmpty)
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () {
+                        setState(() {
+                          _expandedBench = (_expandedBench == 'home') ? null : 'home';
+                        });
+                      },
+                      child: Card(
+                        margin: EdgeInsets.zero,
+                        elevation: 4,
+                        child: Container(
+                          height: 48,
+                          alignment: Alignment.center,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Text("Ersatzbank Heim", style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                              Icon(_expandedBench == 'home' ? Icons.keyboard_arrow_down : Icons.keyboard_arrow_up),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+                if (awaySubstitutes.isNotEmpty)
+                  Expanded(
+                    child: GestureDetector(
+                      onTap: () {
+                        setState(() {
+                          _expandedBench = (_expandedBench == 'away') ? null : 'away';
+                        });
+                      },
+                      child: Card(
+                        margin: EdgeInsets.zero,
+                        elevation: 4,
+                        child: Container(
+                          height: 48,
+                          alignment: Alignment.center,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.center,
+                            children: [
+                              Text("Ersatzbank Auswärts", style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                              Icon(_expandedBench == 'away' ? Icons.keyboard_arrow_down : Icons.keyboard_arrow_up),
+                            ],
+                          ),
+                        ),
+                      ),
+                    ),
+                  ),
+              ],
+            ),
+          ),
+        ],
       ),
     );
   }

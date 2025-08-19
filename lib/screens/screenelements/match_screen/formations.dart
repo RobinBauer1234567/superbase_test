@@ -1,18 +1,156 @@
 import 'package:flutter/material.dart';
 import 'dart:ui' as ui;
-import 'package:flutter/material.dart';
-import 'package:flutter/material.dart';
-// Passe diese Import-Pfade entsprechend deiner Projektstruktur an
-import 'package:flutter/material.dart';
 
-// Dein bestehendes PlayerInfo-Modell
+// PlayerInfo-Modell angepasst, um nur die benötigten Daten zu enthalten
 class PlayerInfo {
-  final int id; // ID hinzugefügt
+  final int id;
   final String name;
   final String position;
+  final String? profileImageUrl;
+  final int rating; // Das ist der 'punkte'-Wert
+  final int goals;
+  final int assists;
+  final int ownGoals;
+  final int? jerseyNumber;
 
-  const PlayerInfo({required this.id, required this.name, required this.position});
+
+  const PlayerInfo({
+    required this.id,
+    required this.name,
+    required this.position,
+    this.profileImageUrl,
+    required this.rating,
+    required this.goals,
+    required this.assists,
+    required this.ownGoals,
+    this.jerseyNumber,
+  });
 }
+
+/// Ein wiederverwendbares Widget für Spieler-Avatare mit Team-farbigem Rand.
+class PlayerAvatar extends StatelessWidget {
+  final PlayerInfo player;
+  final Color teamColor;
+  final double radius;
+
+  const PlayerAvatar({
+    required this.player,
+    required this.teamColor,
+    this.radius = 18, // Verkleinert für die Feldansicht
+  });
+
+  // Bestimmt die Farbe für die Rating-Box basierend auf dem Wert
+  Color _getColorForRating(int rating) {
+    if (rating >= 150) return Colors.teal;
+    if (rating >= 100) return Colors.green;
+    if (rating >= 50) return Colors.yellow.shade700;
+    return Colors.red;
+  }
+
+  // Baut ein Icon für ein bestimmtes Ereignis (Tor, Assist, etc.)
+  Widget _buildEventIcon(IconData icon, Color color, int count) {
+    if (count == 0) return const SizedBox.shrink();
+    return Container(
+      padding: const EdgeInsets.all(1.5),
+      decoration: BoxDecoration(
+        color: Colors.black.withOpacity(0.6),
+        shape: BoxShape.circle,
+      ),
+      child: Icon(icon, color: color, size: 8),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bool isGoalkeeper = player.position.toUpperCase() == 'TW' || player.position.toUpperCase() == 'G';
+
+    return SizedBox(
+      width: radius * 2 + 10, // Genug Platz für den Namen
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Stack(
+            clipBehavior: Clip.none,
+            alignment: Alignment.center,
+            children: [
+              // Spielerbild mit farbigem Rand
+              Container(
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  border: Border.all(
+                    color: isGoalkeeper ? Colors.orange.shade700 : teamColor,
+                    width: 1.5,
+                  ),
+                ),
+                child: CircleAvatar(
+                  radius: radius,
+                  backgroundColor: Colors.grey.shade300,
+                  backgroundImage: player.profileImageUrl != null
+                      ? NetworkImage(player.profileImageUrl!)
+                      : null,
+                  child: player.profileImageUrl == null
+                      ? Icon(Icons.person, color: Colors.white, size: radius * 1.2)
+                      : null,
+                ),
+              ),
+              // Rating-Box
+              Positioned(
+                bottom: -5,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                  decoration: BoxDecoration(
+                    color: _getColorForRating(player.rating),
+                    borderRadius: BorderRadius.circular(3),
+                  ),
+                  child: Text(
+                    player.rating.toString(),
+                    style: const TextStyle(
+                      color: Colors.white,
+                      fontSize: 9,
+                      fontWeight: FontWeight.bold,
+                    ),
+                  ),
+                ),
+              ),
+              // Event-Icons
+              Positioned(
+                top: -2,
+                right: -2,
+                child: Column(
+                  children: [
+                    _buildEventIcon(Icons.sports_soccer, Colors.white, player.goals),
+                    if (player.goals > 0) const SizedBox(height: 1),
+                    _buildEventIcon(Icons.assistant, Colors.lightBlueAccent, player.assists),
+                    if (player.assists > 0) const SizedBox(height: 1),
+                    _buildEventIcon(Icons.sports_soccer, Colors.red, player.ownGoals),
+
+                  ],
+                ),
+              ),
+            ],
+          ),
+          const SizedBox(height: 8),
+          // Spielername
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+            decoration: BoxDecoration(
+              color: Colors.black.withOpacity(0.7),
+              borderRadius: BorderRadius.circular(8),
+            ),
+            child: Text(
+              player.name.split(' ').last,
+              style: const TextStyle(color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
+              textAlign: TextAlign.center,
+              overflow: TextOverflow.ellipsis,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+
 
 /// Ein Widget, das die Formationen beider Mannschaften auf einem Spielfeld anzeigt.
 class MatchFormationDisplay extends StatelessWidget {
@@ -107,22 +245,22 @@ class MatchFormationDisplay extends StatelessWidget {
       List<int> formationLines,
       List<PlayerInfo> fieldPlayers,
       bool isAwayTeam,
-      Color teamColor, onPlayerTap) {
+      Color teamColor,
+      void Function(int) onPlayerTap) {
     final List<Widget> lines = [];
     int playerIndexOffset = 0;
+    final double verticalSpacingFactor = 0.35 / (formationLines.length - 1); // Breiterer Abstand
 
     for (int i = 0; i < formationLines.length; i++) {
       final linePlayerCount = formationLines[i];
 
       double lineYPosition;
-      // KORREKTUR: Die Logik für die Y-Position wurde für beide Teams überarbeitet,
-      // um sicherzustellen, dass die Reihen korrekt von Verteidigung zu Sturm platziert werden.
       if (isAwayTeam) {
-        // Obere Hälfte: von 0.45 (Verteidigung, nah an der Mitte) bis 0.2 (Sturm, oben)
-        lineYPosition = 0.2 + (0.25 * (i / (formationLines.length - 1)));
+        // Obere Hälfte: Verteidigung weiter oben, Sturm näher an der Mitte
+        lineYPosition = 0.15 + (i * verticalSpacingFactor);
       } else {
-        // Untere Hälfte: von 0.55 (Sturm, nah an der Mitte) bis 0.8 (Verteidigung, unten)
-        lineYPosition = 0.8 - (0.25 * (i / (formationLines.length - 1)));
+        // Untere Hälfte: Verteidigung weiter unten, Sturm näher an der Mitte
+        lineYPosition = 0.85 - (i * verticalSpacingFactor);
       }
 
       final linePlayers = fieldPlayers.sublist(playerIndexOffset, playerIndexOffset + linePlayerCount);
@@ -169,7 +307,6 @@ class _PlayerMarker extends StatelessWidget {
   final void Function(int) onPlayerTap;
 
   const _PlayerMarker({
-    super.key,
     required this.player,
     required this.teamColor,
     required this.onPlayerTap,
@@ -177,42 +314,9 @@ class _PlayerMarker extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bool isGoalkeeper = player.position.toUpperCase() == 'TW' || player.position.toUpperCase() == 'G';
-
     return GestureDetector(
       onTap: () => onPlayerTap(player.id),
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          CircleAvatar(
-            radius: 14,
-            backgroundColor: isGoalkeeper ? Colors.orange.shade700 : teamColor,
-            child: const Icon(Icons.person, color: Colors.white, size: 18),
-          ),
-          const SizedBox(height: 2),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-            decoration: BoxDecoration(
-                color: Colors.black.withOpacity(0.7), // Etwas dunkler für bessere Lesbarkeit
-                borderRadius: BorderRadius.circular(8)),
-            child: Column( // ✅ NAME UND POSITION WERDEN UNTEREINANDER ANGEZEIGT
-              children: [
-                Text(
-                  player.name.split(' ').last, // Zeigt nur den Nachnamen an
-                  style: const TextStyle(
-                      color: Colors.white, fontSize: 9, fontWeight: FontWeight.bold),
-                  textAlign: TextAlign.center,
-                ),
-                Text(
-                  player.position, // ✅ HIER WIRD DIE POSITION HINZUGEFÜGT
-                  style: const TextStyle(color: Colors.white70, fontSize: 8),
-                  textAlign: TextAlign.center,
-                ),
-              ],
-            ),
-          ),
-        ],
-      ),
+      child: PlayerAvatar(player: player, teamColor: teamColor),
     );
   }
 }
@@ -231,8 +335,8 @@ class _SoccerFieldPainter extends CustomPainter {
     canvas.drawCircle(Offset(size.width / 2, size.height / 2), size.width * 0.15, paint);
     canvas.drawCircle(Offset(size.width / 2, size.height / 2), 2, paint..style = PaintingStyle.fill);
     paint.style = PaintingStyle.stroke;
-    final penaltyAreaWidth = size.width * 0.6;
-    final penaltyAreaHeight = size.height * 0.18;
+    final penaltyAreaWidth = size.width * 0.5; // Verkleinert
+    final penaltyAreaHeight = size.height * 0.16; // Verkleinert
     canvas.drawRect(Rect.fromCenter(center: Offset(size.width / 2, penaltyAreaHeight / 2), width: penaltyAreaWidth, height: penaltyAreaHeight,), paint,);
     canvas.drawRect(Rect.fromCenter(center: Offset(size.width / 2, size.height - penaltyAreaHeight / 2), width: penaltyAreaWidth, height: penaltyAreaHeight,), paint,);
   }
