@@ -58,7 +58,7 @@ class DataManagement {
 
     // Erstellt einen Pool, der die Anzahl gleichzeitiger Anfragen begrenzt (z.B. auf 10)
     // Dieser Wert kann je nach Bedarf angepasst werden.
-    final pool = Pool(20);
+    final pool = Pool(50);
     final batches = _partition(spieltage, 5); // Spieltage in 5er-Batches verarbeiten
 
     for (final batch in batches) {

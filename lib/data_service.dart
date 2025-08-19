@@ -169,6 +169,7 @@ class ApiService {
     String matchPosition = _getPositionFromFormation(formation, formationIndex);
 
     String finalPositionsToSave = apiPosition; // Standardwert ist die generische Position
+    String? imageUrl;
     try {
       // 1. Aktuellen Spieler aus der DB holen, um die bisherigen Positionen zu lesen
       final playerResponse = await supabaseService.supabase
@@ -191,6 +192,28 @@ class ApiService {
       } else {
         finalPositionsToSave = currentPositions;
       }
+      final imageResponse = await http.get(Uri.parse('https://www.sofascore.com/api/v1/player/$playerId/image'));
+      if (imageResponse.statusCode == 200) {
+        // 2. Bild in den Supabase Storage hochladen
+        final imageBytes = imageResponse.bodyBytes;
+        final imagePath = 'spielerbilder/$playerId.jpg'; // Eindeutiger Pfad für das Bild
+
+        await supabaseService.supabase.storage
+            .from('spielerbilder') // Name deines Storage Buckets
+            .uploadBinary(
+          imagePath,
+          imageBytes,
+          fileOptions: const FileOptions(
+            cacheControl: '3600',
+            upsert: true, // Überschreibt das Bild, falls es bereits existiert
+          ),
+        );
+
+        // 3. Öffentliche URL des Bildes abrufen
+        imageUrl = supabaseService.supabase.storage
+            .from('spielerbilder')
+            .getPublicUrl(imagePath);
+      }
     } catch (e) {
       print('Fehler beim Überprüfen der Spielerposition für ID $playerId: $e');
       // Im Fehlerfall wird einfach die ursprüngliche Position gespeichert
@@ -203,7 +226,7 @@ class ApiService {
     Map<String, dynamic> stats = playerData['statistics'] as Map<String, dynamic>? ?? {};
     int newRating = buildNewRating(primaryPosition, stats);
 
-    await supabaseService.saveSpieler(playerId, playerName, finalPositionsToSave, teamId, null /*imageUrl*/);
+    await supabaseService.saveSpieler(playerId, playerName, finalPositionsToSave, teamId, imageUrl);
 
     // ✅ Die neue Position und der Index werden übergeben
     await supabaseService.saveMatchrating(ratingId, spielId, playerId, punktzahl, stats, newRating, formationIndex, matchPosition);
