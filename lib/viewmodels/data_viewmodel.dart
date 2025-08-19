@@ -1,9 +1,5 @@
 import 'dart:convert';
-import 'package:flutter/cupertino.dart';
-import 'package:http/http.dart' as http;
 import 'package:pool/pool.dart'; // Import für die Pool-Klasse
-import 'package:premier_league/models/player.dart';
-import 'package:premier_league/models/match.dart';
 import 'package:premier_league/data_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
