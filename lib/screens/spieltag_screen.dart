@@ -4,16 +4,16 @@ import 'package:premier_league/screens/screenelements/match_screen/formations.da
 import 'package:premier_league/viewmodels/data_viewmodel.dart';
 import 'package:premier_league/screens/player_screen.dart';
 
-/// HomeScreen: Zeigt jetzt die Spiele für einen bestimmten Spieltag an.
+// HomeScreen: Zeigt jetzt die Spiele für einen bestimmten Spieltag an.
 class HomeScreen extends StatefulWidget {
   // FÜGE DIESE VARIABLE HINZU, um die Spieltagsnummer zu speichern
   final int round;
 
   // AKTUALISIERE DEN KONSTRUKTOR, um die Spieltagsnummer zu empfangen
-  HomeScreen({required this.round});
+  const HomeScreen({super.key, required this.round});
 
   @override
-  _HomeScreenState createState() => _HomeScreenState();
+  State<HomeScreen> createState() => _HomeScreenState();
 }
 
 class _HomeScreenState extends State<HomeScreen> {
@@ -62,7 +62,7 @@ class _HomeScreenState extends State<HomeScreen> {
     return Scaffold(
       appBar: AppBar(title: Text('Spieltag ${widget.round}')),
       body: isLoading
-          ? Center(child: CircularProgressIndicator())
+          ? const Center(child: CircularProgressIndicator())
           : ListView.builder(
         itemCount: spiele.length,
         itemBuilder: (context, index) {
@@ -75,7 +75,7 @@ class _HomeScreenState extends State<HomeScreen> {
           return ListTile(
             title: Text("$heimTeamName vs $auswaertsTeamName"),
             subtitle: Text("Ergebnis: ${spiel['ergebnis'] ?? 'N/A'}"),
-            trailing: Icon(Icons.arrow_forward),
+            trailing: const Icon(Icons.arrow_forward),
             onTap: () {
               Navigator.push(
                 context,
@@ -91,9 +91,9 @@ class _HomeScreenState extends State<HomeScreen> {
 
 class GameScreen extends StatefulWidget {
   final dynamic spiel;
-  GameScreen({required this.spiel});
+  const GameScreen({super.key, required this.spiel});
   @override
-  _GameScreenState createState() => _GameScreenState();
+  State<GameScreen> createState() => _GameScreenState();
 }
 
 class _GameScreenState extends State<GameScreen> {
@@ -105,6 +105,7 @@ class _GameScreenState extends State<GameScreen> {
   final DataManagement _dataManagement = DataManagement(); // Instanz erstellen
 
   String? _expandedBench; // Hält den Zustand, welche Bank ausgeklappt ist ('home' oder 'away')
+  double playerAvatarRadiusOnField = 20.0; // Standardwert
 
   @override
   void initState() {
@@ -231,12 +232,10 @@ class _GameScreenState extends State<GameScreen> {
         physics: const NeverScrollableScrollPhysics(),
         itemBuilder: (context, index) {
           final player = substitutes[index];
-          return ListTile(
-            dense: true,
-            leading: PlayerAvatar(player: player, teamColor: teamColor, radius: 20),
-            title: Text(player.name, style: TextStyle(fontSize: 12)),
-            subtitle: Text('Pos: ${player.position}', style: TextStyle(fontSize: 10)),
-            trailing: Text('Rating: ${player.rating}', style: TextStyle(fontSize: 12)),
+          return SubstitutePlayerRow(
+            player: player,
+            teamColor: teamColor,
+            avatarRadius: playerAvatarRadiusOnField,
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(builder: (context) => PlayerScreen(playerId: player.id)),
@@ -261,7 +260,7 @@ class _GameScreenState extends State<GameScreen> {
         title: Text("$heimTeamName vs $auswaertsTeamName"),
         actions: [
           IconButton(
-            icon: Icon(Icons.refresh),
+            icon: const Icon(Icons.refresh),
             onPressed: () async {
               setState(() => isLoading = true);
               await _dataManagement.updateRatingsForSingleGame(widget.spiel['id']);
@@ -269,7 +268,7 @@ class _GameScreenState extends State<GameScreen> {
               if(mounted) {
                 setState(() => isLoading = false);
                 ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text('Daten wurden aktualisiert!')),
+                  const SnackBar(content: Text('Daten wurden aktualisiert!')),
                 );
               }
             },
@@ -277,119 +276,223 @@ class _GameScreenState extends State<GameScreen> {
         ],
       ),
       body: isLoading
-          ? Center(child: CircularProgressIndicator())
-          : Stack(
-        children: [
-          // Spielfeld im Hintergrund
-          Positioned.fill(
-            bottom: 48, // Platz für die Bank-Titel
-            child: (homePlayers.length >= 11 && awayPlayers.length >= 11)
-                ? Center(
-              child: MatchFormationDisplay(
-                homeFormation: homeFormation,
-                homePlayers: homePlayers,
-                homeColor: homeColor,
-                awayFormation: awayFormation,
-                awayPlayers: awayPlayers,
-                awayColor: awayColor,
-                onPlayerTap: (playerId) {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) => PlayerScreen(playerId: playerId),
-                    ),
-                  );
-                },
-              ),
-            )
-                : Center(
-              child: Text("Nicht genügend Spielerdaten für die Formationsanzeige."),
-            ),
-          ),
+          ? const Center(child: CircularProgressIndicator())
+          : LayoutBuilder(
+          builder: (context, constraints) {
+            // Aktualisiere den Radius basierend auf der verfügbaren Breite
+            playerAvatarRadiusOnField = constraints.maxHeight / 40;
 
-          // Ausgeklappte Bank-Inhalte (über dem Spielfeld)
-          Positioned(
-            bottom: 48, // Direkt über den Titeln
-            left: 0,
-            right: 0,
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 200),
-              transitionBuilder: (child, animation) {
-                return SizeTransition(
-                  sizeFactor: animation,
-                  axisAlignment: -1.0,
-                  child: child,
-                );
-              },
-              child: _expandedBench == 'home'
-                  ? _buildSubstitutesContent(homeSubstitutes, homeColor)
-                  : _expandedBench == 'away'
-                  ? _buildSubstitutesContent(awaySubstitutes, awayColor)
-                  : const SizedBox.shrink(),
-            ),
-          ),
-
-          // Klickbare Titel der Ersatzbänke am unteren Rand
-          Positioned(
-            bottom: 0,
-            left: 0,
-            right: 0,
-            child: Row(
+            return Stack(
               children: [
-                if (homeSubstitutes.isNotEmpty)
-                  Expanded(
-                    child: GestureDetector(
-                      onTap: () {
-                        setState(() {
-                          _expandedBench = (_expandedBench == 'home') ? null : 'home';
-                        });
+                // Spielfeld im Hintergrund
+                Positioned.fill(
+                  bottom: 48, // Platz für die Bank-Titel
+                  child: (homePlayers.length >= 11 && awayPlayers.length >= 11)
+                      ? Center(
+                    child: MatchFormationDisplay(
+                      homeFormation: homeFormation,
+                      homePlayers: homePlayers,
+                      homeColor: homeColor,
+                      awayFormation: awayFormation,
+                      awayPlayers: awayPlayers,
+                      awayColor: awayColor,
+                      onPlayerTap: (playerId) {
+                        Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (context) => PlayerScreen(playerId: playerId),
+                          ),
+                        );
                       },
-                      child: Card(
-                        margin: EdgeInsets.zero,
-                        elevation: 4,
-                        child: Container(
-                          height: 48,
-                          alignment: Alignment.center,
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Text("Ersatzbank Heim", style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
-                              Icon(_expandedBench == 'home' ? Icons.keyboard_arrow_down : Icons.keyboard_arrow_up),
-                            ],
+                    ),
+                  )
+                      : const Center(
+                    child: Text("Nicht genügend Spielerdaten für die Formationsanzeige."),
+                  ),
+                ),
+
+                // Ausgeklappte Bank-Inhalte (über dem Spielfeld)
+                Positioned(
+                  bottom: 48, // Direkt über den Titeln
+                  left: 0,
+                  right: 0,
+                  child: AnimatedSwitcher(
+                    duration: const Duration(milliseconds: 200),
+                    transitionBuilder: (child, animation) {
+                      return SizeTransition(
+                        sizeFactor: animation,
+                        axisAlignment: -1.0,
+                        child: child,
+                      );
+                    },
+                    child: _expandedBench == 'home'
+                        ? _buildSubstitutesContent(homeSubstitutes, homeColor)
+                        : _expandedBench == 'away'
+                        ? _buildSubstitutesContent(awaySubstitutes, awayColor)
+                        : const SizedBox.shrink(),
+                  ),
+                ),
+
+                // Klickbare Titel der Ersatzbänke am unteren Rand
+                Positioned(
+                  bottom: 0,
+                  left: 0,
+                  right: 0,
+                  child: Row(
+                    children: [
+                      if (homeSubstitutes.isNotEmpty)
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                _expandedBench = (_expandedBench == 'home') ? null : 'home';
+                              });
+                            },
+                            child: Card(
+                              margin: EdgeInsets.zero,
+                              elevation: 4,
+                              child: Container(
+                                height: 48,
+                                alignment: Alignment.center,
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const Text("Ersatzbank Heim", style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                                    Icon(_expandedBench == 'home' ? Icons.keyboard_arrow_down : Icons.keyboard_arrow_up),
+                                  ],
+                                ),
+                              ),
+                            ),
                           ),
                         ),
-                      ),
-                    ),
-                  ),
-                if (awaySubstitutes.isNotEmpty)
-                  Expanded(
-                    child: GestureDetector(
-                      onTap: () {
-                        setState(() {
-                          _expandedBench = (_expandedBench == 'away') ? null : 'away';
-                        });
-                      },
-                      child: Card(
-                        margin: EdgeInsets.zero,
-                        elevation: 4,
-                        child: Container(
-                          height: 48,
-                          alignment: Alignment.center,
-                          child: Row(
-                            mainAxisAlignment: MainAxisAlignment.center,
-                            children: [
-                              Text("Ersatzbank Auswärts", style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
-                              Icon(_expandedBench == 'away' ? Icons.keyboard_arrow_down : Icons.keyboard_arrow_up),
-                            ],
+                      if (awaySubstitutes.isNotEmpty)
+                        Expanded(
+                          child: GestureDetector(
+                            onTap: () {
+                              setState(() {
+                                _expandedBench = (_expandedBench == 'away') ? null : 'away';
+                              });
+                            },
+                            child: Card(
+                              margin: EdgeInsets.zero,
+                              elevation: 4,
+                              child: Container(
+                                height: 48,
+                                alignment: Alignment.center,
+                                child: Row(
+                                  mainAxisAlignment: MainAxisAlignment.center,
+                                  children: [
+                                    const Text("Ersatzbank Auswärts", style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)),
+                                    Icon(_expandedBench == 'away' ? Icons.keyboard_arrow_down : Icons.keyboard_arrow_up),
+                                  ],
+                                ),
+                              ),
+                            ),
                           ),
                         ),
-                      ),
-                    ),
+                    ],
                   ),
+                ),
               ],
-            ),
+            );
+          }
+      ),
+    );
+  }
+}
+
+
+/// Widget für eine einzelne Spieler-Zeile auf der Ersatzbank
+class SubstitutePlayerRow extends StatelessWidget {
+  final PlayerInfo player;
+  final Color teamColor;
+  final double avatarRadius;
+  final VoidCallback onTap;
+
+  const SubstitutePlayerRow({
+    super.key,
+    required this.player,
+    required this.teamColor,
+    required this.avatarRadius,
+    required this.onTap,
+  });
+
+  Color _getColorForRating(int rating) {
+    if (rating >= 150) return Colors.teal;
+    if (rating >= 100) return Colors.green;
+    if (rating >= 50) return Colors.yellow.shade700;
+    return Colors.red;
+  }
+
+  Widget _buildEventIcon(IconData icon, Color color, int count) {
+    if (count == 0) return const SizedBox.shrink();
+    // Die Größe der Icons wird jetzt proportional zum avatarRadius berechnet
+    return Padding(
+      padding: const EdgeInsets.symmetric(horizontal: 2.0),
+      child: Icon(icon, color: color, size: avatarRadius * 0.8),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final bool isGoalkeeper = player.position.toUpperCase() == 'TW' || player.position.toUpperCase() == 'G';
+    // Dynamische Schriftgrößen
+    final double titleFontSize = avatarRadius * 0.8;
+    final double ratingFontSize = avatarRadius * 0.8;
+
+    return ListTile(
+      dense: true,
+      onTap: onTap,
+      // Die Höhe der Zeile passt sich jetzt an die Größe des Avatars an
+      visualDensity: VisualDensity(vertical: avatarRadius / 50 ),
+      contentPadding: EdgeInsets.symmetric(
+        horizontal: 16.0, // Horizontaler Abstand bleibt fest
+        vertical: 0, // Vertikaler Abstand ist jetzt dynamisch
+      ),
+      leading: Container(
+        width: avatarRadius * 2,
+        height: avatarRadius * 2,
+        decoration: BoxDecoration(
+          color: Colors.grey.shade300,
+          shape: BoxShape.circle,
+          border: Border.all(
+            color: isGoalkeeper ? Colors.orange.shade700 : teamColor,
+            width: 1,
           ),
+          image: player.profileImageUrl != null
+              ? DecorationImage(
+            image: NetworkImage(player.profileImageUrl!),
+            fit: BoxFit.cover, // WICHTIG: Verhindert das Abschneiden
+          )
+              : null,
+        ),
+        child: player.profileImageUrl == null
+            ? Icon(Icons.person, color: Colors.white, size: avatarRadius * 1.2)
+            : null,
+      ),
+      title: Row(
+        children: [
+          Text(player.name, style: TextStyle(fontSize: titleFontSize)),
+          const SizedBox(width: 8),
+          _buildEventIcon(Icons.sports_soccer, Colors.black, player.goals),
+          _buildEventIcon(Icons.assistant, Colors.blue, player.assists),
+          _buildEventIcon(Icons.sports_soccer, Colors.red, player.ownGoals),
         ],
+      ),
+      trailing: Container(
+        padding: EdgeInsets.symmetric(horizontal: avatarRadius * 0.3, vertical: avatarRadius * 0.1),
+        decoration: BoxDecoration(
+          color: _getColorForRating(player.rating),
+          borderRadius: BorderRadius.circular(4),
+        ),
+        child: Text(
+          player.rating.toString(),
+          style: TextStyle(
+            color: Colors.white,
+            fontSize: ratingFontSize,
+            fontWeight: FontWeight.bold,
+          ),
+        ),
       ),
     );
   }
