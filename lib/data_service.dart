@@ -143,8 +143,40 @@ class ApiService {
       for (var teamData in teamsJson) {
         int teamId = teamData['id'];
         String teamName = teamData['name'];
-        // Das Bild-URL-Handling könntest du hier ebenfalls hinzufügen, falls benötigt.
-        await supabaseService.saveTeam(teamId, teamName);
+        String? logoUrl; // Variable für die Logo-URL
+
+        // NEU: Logik zum Abrufen, Speichern und Verknüpfen des Logos
+        try {
+          // 1. Logo von der API herunterladen
+          final imageResponse = await http.get(Uri.parse('https://www.sofascore.com/api/v1/team/$teamId/image'));
+          if (imageResponse.statusCode == 200) {
+            final imageBytes = imageResponse.bodyBytes;
+            final imagePath = 'wappen/$teamId.jpg'; // Eindeutiger Pfad im Storage
+
+            // 2. Logo in den Supabase Storage hochladen (z.B. in einen Bucket namens "wappen")
+            await supabaseService.supabase.storage
+                .from('wappen') // Name deines Storage Buckets
+                .uploadBinary(
+              imagePath,
+              imageBytes,
+              fileOptions: const FileOptions(
+                cacheControl: '3600',
+                upsert: true, // Überschreibt das Bild, falls es bereits existiert
+              ),
+            );
+
+            // 3. Öffentliche URL des Logos abrufen
+            logoUrl = supabaseService.supabase.storage
+                .from('wappen')
+                .getPublicUrl(imagePath);
+          }
+        } catch (e) {
+          print('Fehler beim Verarbeiten des Logos für Team-ID $teamId: $e');
+          // Prozess wird fortgesetzt, auch wenn ein Logo fehlt
+        }
+
+        // Die saveTeam-Funktion wird nun mit der potenziellen logoUrl aufgerufen
+        await supabaseService.saveTeam(teamId, teamName, logoUrl);
       }
       print('Alle Teams wurden erfolgreich in der Datenbank gespeichert.');
     } else {
@@ -153,7 +185,6 @@ class ApiService {
       );
     }
   }
-
 // Hilfsfunktion zur Verarbeitung und Speicherung eines Spielers
   Future<void> processPlayerData(Map<String, dynamic> playerData, int teamId, int spielId, String formation, int formationIndex) async {
     var player = playerData['player'];
@@ -663,19 +694,28 @@ class SupabaseService {
     }
   }
   // Team speichern
-  Future<void> saveTeam(int id, String name) async {
+  Future<void> saveTeam(int id, String name, String? imageUrl) async {
     try {
-      await supabase.from('team').upsert({
-        'id': id, // Unique Key
+      // Erstelle ein Map mit den Basisdaten
+      final Map<String, dynamic> teamData = {
+        'id': id,
         'name': name,
-      },
-          onConflict: 'id'
+      };
+
+      // Füge die Bild-URL nur hinzu, wenn sie vorhanden ist
+      if (imageUrl != null) {
+        teamData['image_url'] = imageUrl;
+      }
+
+      // Speichere die Daten in der 'team'-Tabelle
+      await supabase.from('team').upsert(
+        teamData,
+        onConflict: 'id',
       );
     } catch (error) {
       print('Fehler beim Speichern des Teams: $error');
     }
-  }
-  // Spiel speichern
+  }  // Spiel speichern
   Future<void> saveSpiel(int id, datum, int heimteamId, int auswartsteamId, String ergebnis, String status, int round) async {
     try {
       await supabase.from('spiel').upsert({
