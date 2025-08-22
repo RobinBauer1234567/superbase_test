@@ -539,12 +539,101 @@ class ApiService {
 
     return (bewertung * 100).round();
   }
+
+  Future<String> getPlayerPosition(int playerId) async {
+    int currentPage = 0;
+    bool hasNextPage = true;
+
+    while (hasNextPage) {
+      print('\nDurchsuche Seite $currentPage für Spieler-ID $playerId...');
+
+      // Schritt 1: Lade die URLs und die Paginierungs-Info für die aktuelle Seite
+      final pageData = await _getLineupUrlsAndPageInfo(playerId, currentPage);
+      final lineupUrls = pageData.urls;
+      hasNextPage = pageData.hasNextPage; // Aktualisiere, ob es noch eine nächste Seite gibt
+
+      print('${lineupUrls.length} relevante Spiele auf dieser Seite gefunden.');
+
+      // Schritt 2: Suche in den geladenen URLs nach der Position
+      if (lineupUrls.isNotEmpty) {
+        final position = await _findPositionInLineups(lineupUrls, playerId);
+
+        // Überprüfe, ob eine Position gefunden wurde
+        if (position != 'NOT_FOUND') {
+          // Position gefunden! Gib das Ergebnis zurück und beende die Funktion.
+          return position;
+        }
+      }
+      print('Keine Startelf-Position auf Seite $currentPage gefunden.');
+
+      // Wenn keine Position gefunden wurde, erhöhe den Zähler für die nächste Runde der Schleife
+      currentPage++;
+    }
+
+    // Wenn die Schleife endet, wurde der Spieler auf keiner Seite in einer Startelf gefunden
+    return 'Position konnte auf keiner der verfügbaren Seiten gefunden werden.';
+  }
+
+  Future<({List<String> urls, bool hasNextPage})> _getLineupUrlsAndPageInfo(int playerId, int page) async {
+    final playerEventsUrl = 'https://www.sofascore.com/api/v1/player/$playerId/events/last/$page';
+    final List<String> lineupUrls = [];
+
+    final response = await http.get(Uri.parse(playerEventsUrl));
+    if (response.statusCode == 200) {
+      final data = json.decode(response.body);
+      final List<dynamic> events = data['events'] ?? [];
+      final Map<String, dynamic> onBenchMap = data['onBenchMap'] ?? {};
+      final Set<String> benchMatchIds = onBenchMap.keys.toSet();
+      final bool hasNextPage = data['hasNextPage'] ?? false;
+
+      for (var event in events) {
+        final String eventIdString = event['id'].toString();
+        if (!benchMatchIds.contains(eventIdString)) {
+          final int eventId = event['id'];
+          final String lineupUrl = 'https://www.sofascore.com/api/v1/event/$eventId/lineups';
+          lineupUrls.add(lineupUrl);
+        }
+      }
+      // Gib sowohl die URLs als auch die Info zur nächsten Seite zurück
+      return (urls: lineupUrls, hasNextPage: hasNextPage);
+    } else {
+      throw Exception('Fehler beim Laden der Spieldaten für Seite $page: ${response.statusCode}');
+    }
+  }
+
+  Future<String> _findPositionInLineups(List<String> lineupUrls, int playerId) async {
+    for (final url in lineupUrls) {
+      try {
+        final response = await http.get(Uri.parse(url));
+        if (response.statusCode != 200) continue;
+
+        final data = json.decode(response.body);
+        final List<Map<String, dynamic>> teams = [data['home'], data['away']];
+
+        for (final teamData in teams) {
+          final String formation = teamData['formation'];
+          final List<dynamic> players = teamData['players'];
+
+          for (int i = 0; i < players.length; i++) {
+            if (players[i]['player']['id'] == playerId && i <= 10) {
+              print('Spieler in Startelf gefunden! URL: $url');
+              return _getPositionFromFormation(formation, i);
+            }
+          }
+        }
+      } catch (e) {
+        continue;
+      }
+    }
+    // Spezieller Rückgabewert, wenn nichts gefunden wurde
+    return 'NOT_FOUND';
+  }
+
 }
 
 class SupabaseService {
   final SupabaseClient supabase = Supabase.instance.client;
 
-  // Spieltag speichern
   Future<void> saveSpieltag(int round, String status) async {
     try {
       await supabase.from('spieltag').upsert(

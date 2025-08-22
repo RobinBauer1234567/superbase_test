@@ -6,21 +6,19 @@ import 'package:http/http.dart' as http;
 import 'package:premier_league/screens/home_screen.dart';
 import 'package:premier_league/screens/player_screen.dart';
 import 'package:premier_league/viewmodels/data_viewmodel.dart';
-import 'package:premier_league/screens/spieltag_screen.dart';
-import 'package:premier_league/screens/screenelements/radial_chart.dart';
-import 'package:premier_league/screens/screenelements/match_screen/formations.dart';
-
 
 void main() async {
-   WidgetsFlutterBinding.ensureInitialized();
-   await Supabase.initialize(
-     url: 'https://rcfetlzldccwjnuabfgj.supabase.co',
-     anonKey:
-     'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJjZmV0bHpsZGNjd2pudWFiZmdqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTM5OTkwNDQsImV4cCI6MjA2OTU3NTA0NH0.Fe4Aa3b7vxn9gnye1Cl0VvhxyT7UREJYDCRvICkGNsM'   );
- DataManagement dataManagement = DataManagement();
-  //await dataManagement.collectNewData();
-   runApp(MyApp());
- }
+    WidgetsFlutterBinding.ensureInitialized();
+    await Supabase.initialize(
+      url: 'https://rcfetlzldccwjnuabfgj.supabase.co',
+      anonKey:
+      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJjZmV0bHpsZGNjd2pudWFiZmdqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTM5OTkwNDQsImV4cCI6MjA2OTU3NTA0NH0.Fe4Aa3b7vxn9gnye1Cl0VvhxyT7UREJYDCRvICkGNsM'   );
+  DataManagement dataManagement = DataManagement();
+   //await dataManagement.collectNewData();
+    runApp(MyApp());
+}
+
+
 
 class MyApp extends StatelessWidget {
   const MyApp({super.key});
