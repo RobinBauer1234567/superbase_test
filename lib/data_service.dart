@@ -183,12 +183,18 @@ class ApiService {
       List<String> positionList = currentPositions.split(',').map((p) => p.trim()).toList();
       bool positionExists = positionList.contains(matchPosition);
 
-      // 3. Wenn die Position neu ist und eine gültige Feldspieler-Position ist, hinzufügen
-      if (!positionExists && !['G', 'N/A', 'SUB'].contains(matchPosition)) {
+      if(currentPositions.isEmpty){
+        if(!['N/A', 'SUB'].contains(matchPosition)){
+          finalPositionsToSave = matchPosition;
+        }else {
+          finalPositionsToSave = await getPlayerPosition(playerId);
+        }
+      }else if (!positionExists && !['N/A', 'SUB'].contains(matchPosition)) {
         finalPositionsToSave = '$currentPositions, $matchPosition';
       } else {
         finalPositionsToSave = currentPositions;
       }
+
       final imageResponse = await http.get(Uri.parse('https://www.sofascore.com/api/v1/player/$playerId/image'));
       if (imageResponse.statusCode == 200) {
         // 2. Bild in den Supabase Storage hochladen
@@ -205,7 +211,6 @@ class ApiService {
             upsert: true, // Überschreibt das Bild, falls es bereits existiert
           ),
         );
-
         // 3. Öffentliche URL des Bildes abrufen
         imageUrl = supabaseService.supabase.storage
             .from('spielerbilder')
@@ -545,15 +550,10 @@ class ApiService {
     bool hasNextPage = true;
 
     while (hasNextPage) {
-      print('\nDurchsuche Seite $currentPage für Spieler-ID $playerId...');
-
       // Schritt 1: Lade die URLs und die Paginierungs-Info für die aktuelle Seite
       final pageData = await _getLineupUrlsAndPageInfo(playerId, currentPage);
       final lineupUrls = pageData.urls;
       hasNextPage = pageData.hasNextPage; // Aktualisiere, ob es noch eine nächste Seite gibt
-
-      print('${lineupUrls.length} relevante Spiele auf dieser Seite gefunden.');
-
       // Schritt 2: Suche in den geladenen URLs nach der Position
       if (lineupUrls.isNotEmpty) {
         final position = await _findPositionInLineups(lineupUrls, playerId);
@@ -564,13 +564,9 @@ class ApiService {
           return position;
         }
       }
-      print('Keine Startelf-Position auf Seite $currentPage gefunden.');
-
-      // Wenn keine Position gefunden wurde, erhöhe den Zähler für die nächste Runde der Schleife
       currentPage++;
     }
 
-    // Wenn die Schleife endet, wurde der Spieler auf keiner Seite in einer Startelf gefunden
     return 'Position konnte auf keiner der verfügbaren Seiten gefunden werden.';
   }
 
@@ -616,7 +612,6 @@ class ApiService {
 
           for (int i = 0; i < players.length; i++) {
             if (players[i]['player']['id'] == playerId && i <= 10) {
-              print('Spieler in Startelf gefunden! URL: $url');
               return _getPositionFromFormation(formation, i);
             }
           }
@@ -745,7 +740,6 @@ class SupabaseService {
         'team_id': teamId,
       };
 
-      // Füge die URL nur hinzu, wenn sie nicht null ist, um bestehende Bilder nicht zu überschreiben
       if (profilbildUrl != null) {
         updateData['profilbild_url'] = profilbildUrl;
       }
