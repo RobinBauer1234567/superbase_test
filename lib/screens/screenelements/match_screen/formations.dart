@@ -13,6 +13,7 @@ class PlayerInfo {
   final int ownGoals;
   final int? jerseyNumber;
 
+
   const PlayerInfo({
     required this.id,
     required this.name,
@@ -25,7 +26,6 @@ class PlayerInfo {
     this.jerseyNumber,
   });
 }
-
 /// Ein wiederverwendbares Widget für Spieler-Avatare mit Team-farbigem Rand.
 class PlayerAvatar extends StatelessWidget {
   final PlayerInfo player;
@@ -62,8 +62,7 @@ class PlayerAvatar extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final bool isGoalkeeper =
-        player.position.toUpperCase() == 'TW' || player.position.toUpperCase() == 'G';
+    final bool isGoalkeeper = player.position.toUpperCase() == 'TW' || player.position.toUpperCase() == 'G';
 
     // === DYNAMISCHE GRÖSSENANPASSUNG ===
     final double ratingFontSize = radius * 0.5;
@@ -93,22 +92,19 @@ class PlayerAvatar extends StatelessWidget {
                   image: player.profileImageUrl != null
                       ? DecorationImage(
                     image: NetworkImage(player.profileImageUrl!),
-                    fit: BoxFit
-                        .cover, // Diese Zeile verhindert das Abschneiden
+                    fit: BoxFit.cover, // Diese Zeile verhindert das Abschneiden
                   )
                       : null,
                 ),
                 child: player.profileImageUrl == null
-                    ? Icon(Icons.person,
-                    color: Colors.white, size: radius * 1.2)
+                    ? Icon(Icons.person, color: Colors.white, size: radius * 1.2)
                     : null,
               ),
               // Rating-Box
               Positioned(
                 bottom: -radius * 0.2,
                 child: Container(
-                  padding: EdgeInsets.symmetric(
-                      horizontal: radius * 0.2, vertical: radius * 0.05),
+                  padding: EdgeInsets.symmetric(horizontal: radius * 0.2, vertical: radius * 0.05),
                   decoration: BoxDecoration(
                     color: _getColorForRating(player.rating),
                     borderRadius: BorderRadius.circular(3),
@@ -129,14 +125,11 @@ class PlayerAvatar extends StatelessWidget {
                 right: -radius * 0.1,
                 child: Column(
                   children: [
-                    _buildEventIcon(Icons.sports_soccer, Colors.white,
-                        player.goals, eventIconSize),
+                    _buildEventIcon(Icons.sports_soccer, Colors.white, player.goals, eventIconSize),
                     if (player.goals > 0) SizedBox(height: radius * 0.05),
-                    _buildEventIcon(Icons.assistant, Colors.lightBlueAccent,
-                        player.assists, eventIconSize),
+                    _buildEventIcon(Icons.assistant, Colors.lightBlueAccent, player.assists, eventIconSize),
                     if (player.assists > 0) SizedBox(height: radius * 0.05),
-                    _buildEventIcon(Icons.sports_soccer, Colors.red,
-                        player.ownGoals, eventIconSize),
+                    _buildEventIcon(Icons.sports_soccer, Colors.red, player.ownGoals, eventIconSize),
                   ],
                 ),
               ),
@@ -152,10 +145,7 @@ class PlayerAvatar extends StatelessWidget {
             ),
             child: Text(
               player.name.split(' ').last,
-              style: TextStyle(
-                  color: Colors.white,
-                  fontSize: nameFontSize,
-                  fontWeight: FontWeight.bold),
+              style: TextStyle(color: Colors.white, fontSize: nameFontSize, fontWeight: FontWeight.bold),
               textAlign: TextAlign.center,
               overflow: TextOverflow.ellipsis,
             ),
@@ -177,7 +167,8 @@ class MatchFormationDisplay extends StatelessWidget {
   final String awayFormation;
   final List<PlayerInfo> awayPlayers;
   final Color awayColor;
-  final void Function(PlayerInfo player) onPlayerTap;
+  final void Function(int playerId) onPlayerTap;
+
 
   const MatchFormationDisplay({
     super.key,
@@ -202,12 +193,10 @@ class MatchFormationDisplay extends StatelessWidget {
     final awayFormationLines = _parseFormation(awayFormation);
 
     if (homeGoalkeeper == null || awayGoalkeeper == null) {
-      return const Center(
-          child: Text('Fehler: Torwart nicht in beiden Teams gefunden.'));
+      return const Center(child: Text('Fehler: Torwart nicht in beiden Teams gefunden.'));
     }
     if (homeFieldPlayers.length < 10 || awayFieldPlayers.length < 10) {
-      return const Center(
-          child: Text('Fehler: Falsche Anzahl an Feldspielern.'));
+      return const Center(child: Text('Fehler: Falsche Anzahl an Feldspielern.'));
     }
 
     return AspectRatio(
@@ -219,26 +208,12 @@ class MatchFormationDisplay extends StatelessWidget {
           return Stack(
             children: [
               CustomPaint(size: Size.infinite, painter: _SoccerFieldPainter()),
-              _buildPlayerLine(constraints, [homeGoalkeeper], 0.99, homeColor,
-                  false, onPlayerTap, playerAvatarRadius),
-              ..._buildFormationLines(
-                  constraints,
-                  homeFormationLines,
-                  homeFieldPlayers,
-                  false,
-                  homeColor,
-                  onPlayerTap,
-                  playerAvatarRadius),
-              _buildPlayerLine(constraints, [awayGoalkeeper], 0.01, awayColor,
-                  true, onPlayerTap, playerAvatarRadius),
-              ..._buildFormationLines(
-                  constraints,
-                  awayFormationLines,
-                  awayFieldPlayers,
-                  true,
-                  awayColor,
-                  onPlayerTap,
-                  playerAvatarRadius),
+
+              _buildPlayerLine(constraints, [homeGoalkeeper], 0.99, homeColor, false, onPlayerTap, playerAvatarRadius),
+              ..._buildFormationLines(constraints, homeFormationLines, homeFieldPlayers, false, homeColor, onPlayerTap, playerAvatarRadius),
+
+              _buildPlayerLine(constraints, [awayGoalkeeper], 0.01, awayColor, true, onPlayerTap, playerAvatarRadius),
+              ..._buildFormationLines(constraints, awayFormationLines, awayFieldPlayers, true, awayColor, onPlayerTap, playerAvatarRadius),
             ],
           );
         },
@@ -248,15 +223,13 @@ class MatchFormationDisplay extends StatelessWidget {
 
   PlayerInfo? _findGoalkeeper(List<PlayerInfo> players) {
     try {
-      return players.firstWhere(
-              (p) => p.position.toUpperCase() == 'TW' || p.position.toUpperCase() == 'G');
+      return players.firstWhere((p) => p.position.toUpperCase() == 'TW' || p.position.toUpperCase() == 'G');
     } catch (e) {
       return null;
     }
   }
 
-  List<PlayerInfo> _findFieldPlayers(
-      List<PlayerInfo> players, PlayerInfo? goalkeeper) {
+  List<PlayerInfo> _findFieldPlayers(List<PlayerInfo> players, PlayerInfo? goalkeeper) {
     if (goalkeeper == null) return [];
     return players.where((p) => p != goalkeeper).toList();
   }
@@ -271,16 +244,14 @@ class MatchFormationDisplay extends StatelessWidget {
       List<PlayerInfo> fieldPlayers,
       bool isAwayTeam,
       Color teamColor,
-      void Function(PlayerInfo) onPlayerTap,
-      double avatarRadius) {
-    // Radius wird übergeben
+      void Function(int) onPlayerTap,
+      double avatarRadius) { // Radius wird übergeben
     final List<Widget> lines = [];
     int playerIndexOffset = 0;
     // Der vertikale Raum, der für die Feldspieler zur Verfügung steht
     final double availableVerticalSpace = 0.325;
     // Der Abstand zwischen den Linien
-    final double verticalSpacingFactor = availableVerticalSpace /
-        (formationLines.length > 1 ? formationLines.length - 1 : 1);
+    final double verticalSpacingFactor = availableVerticalSpace / (formationLines.length > 1 ? formationLines.length - 1 : 1);
 
     for (int i = 0; i < formationLines.length; i++) {
       final linePlayerCount = formationLines[i];
@@ -295,11 +266,9 @@ class MatchFormationDisplay extends StatelessWidget {
         lineYPosition = 0.88 - (i * verticalSpacingFactor);
       }
 
-      final linePlayers = fieldPlayers.sublist(
-          playerIndexOffset, playerIndexOffset + linePlayerCount);
+      final linePlayers = fieldPlayers.sublist(playerIndexOffset, playerIndexOffset + linePlayerCount);
 
-      lines.add(_buildPlayerLine(constraints, linePlayers, lineYPosition,
-          teamColor, isAwayTeam, onPlayerTap, avatarRadius));
+      lines.add(_buildPlayerLine(constraints, linePlayers, lineYPosition, teamColor, isAwayTeam, onPlayerTap, avatarRadius));
       playerIndexOffset += linePlayerCount;
     }
     return lines;
@@ -311,14 +280,9 @@ class MatchFormationDisplay extends StatelessWidget {
       double lineYPosition,
       Color teamColor,
       bool isAwayTeam,
-      void Function(PlayerInfo) onPlayerTap,
-      double avatarRadius) {
-    // Radius wird übergeben
-
-    // ✅ KORREKTUR: Spielerliste für das Heimteam umkehren, um die Spiegelung zu korrigieren.
-    final List<PlayerInfo> displayedPlayers = isAwayTeam ? players : players.reversed.toList();
-    final playerCount = displayedPlayers.length;
-
+      void Function(int) onPlayerTap,
+      double avatarRadius) { // Radius wird übergeben
+    final playerCount = players.length;
     return Positioned.fill(
       child: LayoutBuilder(
         builder: (context, constraints) {
@@ -326,13 +290,8 @@ class MatchFormationDisplay extends StatelessWidget {
             children: List.generate(playerCount, (i) {
               final playerXPosition = (i + 1) / (playerCount + 1);
               return Align(
-                alignment: Alignment(
-                    (playerXPosition * 2) - 1, (lineYPosition * 2) - 1),
-                child: _PlayerMarker(
-                    player: displayedPlayers[i],
-                    teamColor: teamColor,
-                    onPlayerTap: onPlayerTap,
-                    radius: avatarRadius),
+                alignment: Alignment((playerXPosition * 2) - 1, (lineYPosition * 2) - 1),
+                child: _PlayerMarker(player: players[i], teamColor: teamColor, onPlayerTap: onPlayerTap, radius: avatarRadius),
               );
             }),
           );
@@ -342,10 +301,11 @@ class MatchFormationDisplay extends StatelessWidget {
   }
 }
 
+
 class _PlayerMarker extends StatelessWidget {
   final PlayerInfo player;
   final Color teamColor;
-  final void Function(PlayerInfo) onPlayerTap;
+  final void Function(int) onPlayerTap;
   final double radius; // Radius wird empfangen
 
   const _PlayerMarker({
@@ -358,9 +318,8 @@ class _PlayerMarker extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return GestureDetector(
-      onTap: () => onPlayerTap(player),
-      child:
-      PlayerAvatar(player: player, teamColor: teamColor, radius: radius), // Radius wird weitergegeben
+      onTap: () => onPlayerTap(player.id),
+      child: PlayerAvatar(player: player, teamColor: teamColor, radius: radius), // Radius wird weitergegeben
     );
   }
 }
@@ -375,35 +334,15 @@ class _SoccerFieldPainter extends CustomPainter {
     paint.strokeWidth = 1.5;
     paint.style = PaintingStyle.stroke;
     canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), paint);
-    canvas.drawLine(
-        Offset(0, size.height / 2), Offset(size.width, size.height / 2), paint);
-    canvas.drawCircle(
-        Offset(size.width / 2, size.height / 2), size.width * 0.15, paint);
-    canvas.drawCircle(Offset(size.width / 2, size.height / 2), 2,
-        paint..style = PaintingStyle.fill);
+    canvas.drawLine(Offset(0, size.height / 2), Offset(size.width, size.height / 2), paint);
+    canvas.drawCircle(Offset(size.width / 2, size.height / 2), size.width * 0.15, paint);
+    canvas.drawCircle(Offset(size.width / 2, size.height / 2), 2, paint..style = PaintingStyle.fill);
     paint.style = PaintingStyle.stroke;
     final penaltyAreaWidth = size.width * 0.6; // Angepasst für bessere Proportionen
-    final penaltyAreaHeight =
-        size.height * 0.18; // Angepasst für bessere Proportionen
-    canvas.drawRect(
-      Rect.fromCenter(
-        center: Offset(size.width / 2, penaltyAreaHeight / 2),
-        width: penaltyAreaWidth,
-        height: penaltyAreaHeight,
-      ),
-      paint,
-    );
-    canvas.drawRect(
-      Rect.fromCenter(
-        center:
-        Offset(size.width / 2, size.height - penaltyAreaHeight / 2),
-        width: penaltyAreaWidth,
-        height: penaltyAreaHeight,
-      ),
-      paint,
-    );
+    final penaltyAreaHeight = size.height * 0.18; // Angepasst für bessere Proportionen
+    canvas.drawRect(Rect.fromCenter(center: Offset(size.width / 2, penaltyAreaHeight / 2), width: penaltyAreaWidth, height: penaltyAreaHeight,), paint,);
+    canvas.drawRect(Rect.fromCenter(center: Offset(size.width / 2, size.height - penaltyAreaHeight / 2), width: penaltyAreaWidth, height: penaltyAreaHeight,), paint,);
   }
-
   @override
   bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
 }
