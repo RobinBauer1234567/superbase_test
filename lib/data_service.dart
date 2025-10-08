@@ -3,15 +3,61 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-
-
 class ApiService {
   final String baseUrl = 'https://www.sofascore.com/api/v1';
-  SupabaseService supabaseService = SupabaseService();
+  final SupabaseService supabaseService = SupabaseService();
+  final String tournamentId = '17';
 
-  //einmalig
-  Future<void> fetchAndStoreSpieltage() async {
-    final url = '$baseUrl/unique-tournament/17/season/61627/rounds';
+  Future<void> fetchAndStoreTeams(String seasonId) async {
+    final url = '$baseUrl/unique-tournament/$tournamentId/season/$seasonId/teams';
+    final response = await http.get(Uri.parse(url));
+
+    if (response.statusCode == 200) {
+      final parsedJson = json.decode(response.body);
+      List<dynamic> teamsJson = parsedJson['teams'] ?? [];
+
+      for (var teamData in teamsJson) {
+        int teamId = teamData['id'];
+        String teamName = teamData['name'];
+        String? logoUrl;
+
+        try {
+          final imageResponse = await http.get(Uri.parse('https://www.sofascore.com/api/v1/team/$teamId/image'));
+          if (imageResponse.statusCode == 200) {
+            final imageBytes = imageResponse.bodyBytes;
+            final imagePath = 'wappen/$teamId.jpg';
+
+            await supabaseService.supabase.storage
+                .from('wappen')
+                .uploadBinary(
+              imagePath,
+              imageBytes,
+              fileOptions: const FileOptions(
+                cacheControl: '3600',
+                upsert: true,
+              ),
+            );
+
+            logoUrl = supabaseService.supabase.storage
+                .from('wappen')
+                .getPublicUrl(imagePath);
+          }
+        } catch (e) {
+          print('Fehler beim Verarbeiten des Logos für Team-ID $teamId: $e');
+        }
+
+        await supabaseService.saveTeam(teamId, teamName, logoUrl);
+        // NEU: Speichere die Beziehung in season_teams
+        await supabaseService.saveSeasonTeam(int.parse(seasonId), teamId);
+      }
+      print('Alle Teams wurden erfolgreich in der Datenbank gespeichert.');
+    } else {
+      throw Exception("Fehler beim Abrufen der Teams: ${response.statusCode}");
+    }
+  }
+
+  Future<void> fetchAndStoreSpieltage(String seasonId) async {
+    final url = '$baseUrl/unique-tournament/$tournamentId/season/$seasonId/rounds';
     final response = await http.get(Uri.parse(url));
 
     if (response.statusCode == 200) {
@@ -19,57 +65,41 @@ class ApiService {
       List<dynamic> roundsJson = parsedJson['rounds'] ?? [];
 
       for (var round in roundsJson) {
-        int roundNumber =
-            int.tryParse(round['round'].toString()) ??
-                0; // Sicherstellen, dass round eine Zahl ist
-        await supabaseService.saveSpieltag(roundNumber, 'nicht gestartet');
+        int roundNumber = int.tryParse(round['round'].toString()) ?? 0;
+        await supabaseService.saveSpieltag(roundNumber, 'nicht gestartet', int.parse(seasonId));
       }
     } else {
-      throw Exception(
-        "Fehler beim Abrufen der Spieltage: ${response.statusCode}",
-      );
+      throw Exception("Fehler beim Abrufen der Spieltage: ${response.statusCode}");
     }
   }
 
-  //einmalig
-  Future<void> fetchAndStoreSpiele(int round) async {
-    final url =
-        '$baseUrl/unique-tournament/17/season/61627/events/round/$round';
-
+  Future<void> fetchAndStoreSpiele(int round, String seasonId) async {
+    final url = '$baseUrl/unique-tournament/$tournamentId/season/$seasonId/events/round/$round';
     final response = await http.get(Uri.parse(url));
 
     if (response.statusCode == 200) {
       final parsedJson = json.decode(response.body);
-
       List<dynamic> eventsJson = parsedJson['events'] ?? [];
       for (var event in eventsJson) {
         if (event['status'] != null &&
             event['status']['code'] == 60 &&
             event['status']['description'] == "Postponed") {
-          continue; // Überspringe dieses Spiel und fahre mit dem nächsten fort
+          continue;
         }
         int matchId = event['id'];
         int homeTeamId = event['homeTeam']['id'];
         int awayTeamId = event['awayTeam']['id'];
-        int timestampInt =
-        event['startTimestamp']; // Annahme: Der Wert ist ein Unix-Zeitstempel in Sekunden
-        DateTime startTimestamp = DateTime.fromMillisecondsSinceEpoch(
-          timestampInt * 1000,
-        );
-        String startTimeString =
-        startTimestamp.toIso8601String(); // ISO 8601 Format
+        int timestampInt = event['startTimestamp'];
+        DateTime startTimestamp = DateTime.fromMillisecondsSinceEpoch(timestampInt * 1000);
+        String startTimeString = startTimestamp.toIso8601String();
         String status = event['status']['description'] ?? 'nicht gestartet';
-
-        // Score-Daten extrahieren (null abfangen)
         var homeScore = event['homeScore']?['current'] ?? 0;
         var awayScore = event['awayScore']?['current'] ?? 0;
 
-        String ergebnis =
-        (event['homeScore'] == null || event['awayScore'] == null)
+        String ergebnis = (event['homeScore'] == null || event['awayScore'] == null)
             ? "Noch kein Ergebnis"
             : "$homeScore:$awayScore";
-        //await supabaseService.saveTeam(homeTeamId, homeTeamName);
-        //await supabaseService.saveTeam(awayTeamId, awayTeamName);
+
         await supabaseService.saveSpiel(
           matchId,
           startTimeString,
@@ -78,19 +108,15 @@ class ApiService {
           ergebnis,
           status,
           round,
+          int.parse(seasonId), // HINZUGEFÜGT
         );
       }
     } else {
-      throw Exception(
-        "Fehler beim Abrufen der Spiele für Runde $round: ${response
-            .statusCode}",
-      );
+      throw Exception("Fehler beim Abrufen der Spiele für Runde $round: ${response.statusCode}");
     }
   }
 
-// In der Klasse ApiService in lib/data_service.dart
-
-  Future<void> fetchAndStoreSpielerundMatchratings(int spielId, hometeamId, awayteamId) async {
+  Future<void> fetchAndStoreSpielerundMatchratings(int spielId, int hometeamId, int awayteamId, int seasonId) async {
     final url = 'https://www.sofascore.com/api/v1/event/$spielId/lineups';
     final response = await http.get(Uri.parse(url));
 
@@ -98,10 +124,9 @@ class ApiService {
       try {
         final parsedJson = json.decode(response.body);
 
-        // Überprüfen, ob die Aufstellungsdaten überhaupt vorhanden sind
         if (parsedJson['home'] == null || parsedJson['away'] == null) {
           print(">>> FEHLER bei Spiel $spielId: 'home' oder 'away' Sektion in API-Antwort nicht gefunden.");
-          return; // Funktion für dieses Spiel abbrechen
+          return;
         }
 
         final String homeFormation = parsedJson['home']?['formation'] ?? 'N/A';
@@ -111,17 +136,15 @@ class ApiService {
         List<dynamic> homePlayers = parsedJson['home']['players'] ?? [];
         List<dynamic> awayPlayers = parsedJson['away']['players'] ?? [];
 
-        print("Spiel $spielId: Formation Heim: $homeFormation (${homePlayers.length} Spieler), Auswärts: $awayFormation (${awayPlayers.length} Spieler)");
-
         if (homePlayers.isEmpty || awayPlayers.isEmpty) {
           print(">>> WARNUNG bei Spiel $spielId: Eine der Spielerlisten ist leer.");
         }
 
         for (int i = 0; i < homePlayers.length; i++) {
-          await processPlayerData(homePlayers[i], hometeamId, spielId, homeFormation, i);
+          await processPlayerData(homePlayers[i], hometeamId, spielId, homeFormation, i, seasonId);
         }
         for (int i = 0; i < awayPlayers.length; i++) {
-          await processPlayerData(awayPlayers[i], awayteamId, spielId, awayFormation, i);
+          await processPlayerData(awayPlayers[i], awayteamId, spielId, awayFormation, i, seasonId);
         }
         print("--- ERFOLGREICH gespeichert für Spiel-ID: $spielId ---");
 
@@ -132,74 +155,17 @@ class ApiService {
       print(">>> FEHLER bei Spiel $spielId: Konnte Aufstellung nicht von API laden (Statuscode: ${response.statusCode})");
     }
   }
-  Future<void> fetchAndStoreTeams() async {
-    final url = '$baseUrl/unique-tournament/17/season/61627/teams';
-    final response = await http.get(Uri.parse(url));
 
-    if (response.statusCode == 200) {
-      final parsedJson = json.decode(response.body);
-      List<dynamic> teamsJson = parsedJson['teams'] ?? [];
-
-      for (var teamData in teamsJson) {
-        int teamId = teamData['id'];
-        String teamName = teamData['name'];
-        String? logoUrl; // Variable für die Logo-URL
-
-        // NEU: Logik zum Abrufen, Speichern und Verknüpfen des Logos
-        try {
-          // 1. Logo von der API herunterladen
-          final imageResponse = await http.get(Uri.parse('https://www.sofascore.com/api/v1/team/$teamId/image'));
-          if (imageResponse.statusCode == 200) {
-            final imageBytes = imageResponse.bodyBytes;
-            final imagePath = 'wappen/$teamId.jpg'; // Eindeutiger Pfad im Storage
-
-            // 2. Logo in den Supabase Storage hochladen (z.B. in einen Bucket namens "wappen")
-            await supabaseService.supabase.storage
-                .from('wappen') // Name deines Storage Buckets
-                .uploadBinary(
-              imagePath,
-              imageBytes,
-              fileOptions: const FileOptions(
-                cacheControl: '3600',
-                upsert: true, // Überschreibt das Bild, falls es bereits existiert
-              ),
-            );
-
-            // 3. Öffentliche URL des Logos abrufen
-            logoUrl = supabaseService.supabase.storage
-                .from('wappen')
-                .getPublicUrl(imagePath);
-          }
-        } catch (e) {
-          print('Fehler beim Verarbeiten des Logos für Team-ID $teamId: $e');
-          // Prozess wird fortgesetzt, auch wenn ein Logo fehlt
-        }
-
-        // Die saveTeam-Funktion wird nun mit der potenziellen logoUrl aufgerufen
-        await supabaseService.saveTeam(teamId, teamName, logoUrl);
-      }
-      print('Alle Teams wurden erfolgreich in der Datenbank gespeichert.');
-    } else {
-      throw Exception(
-        "Fehler beim Abrufen der Teams: ${response.statusCode}",
-      );
-    }
-  }
-// Hilfsfunktion zur Verarbeitung und Speicherung eines Spielers
-  Future<void> processPlayerData(Map<String, dynamic> playerData, int teamId, int spielId, String formation, int formationIndex) async {
+  Future<void> processPlayerData(Map<String, dynamic> playerData, int teamId, int spielId, String formation, int formationIndex, int seasonId) async {
     var player = playerData['player'];
     int playerId = player['id'];
     String playerName = player['name'];
-    // Die generische Position aus der API (z.B. 'D', 'M', 'F'), wichtig für die Rating-Berechnung
     String apiPosition = player['position'];
-
-    // Die spezifische Position für dieses eine Spiel ermitteln
     String matchPosition = _getPositionFromFormation(formation, formationIndex);
-
-    String finalPositionsToSave = apiPosition; // Standardwert ist die generische Position
+    String finalPositionsToSave = apiPosition;
     String? imageUrl;
+
     try {
-      // 1. Aktuellen Spieler aus der DB holen, um die bisherigen Positionen zu lesen
       final playerResponse = await supabaseService.supabase
           .from('spieler')
           .select('position')
@@ -217,10 +183,10 @@ class ApiService {
       if(currentPositions.isEmpty){
         if(!['N/A', 'SUB'].contains(matchPosition)){
           finalPositionsToSave = matchPosition;
-        }else {
+        } else {
           finalPositionsToSave = await getPlayerPosition(playerId);
         }
-      }else if (!positionExists && !['N/A', 'SUB'].contains(matchPosition)) {
+      } else if (!positionExists && !['N/A', 'SUB'].contains(matchPosition)) {
         finalPositionsToSave = '$currentPositions, $matchPosition';
       } else {
         finalPositionsToSave = currentPositions;
@@ -228,31 +194,28 @@ class ApiService {
 
       final imageResponse = await http.get(Uri.parse('https://www.sofascore.com/api/v1/player/$playerId/image'));
       if (imageResponse.statusCode == 200) {
-        // 2. Bild in den Supabase Storage hochladen
         final imageBytes = imageResponse.bodyBytes;
-        final imagePath = 'spielerbilder/$playerId.jpg'; // Eindeutiger Pfad für das Bild
+        final imagePath = 'spielerbilder/$playerId.jpg';
 
         await supabaseService.supabase.storage
-            .from('spielerbilder') // Name deines Storage Buckets
+            .from('spielerbilder')
             .uploadBinary(
           imagePath,
           imageBytes,
           fileOptions: const FileOptions(
             cacheControl: '3600',
-            upsert: true, // Überschreibt das Bild, falls es bereits existiert
+            upsert: true,
           ),
         );
-        // 3. Öffentliche URL des Bildes abrufen
         imageUrl = supabaseService.supabase.storage
             .from('spielerbilder')
             .getPublicUrl(imagePath);
       }
     } catch (e) {
       print('Fehler beim Überprüfen der Spielerposition für ID $playerId: $e');
-      // Im Fehlerfall wird einfach die ursprüngliche Position gespeichert
     }
 
-    String primaryPosition = player['position']; // Die generelle Position
+    String primaryPosition = player['position'];
     double rating = playerData['statistics']?['rating'] ?? 6.0;
     int punktzahl = ((rating - 6) * 100).round();
     int ratingId = int.parse('$spielId$playerId');
@@ -260,8 +223,8 @@ class ApiService {
     int newRating = buildNewRating(primaryPosition, stats);
 
     await supabaseService.saveSpieler(playerId, playerName, finalPositionsToSave, teamId, imageUrl);
-
-    // ✅ Die neue Position und der Index werden übergeben
+    // NEU: Beziehung speichern
+    await supabaseService.saveSeasonPlayer(seasonId, playerId, teamId);
     await supabaseService.saveMatchrating(ratingId, spielId, playerId, punktzahl, stats, newRating, formationIndex, matchPosition);
   }
 
@@ -654,69 +617,60 @@ class ApiService {
     // Spezieller Rückgabewert, wenn nichts gefunden wurde
     return 'NOT_FOUND';
   }
-
 }
 
 class SupabaseService {
   final SupabaseClient supabase = Supabase.instance.client;
 
-  Future<void> saveSpieltag(int round, String status) async {
+  Future<void> saveSpieltag(int round, String status, int seasonId) async {
     try {
       await supabase.from('spieltag').upsert(
           {
-            'round': round, // Unique Key
+            'round': round,
             'status': status,
+            'season_id': seasonId,
           },
-          onConflict: 'round'
+          onConflict: 'round, season_id'
       );
     } catch (error) {
       print('Fehler beim Speichern des Spieltags: $error');
     }
   }
-  // Alle Spieltage abrufen
-  Future<List<int>> fetchAllSpieltagIds() async {
-    final supabase = Supabase.instance.client;
 
+  Future<List<int>> fetchAllSpieltagIds(int seasonId) async {
     try {
-      final response = await supabase.from('spieltag').select('round');
-
-      if (response.isEmpty) {
-        print('Keine Spieltage gefunden.');
-        return [];
-      }
-
-      List<int> spieltagIds =
-      response.map<int>((row) => row['round'] as int).toList();
-      return spieltagIds;
+      final response = await supabase.from('spieltag').select('round').eq('season_id', seasonId);
+      return response.map<int>((row) => row['round'] as int).toList();
     } catch (error) {
       print('Fehler beim Abrufen der Spieltag-IDs: $error');
       return [];
     }
   }
-  // Team speichern
+
   Future<void> saveTeam(int id, String name, String? imageUrl) async {
     try {
-      // Erstelle ein Map mit den Basisdaten
-      final Map<String, dynamic> teamData = {
-        'id': id,
-        'name': name,
-      };
-
-      // Füge die Bild-URL nur hinzu, wenn sie vorhanden ist
+      final Map<String, dynamic> teamData = {'id': id, 'name': name};
       if (imageUrl != null) {
         teamData['image_url'] = imageUrl;
       }
-
-      // Speichere die Daten in der 'team'-Tabelle
-      await supabase.from('team').upsert(
-        teamData,
-        onConflict: 'id',
-      );
+      await supabase.from('team').upsert(teamData, onConflict: 'id');
     } catch (error) {
       print('Fehler beim Speichern des Teams: $error');
     }
-  }  // Spiel speichern
-  Future<void> saveSpiel(int id, datum, int heimteamId, int auswartsteamId, String ergebnis, String status, int round) async {
+  }
+
+  Future<void> saveSeasonTeam(int seasonId, int teamId) async {
+    try {
+      await supabase.from('season_teams').upsert({
+        'season_id': seasonId,
+        'team_id': teamId,
+      }, onConflict: 'season_id, team_id');
+    } catch (error) {
+      print('Fehler beim Speichern der Team-Saison-Beziehung: $error');
+    }
+  }
+
+  Future<void> saveSpiel(int id, String datum, int heimteamId, int auswartsteamId, String ergebnis, String status, int round, int seasonId) async {
     try {
       await supabase.from('spiel').upsert({
         'id': id,
@@ -726,6 +680,7 @@ class SupabaseService {
         'ergebnis': ergebnis,
         'round': round,
         'status': null,
+        'season_id': seasonId,
       },
           onConflict: 'id'
       );
@@ -733,7 +688,72 @@ class SupabaseService {
       print('Fehler beim Speichern des Spiels: $error');
     }
   }
-  // Alle Spiele eies Spieltags abrufen
+
+  Future <DateTime> fetchSpieldatum (spielId) async {
+    final response = await supabase.from('spiel').select('datum').eq('id', spielId).single();
+    return DateTime.parse(response['datum']);
+  }
+
+  Future<void> updateSpielStatus(int spielId, String neuerStatus) async {
+    await supabase.from('spiel').update({'status': neuerStatus}).eq('id', spielId);
+  }
+
+  Future<void> updateSpieltagStatus(int round, String neuerStatus, int seasonId) async {
+    await supabase.from('spieltag').update({'status': neuerStatus}).eq('round', round).eq('season_id', seasonId);
+  }
+
+  Future<void> saveSpieler(int id, String name, String position, int teamId, String? profilbildUrl) async {
+    try {
+      final updateData = {'id': id, 'name': name, 'position': position};
+      if (profilbildUrl != null) {
+        updateData['profilbild_url'] = profilbildUrl;
+      }
+      await supabase.from('spieler').upsert(updateData, onConflict: 'id');
+    } catch (error) {
+      print('Fehler beim Speichern des Spielers: $error');
+    }
+  }
+
+  Future<void> saveSeasonPlayer(int seasonId, int playerId, int teamId) async {
+    try {
+      await supabase.from('season_players').upsert({
+        'season_id': seasonId,
+        'player_id': playerId,
+        'team_id': teamId,
+      }, onConflict: 'season_id, player_id');
+    } catch (error) {
+      print('Fehler beim Speichern der Spieler-Saison-Beziehung: $error');
+    }
+  }
+
+  Future<void> saveMatchrating(int id, int spielId, int spielerId, int rating, statistics, int newRating, int formationIndex, String matchPosition) async {
+    try {
+      await supabase.from('matchrating').upsert({
+        'id': id,
+        'spiel_id': spielId,
+        'spieler_id': spielerId,
+        'punkte': rating,
+        'statistics': statistics,
+        'neuepunkte': newRating,
+        'formationsindex': formationIndex,
+        'match_position': matchPosition,
+      }, onConflict: 'id');
+    } catch (error) {
+      print("!!! DATENBANK-FEHLER beim Speichern des Matchratings für Spieler $spielerId in Spiel $spielId: $error");
+    }
+  }
+
+  Future<void> updateSpielFormation(int spielId, String homeFormation, String awayFormation) async {
+    try {
+      await supabase.from('spiel').update({
+        'hometeam_formation': homeFormation,
+        'awayteam_formation': awayFormation,
+      }).eq('id', spielId);
+    } catch (error) {
+      print('Fehler beim Speichern der Formationen: $error');
+    }
+  }
+
   Future<List<int>> fetchSpielIdsForRound(int round) async {
     final supabase = Supabase.instance.client;
 
@@ -745,85 +765,7 @@ class SupabaseService {
       return [];
     }
   }
-  // Spieldatum für Spiel abrufen
-  Future <DateTime> fetchSpieldatum (spielId) async {
-    final response = await supabase
-        .from('spiel')
-        .select('datum')
-        .eq('id', spielId)
-        .single(); // Falls du genau ein Ergebnis erwartest
 
-    DateTime spielDatum = DateTime.parse(response['datum']);
-    return spielDatum;
-  }
-  // Status für Spiel ändern
-  Future<void> updateSpielStatus(int spielId, String neuerStatus) async {
-    await supabase
-        .from('spiel')
-        .update({'status': neuerStatus}) // Neuer Status setzen
-        .eq('id', spielId); // Nur das Spiel mit der passenden ID aktualisieren
-  }
-  // Status für Spieltag ändern
-  Future<void> updateSpieltagStatus(int round, String neuerStatus) async {
-    await supabase
-        .from('spieltag')
-        .update({'status': neuerStatus}) // Neuer Status setzen
-        .eq('round', round); // Nur das Spiel mit der passenden ID aktualisieren
-  }
-  // Spieler speichern
-  Future<void> saveSpieler(int id, String name, String position, int teamId, String? profilbildUrl) async {
-    try {
-      final updateData = {
-        'id': id,
-        'name': name,
-        'position': position,
-        'team_id': teamId,
-      };
-
-      if (profilbildUrl != null) {
-        updateData['profilbild_url'] = profilbildUrl;
-      }
-
-      await supabase.from('spieler').upsert(
-          updateData,
-          onConflict: 'id'
-      );
-    } catch (error) {
-      print('Fehler beim Speichern des Spielers: $error');
-    }
-  }
-  // Matchrating speichern
-  Future<void> saveMatchrating(int id, int spielId, int spielerId, int rating, statistics, int newRating, int formationIndex, String matchPosition) async {
-    try {
-      await supabase.from('matchrating').upsert(
-          {
-            'id': id,
-            'spiel_id': spielId,
-            'spieler_id': spielerId,
-            'punkte': rating,
-            'statistics': statistics,
-            'neuepunkte': newRating,
-            'formationsindex': formationIndex,
-            'match_position': matchPosition,
-          },
-          onConflict: 'id');
-    } catch (error) {
-      print("!!! DATENBANK-FEHLER beim Speichern des Matchratings für Spieler $spielerId in Spiel $spielId: $error");
-    }
-  }
-  Future<void> updateSpielFormation(int spielId, String homeFormation, String awayFormation) async {
-    try {
-      await supabase
-          .from('spiel')
-          .update({
-        'hometeam_formation': homeFormation,
-        'awayteam_formation': awayFormation,
-      })
-          .eq('id', spielId);
-    } catch (error) {
-      print('Fehler beim Speichern der Formationen: $error');
-    }
-  }
   Future<int> getSpieleranzahl(int spielId, int heimTeamId, int auswaertsTeamId) async {
     final data = await Supabase.instance.client
         .from('spieler')

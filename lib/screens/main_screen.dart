@@ -5,6 +5,8 @@ import 'package:premier_league/screens/player_screen.dart';
 import 'package:premier_league/screens/team_screen.dart';
 import 'package:premier_league/screens/premier_league/premier_league_screen.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:provider/provider.dart';
+import 'package:premier_league/viewmodels/data_viewmodel.dart';
 
 class MainScreen extends StatefulWidget {
   const MainScreen({super.key});
@@ -19,6 +21,9 @@ class _MainScreenState extends State<MainScreen> {
 
   // Wir machen die Suchfunktion asynchron und geben die Ergebnisse direkt zurück.
   Future<List<Widget>> _fetchSuggestions(String query) async {
+    final dataManagement = Provider.of<DataManagement>(context, listen: false);
+    final seasonId = dataManagement.seasonId;
+
     if (query
         .trim()
         .isEmpty) {
@@ -33,11 +38,17 @@ class _MainScreenState extends State<MainScreen> {
         final supabase = Supabase.instance.client;
 
         final responses = await Future.wait([
-          supabase.from('team').select('id, name, image_url')
-              .ilike('name', '%$query%')
+          supabase
+              .from('season_teams')
+              .select('teams:team(id, name, image_url)')
+              .eq('season_id', seasonId)
+              .ilike('teams.name', '%$query%')
               .limit(5),
-          supabase.from('spieler').select('id, name, profilbild_url')
-              .ilike('name', '%$query%')
+          supabase
+              .from('season_players')
+              .select('spieler:spieler(id, name, profilbild_url)')
+              .eq('season_id', seasonId)
+              .ilike('spieler.name', '%$query%')
               .limit(10)
         ]);
 

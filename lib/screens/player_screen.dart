@@ -1,8 +1,10 @@
 import 'package:flutter/material.dart';
-import 'package:intl/intl.dart'; // Import für die Datumsformatierung
+import 'package:intl/intl.dart';
 import 'package:premier_league/screens/screenelements/radial_chart.dart';
 import 'package:premier_league/screens/spieltag_screen.dart';
+import 'package:premier_league/viewmodels/data_viewmodel.dart';
 import 'package:premier_league/viewmodels/radar_chart_viewmodel.dart';
+import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:math';
 import 'package:premier_league/screens/screenelements/match_screen/formations.dart';
@@ -21,9 +23,9 @@ class PlayerScreen extends StatefulWidget {
 class _PlayerScreenState extends State<PlayerScreen>
     with SingleTickerProviderStateMixin {
   final supabase = Supabase.instance.client;
-  late TabController _tabController;
+  late final TabController _tabController;
   final RadarChartViewModel _radarChartViewModel = RadarChartViewModel();
-  final ScrollController _scrollController = ScrollController(); // Controller für das Scrollen
+  final ScrollController _scrollController = ScrollController();
 
   // Player Info
   String playerName = "";
@@ -33,14 +35,14 @@ class _PlayerScreenState extends State<PlayerScreen>
 
   // Data for views
   bool isLoading = true;
+  String _errorMessage = '';
   List<dynamic> matchRatingsRaw = [];
   List<GroupData> radarChartData = [];
 
-  // NEUE STATE-VARIABLEN
   List<String> availablePositions = [];
   String? selectedPosition;
   double averagePlayerRating = 0.0;
-  double averagePlayerRatingPercentile = 0.0; // Der neue Vergleichswert
+  double averagePlayerRatingPercentile = 0.0;
 
   @override
   void initState() {
@@ -51,6 +53,11 @@ class _PlayerScreenState extends State<PlayerScreen>
         _scrollToBottom();
       }
     });
+  }
+
+  @override
+  void didChangeDependencies() {
+    super.didChangeDependencies();
     fetchPlayerData();
   }
 
@@ -78,27 +85,31 @@ class _PlayerScreenState extends State<PlayerScreen>
     if (!mounted) return;
     setState(() {
       isLoading = true;
+      _errorMessage = '';
     });
 
+    final dataManagement = Provider.of<DataManagement>(context, listen: false);
+    final seasonId = dataManagement.seasonId;
+
     try {
+      // **KORRIGIERTE ABFRAGE für Spieler- und Teamdaten**
       final playerResponse = await supabase
-          .from('spieler')
-          .select('name, position, team_id, profilbild_url')
-          .eq('id', widget.playerId)
+          .from('season_players')
+          .select('team:team(name, image_url), spieler:spieler(name, position, profilbild_url)')
+          .eq('season_id', seasonId)
+          .eq('player_id', widget.playerId)
           .single();
 
-      final teamResponse = await supabase
-          .from('team')
-          .select('name, image_url')
-          .eq('id', playerResponse['team_id'])
-          .single();
+      final teamData = playerResponse['team'];
+      final spielerData = playerResponse['spieler'];
 
+      // **KORRIGIERTE ABFRAGE für Match-Ratings**
       final matchRatingsResponse = await supabase
           .from('matchrating')
           .select(
-          'match_position, punkte, statistics, spiel:spiel!inner(id, datum, ergebnis, heimteam_id, auswärtsteam_id, hometeam_formation, awayteam_formation, heimteam:team!spiel_heimteam_id_fkey(name, image_url), auswaertsteam:team!spiel_auswärtsteam_id_fkey(name, image_url))')
-          .eq('spieler_id', widget.playerId);
-
+          'match_position, punkte, statistics, spiel!inner(id, datum, ergebnis, heimteam_id, auswärtsteam_id, hometeam_formation, awayteam_formation, season_id, heimteam:team!spiel_heimteam_id_fkey(name, image_url), auswaertsteam:team!spiel_auswärtsteam_id_fkey(name, image_url))')
+          .eq('spieler_id', widget.playerId)
+          .eq('spiel.season_id', seasonId); // Wichtig: Filter nach Saison
 
       if (!mounted) return;
 
@@ -108,8 +119,7 @@ class _PlayerScreenState extends State<PlayerScreen>
         return dateA.compareTo(dateB);
       });
 
-
-      String rawPositions = playerResponse['position'] ?? 'N/A';
+      String rawPositions = spielerData['position'] ?? 'N/A';
       List<String> parsedPositions =
       rawPositions.split(',').map((p) => p.trim()).toList();
 
@@ -119,10 +129,10 @@ class _PlayerScreenState extends State<PlayerScreen>
       }
 
       setState(() {
-        playerName = playerResponse['name'];
-        teamName = teamResponse['name'];
-        teamImageUrl = teamResponse['image_url'];
-        profileImageUrl = playerResponse['profilbild_url'] ??
+        playerName = spielerData['name'];
+        teamName = teamData['name'];
+        teamImageUrl = teamData['image_url'];
+        profileImageUrl = spielerData['profilbild_url'] ??
             'https://rcfetlzldccwjnuabfgj.supabase.co/storage/v1/object/public/spielerbilder//Photo-Missing.png';
         matchRatingsRaw = matchRatingsResponse;
         availablePositions = parsedPositions;
@@ -150,11 +160,11 @@ class _PlayerScreenState extends State<PlayerScreen>
       if (mounted) {
         setState(() {
           isLoading = false;
+          _errorMessage = "Fehler beim Laden der Spielerdaten.";
         });
       }
     }
   }
-
   Future<void> _triggerRadarChartCalculation(String comparisonPosition) async {
     if (!mounted) return;
     setState(() {

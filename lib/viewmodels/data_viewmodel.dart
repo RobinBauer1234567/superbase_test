@@ -1,40 +1,38 @@
+// lib/viewmodels/data_viewmodel.dart
 import 'dart:convert';
-import 'package:pool/pool.dart'; // Import für die Pool-Klasse
+import 'package:pool/pool.dart';
 import 'package:premier_league/data_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
 class DataManagement {
   final SupabaseClient _supabase = Supabase.instance.client;
-  ApiService apiService = ApiService();
-  SupabaseService supabaseService = SupabaseService();
+  final ApiService apiService = ApiService();
+  final SupabaseService supabaseService = SupabaseService();
+  final int seasonId;
+
+  DataManagement({required this.seasonId});
 
   Future<void> collectNewData() async {
-    print('start: collectnewData');
+    print('start: collectNewData for season $seasonId');
 
-    // SCHRITT 1: Teams abrufen
-    await apiService.fetchAndStoreTeams();
+    // **ÄNDERUNG HIER:** Übergib die seasonId an fetchAndStoreTeams
+    await apiService.fetchAndStoreTeams(seasonId.toString());
     print('Teams gespeichert');
 
-    // SCHRITT 2: Spieltage abrufen
-    await apiService.fetchAndStoreSpieltage();
-    print('spieltage gespeichert');
+    await apiService.fetchAndStoreSpieltage(seasonId.toString());
+    print('Spieltage für Saison $seasonId gespeichert');
 
-    // SCHRITT 3: Spiele für jeden Spieltag abrufen und sicherstellen, dass alles gespeichert ist
-    List<int> spieltage = await supabaseService.fetchAllSpieltagIds();
+    List<int> spieltage = await supabaseService.fetchAllSpieltagIds(seasonId);
     await Future.wait(spieltage.map((spieltag) async {
-      await apiService.fetchAndStoreSpiele(spieltag);
-      print('spiele für Spieltag $spieltag gespeichert');
+      await apiService.fetchAndStoreSpiele(spieltag, seasonId.toString());
+      print('Spiele für Spieltag $spieltag gespeichert');
     }));
 
-    // Kurze Pause, um der Datenbank Zeit zur Synchronisierung zu geben
     await Future.delayed(const Duration(seconds: 5));
-
-    // SCHRITT 4: Daten aktualisieren
     await updateData();
     print('finish');
   }
 
-  /// Teilt eine Liste in kleinere Teillisten (Batches) einer bestimmten Größe auf.
   List<List<T>> _partition<T>(List<T> list, int size) {
     if (list.isEmpty) return [];
     final partitions = <List<T>>[];
@@ -47,15 +45,12 @@ class DataManagement {
     return partitions;
   }
 
-  /// **Die optimierte updateData-Funktion**
   Future<void> updateData() async {
-    List<int> spieltage = await supabaseService.fetchAllSpieltagIds();
-    print('Update gestartet');
+    List<int> spieltage = await supabaseService.fetchAllSpieltagIds(seasonId);
+    print('Update für Saison $seasonId gestartet');
 
-    // Erstellt einen Pool, der die Anzahl gleichzeitiger Anfragen begrenzt (z.B. auf 10)
-    // Dieser Wert kann je nach Bedarf angepasst werden.
     final pool = Pool(50);
-    final batches = _partition(spieltage, 5); // Spieltage in 5er-Batches verarbeiten
+    final batches = _partition(spieltage, 5);
 
     for (final batch in batches) {
       await Future.wait(batch.map((spieltagId) async {
@@ -63,14 +58,10 @@ class DataManagement {
             .from('spieltag')
             .select('status')
             .eq('round', spieltagId)
+            .eq('season_id', seasonId)
             .maybeSingle();
 
         if (response == null || response['status'] == null || response['status'] == 'final') {
-          if (response != null && response['status'] == 'final') {
-            print('Spieltag: $spieltagId ist bereits final');
-          } else {
-            print('Kein Status für Spieltag $spieltagId gefunden.');
-          }
           return;
         }
 
@@ -96,8 +87,9 @@ class DataManagement {
                 status = neuerStatus;
               }
               if (neuerStatus != 'nicht gestartet') {
+                // **ÄNDERUNG HIER:** Übergib die seasonId
                 await apiService.fetchAndStoreSpielerundMatchratings(
-                    spielId, hometeamId, awayteamId);
+                    spielId, hometeamId, awayteamId, seasonId);
               }
             }
             spielStatusSpieltag.add(status);
@@ -107,23 +99,23 @@ class DataManagement {
 
         await Future.wait(gameUpdateFutures);
 
-        // Spieltag-Status setzen
         if (spielStatusSpieltag.every((s) => s == 'final')) {
-          await supabaseService.updateSpieltagStatus(spieltagId, 'final');
+          await supabaseService.updateSpieltagStatus(spieltagId, 'final', seasonId);
         } else if (spielStatusSpieltag.every((s) => s == 'nicht gestartet')) {
-          await supabaseService.updateSpieltagStatus(spieltagId, 'nicht gestartet');
+          await supabaseService.updateSpieltagStatus(spieltagId, 'nicht gestartet', seasonId);
         } else if (spielStatusSpieltag.any((s) => s == 'nicht gestartet') ||
             spielStatusSpieltag.any((s) => s == 'läuft')) {
-          await supabaseService.updateSpieltagStatus(spieltagId, 'läuft');
+          await supabaseService.updateSpieltagStatus(spieltagId, 'läuft', seasonId);
         } else {
-          await supabaseService.updateSpieltagStatus(spieltagId, 'beendet');
+          await supabaseService.updateSpieltagStatus(spieltagId, 'beendet', seasonId);
         }
 
         print('Spieltag $spieltagId wurde geupdated');
       }));
-      await Future.delayed(const Duration(seconds: 1)); // Kurze Pause zwischen den Batches
+      await Future.delayed(const Duration(seconds: 1));
     }
   }
+
 
   Future<String> getSpielStatus(spielId) async {
     String spielstatus;
@@ -137,16 +129,15 @@ class DataManagement {
       spielstatus = 'läuft';
     } else if (differenz.inHours < 24) {
       spielstatus = 'beendet';
-    } else if (differenz.inHours >= 24) {
-      spielstatus = 'final';
     } else {
-      spielstatus = 'unklar';
+      spielstatus = 'final';
     }
 
     return spielstatus;
   }
 
   Future<void> updateRatingsForSingleGame(int spielId) async {
+    // Diese Funktion bleibt gleich, da sie sich nur auf ein spezifisches Spiel bezieht.
     print('Starte Update für Spiel-ID: $spielId');
     try {
       final spielResponse = await _supabase
@@ -163,12 +154,11 @@ class DataManagement {
         return;
       }
 
-      await apiService.fetchAndStoreSpielerundMatchratings(spielId, hometeamId, awayteamId);
+      await apiService.fetchAndStoreSpielerundMatchratings(spielId, hometeamId, awayteamId, seasonId);
 
       print('Update für Spiel-ID: $spielId erfolgreich abgeschlossen.');
     } catch (error) {
       print('Fehler beim Aktualisieren der Ratings für Spiel $spielId: $error');
     }
   }
-
 }

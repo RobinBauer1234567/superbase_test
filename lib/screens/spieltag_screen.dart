@@ -1,15 +1,13 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:premier_league/screens/screenelements/match_screen/formations.dart';
 import 'package:premier_league/viewmodels/data_viewmodel.dart';
 import 'package:premier_league/screens/player_screen.dart';
 
-// HomeScreen: Zeigt jetzt die Spiele für einen bestimmten Spieltag an.
+// Die HomeScreen-Klasse bleibt unverändert
 class HomeScreen extends StatefulWidget {
-  // FÜGE DIESE VARIABLE HINZU, um die Spieltagsnummer zu speichern
   final int round;
-
-  // AKTUALISIERE DEN KONSTRUKTOR, um die Spieltagsnummer zu empfangen
   const HomeScreen({super.key, required this.round});
 
   @override
@@ -19,46 +17,45 @@ class HomeScreen extends StatefulWidget {
 class _HomeScreenState extends State<HomeScreen> {
   List<dynamic> spiele = [];
   bool isLoading = true;
-  // bool Loading = true; // Dieser zweite Lade-Status ist überflüssig.
 
   @override
-  void initState() {
-    super.initState();
-    fetchSpieleAndTeamNames(); // Wir benennen die Funktion um, damit klar ist, was sie tut.
+  void didChangeDependencies() {
+    super.didChangeDependencies();
+    fetchSpieleAndTeamNames();
   }
 
-  /// ✅ LÄDT ALLES IN EINER ABFRAGE:
-  /// Diese Funktion holt die Spieldaten und verknüpft sie direkt mit den Teamnamen.
-  /// Das ist die effizienteste Methode.
   Future<void> fetchSpieleAndTeamNames() async {
+    if (!mounted) return;
     setState(() { isLoading = true; });
+    final dataManagement = Provider.of<DataManagement>(context, listen: false);
 
     try {
-      // ✅ KORREKTUR: Abfrage um hometeam_formation und awayteam_formation erweitert
       final data = await Supabase.instance.client
           .from('spiel')
-          .select('*, heimteam_id, auswärtsteam_id, hometeam_formation, awayteam_formation, heimteam:spiel_heimteam_id_fkey(name), auswaertsteam:spiel_auswärtsteam_id_fkey(name)')
+          .select('*, heimteam:spiel_heimteam_id_fkey(name), auswaertsteam:spiel_auswärtsteam_id_fkey(name)')
           .eq('round', widget.round)
+          .eq('season_id', dataManagement.seasonId)
           .order('id', ascending: true);
 
-      setState(() {
-        spiele = data;
-        isLoading = false;
-      });
+      if(mounted){
+        setState(() {
+          spiele = data;
+          isLoading = false;
+        });
+      }
     } catch (error) {
       print("Fehler beim Abruf der Spiele: $error");
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-            SnackBar(content: Text('Fehler: ${error.toString()}'))
-        );
+      if(mounted) {
+        setState(() {
+          isLoading = false;
+        });
       }
-      setState(() {
-        isLoading = false;
-      });
     }
   }
+
   @override
   Widget build(BuildContext context) {
+    // Die Build-Methode von HomeScreen bleibt unverändert
     return Scaffold(
       appBar: AppBar(title: Text('Spieltag ${widget.round}')),
       body: isLoading
@@ -67,11 +64,8 @@ class _HomeScreenState extends State<HomeScreen> {
         itemCount: spiele.length,
         itemBuilder: (context, index) {
           final spiel = spiele[index];
-
-
           final heimTeamName = spiel['heimteam']['name'] ?? 'Unbekannt';
           final auswaertsTeamName = spiel['auswaertsteam']['name'] ?? 'Unbekannt';
-
           return ListTile(
             title: Text("$heimTeamName vs $auswaertsTeamName"),
             subtitle: Text("Ergebnis: ${spiel['ergebnis'] ?? 'N/A'}"),
@@ -89,6 +83,9 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
+
+// --- START DER KORREKTUREN FÜR GameScreen ---
+
 class GameScreen extends StatefulWidget {
   final dynamic spiel;
   const GameScreen({super.key, required this.spiel});
@@ -102,56 +99,55 @@ class _GameScreenState extends State<GameScreen> {
   List<PlayerInfo> awayPlayers = [];
   List<PlayerInfo> awaySubstitutes = [];
   bool isLoading = true;
-  final DataManagement _dataManagement = DataManagement(); // Instanz erstellen
 
-  String? _expandedBench; // Hält den Zustand, welche Bank ausgeklappt ist ('home' oder 'away')
-  double playerAvatarRadiusOnField = 20.0; // Standardwert
+  String? _expandedBench;
+  double playerAvatarRadiusOnField = 20.0;
 
   @override
-  void initState() {
-    super.initState();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
     fetchSpieler();
   }
 
   Future<void> fetchSpieler() async {
-    // ... (Datenabruf bleibt unverändert)
+    if (!mounted) return;
+    final dataManagement = Provider.of<DataManagement>(context, listen: false);
+    final seasonId = dataManagement.seasonId;
+
     try {
       final heimTeamId = widget.spiel['heimteam_id'];
       final auswaertsTeamId = widget.spiel['auswärtsteam_id'];
       final spielId = widget.spiel['id'];
 
-      print("--- DEBUG: Starte fetchSpieler für Spiel-ID $spielId ---");
+      print("--- DEBUG: Starte fetchSpieler für Spiel-ID $spielId in Saison $seasonId ---");
 
-      // ✅ Abfrage um die neue Spalte 'match_position' erweitert
+      // **FINALE KORRIGIERTE ABFRAGE**
       final data = await Supabase.instance.client
           .from('spieler')
-          .select('*, profilbild_url, matchrating!inner(formationsindex, match_position, punkte, statistics)') // JOIN und punkte hinzugefügt
+          .select('*, profilbild_url, season_players!inner(team_id), matchrating!inner(formationsindex, match_position, punkte, statistics)')
+          .eq('season_players.season_id', seasonId)
           .eq('matchrating.spiel_id', spielId)
-          .filter('team_id', 'in', '($heimTeamId, $auswaertsTeamId)');
+          .filter('season_players.team_id', 'in', '($heimTeamId, $auswaertsTeamId)');
 
       print("--- DEBUG: Rohdaten von Supabase erhalten (${data.length} Spieler) ---");
-      // Logge die Rohdaten, um zu sehen, was ankommt
-      for (var spieler in data) {
-        final index = spieler['matchrating']?[0]?['formationsindex'];
-        print("Spieler: ${spieler['name']}, Team: ${spieler['team_id']}, Formationsindex: $index");
-      }
-      print("----------------------------------------------------------");
-
 
       List<Map<String, dynamic>> tempHomePlayersData = [];
       List<Map<String, dynamic>> tempAwayPlayersData = [];
 
+      // **ANGEPASSTE DATENVERARBEITUNG**
       for (var spieler in data) {
-        if (spieler['team_id'] == heimTeamId) {
+        if (spieler['season_players'] == null || spieler['season_players'].isEmpty) continue;
+
+        final teamId = spieler['season_players'][0]['team_id'];
+        if (teamId == heimTeamId) {
           tempHomePlayersData.add(spieler);
         } else {
           tempAwayPlayersData.add(spieler);
         }
       }
 
-      // ✅ ROBUSTERE SORTIERUNG HINZUGEFÜGT
-      // Diese Sortierung fängt null-Werte ab und sortiert sie ans Ende.
-      tempHomePlayersData.sort((a, b) {
+
+tempHomePlayersData.sort((a, b) {
         final indexA = a['matchrating']?[0]?['formationsindex'] ?? 99;
         final indexB = b['matchrating']?[0]?['formationsindex'] ?? 99;
         return indexA.compareTo(indexB);
@@ -248,6 +244,7 @@ class _GameScreenState extends State<GameScreen> {
 
   @override
   Widget build(BuildContext context) {
+    final dataManagement = Provider.of<DataManagement>(context, listen: false);
     final heimTeamName = widget.spiel['heimteam']?['name'] ?? 'Team A';
     final auswaertsTeamName = widget.spiel['auswaertsteam']?['name'] ?? 'Team B';
     final homeFormation = widget.spiel['hometeam_formation'] ?? 'N/A';
@@ -263,7 +260,7 @@ class _GameScreenState extends State<GameScreen> {
             icon: const Icon(Icons.refresh),
             onPressed: () async {
               setState(() => isLoading = true);
-              await _dataManagement.updateRatingsForSingleGame(widget.spiel['id']);
+              await dataManagement.updateRatingsForSingleGame(widget.spiel['id']);
               await fetchSpieler();
               if(mounted) {
                 setState(() => isLoading = false);
