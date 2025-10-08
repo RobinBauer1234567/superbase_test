@@ -1,11 +1,9 @@
-//player_screen.dart
+// lib/screens/home_screen.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:premier_league/viewmodels/data_viewmodel.dart';
-import 'package:premier_league/screens/player_screen.dart';
-import 'package:premier_league/data_service.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:premier_league/screens/spieltag_screen.dart';
+import 'package:premier_league/data_service.dart';
 
 class SpieltageScreen extends StatefulWidget {
   @override
@@ -14,27 +12,38 @@ class SpieltageScreen extends StatefulWidget {
 
 class _SpieltageScreenState extends State<SpieltageScreen> {
   List<dynamic> spieltage = [];
-  final ApiService apiService = ApiService();
-  SupabaseService supabaseService = SupabaseService();
+  bool _isLoading = true;
 
   @override
-  void initState() {
-    super.initState();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
     fetchSpieltage();
   }
 
   Future<void> fetchSpieltage() async {
-    final response = await supabaseService.supabase.from('spieltag').select().order('round', ascending: true);
     setState(() {
-      spieltage = response;
+      _isLoading = true;
     });
+    final dataManagement = Provider.of<DataManagement>(context, listen: false);
+    final response = await dataManagement.supabaseService.supabase
+        .from('spieltag')
+        .select()
+        .eq('season_id', dataManagement.seasonId)
+        .order('round', ascending: true);
+
+    if (mounted) {
+      setState(() {
+        spieltage = response;
+        _isLoading = false;
+      });
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text('Spieltage')), // Titel angepasst für Klarheit
-      body: spieltage.isEmpty
+      appBar: AppBar(title: Text('Spieltage')),
+      body: _isLoading
           ? Center(child: CircularProgressIndicator())
           : ListView.builder(
         itemCount: spieltage.length,
@@ -43,16 +52,11 @@ class _SpieltageScreenState extends State<SpieltageScreen> {
           return ListTile(
             title: Text("Spieltag ${spieltag['round']}"),
             subtitle: Text("Status: ${spieltag['status']}"),
-            trailing: Icon(Icons.arrow_forward_ios), // Optional: Ein Pfeil-Icon
             onTap: () {
-              // HIER IST DIE NEUE LOGIK FÜR DIE NAVIGATION
               Navigator.push(
                 context,
                 MaterialPageRoute(
-                  // Navigiere zum HomeScreen (der die Spiele anzeigt)
-                  // und übergib die 'round' Nummer des angeklickten Spieltags.
-                  builder: (context) =>
-                      HomeScreen(round: spieltag['round']),
+                  builder: (context) => HomeScreen(round: spieltag['round']),
                 ),
               );
             },

@@ -1,9 +1,13 @@
 // lib/screens/premier_league/table_screen.dart
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:premier_league/viewmodels/data_viewmodel.dart';
+import 'package:premier_league/screens/team_screen.dart';
 
-// Ein einfaches Modell, um die berechneten Statistiken zu halten
+// Die TeamStats-Klasse bleibt unverändert
 class TeamStats {
+  final int id;
   final String name;
   final String imageUrl;
   int position = 0;
@@ -15,7 +19,7 @@ class TeamStats {
   int goalsAgainst = 0;
   int points = 0;
 
-  TeamStats({required this.name, required this.imageUrl});
+  TeamStats({required this.id, required this.name, required this.imageUrl});
 
   int get goalDifference => goalsFor - goalsAgainst;
 }
@@ -32,22 +36,36 @@ class _TableScreenState extends State<TableScreen> {
   List<TeamStats> _tableStats = [];
 
   @override
-  void initState() {
-    super.initState();
+  void didChangeDependencies() {
+    super.didChangeDependencies();
     _calculateTable();
   }
 
   Future<void> _calculateTable() async {
+    // Diese Methode bleibt unverändert
+    if (!mounted) return;
+    setState(() => _isLoading = true);
+    final dataManagement = Provider.of<DataManagement>(context, listen: false);
+
     try {
-      final teamsResponse = await Supabase.instance.client.from('team').select('id, name, image_url');
+      final teamsResponse = await Supabase.instance.client
+          .from('season_teams')
+          .select('teams:team(id, name, image_url)')
+          .eq('season_id', dataManagement.seasonId);
+
       final finishedGamesResponse = await Supabase.instance.client
           .from('spiel')
           .select('heimteam_id, auswärtsteam_id, ergebnis')
-          .neq('ergebnis', 'Noch kein Ergebnis');
+          .eq('season_id', dataManagement.seasonId)
+          .neq('status', 'nicht gestartet');
 
       final Map<int, TeamStats> statsMap = {
-        for (var team in teamsResponse)
-          team['id']: TeamStats(name: team['name'], imageUrl: team['image_url'] ?? '')
+        for (var teamEntry in teamsResponse)
+          teamEntry['teams']['id']: TeamStats(
+            id: teamEntry['teams']['id'],
+            name: teamEntry['teams']['name'],
+            imageUrl: teamEntry['teams']['image_url'] ?? '',
+          )
       };
 
       for (var game in finishedGamesResponse) {
@@ -56,11 +74,11 @@ class _TableScreenState extends State<TableScreen> {
         final scores = (game['ergebnis'] as String).split(':').map(int.parse).toList();
         final homeGoals = scores[0];
         final awayGoals = scores[1];
+        final homeStats = statsMap[homeTeamId];
+        final awayStats = statsMap[awayTeamId];
 
-        final homeStats = statsMap[homeTeamId]!;
-        final awayStats = statsMap[awayTeamId]!;
+        if (homeStats == null || awayStats == null) continue;
 
-        // Spieldaten aktualisieren
         homeStats.gamesPlayed++;
         awayStats.gamesPlayed++;
         homeStats.goalsFor += homeGoals;
@@ -68,7 +86,6 @@ class _TableScreenState extends State<TableScreen> {
         homeStats.goalsAgainst += awayGoals;
         awayStats.goalsAgainst += homeGoals;
 
-        // Punkte vergeben
         if (homeGoals > awayGoals) {
           homeStats.wins++;
           awayStats.losses++;
@@ -95,17 +112,19 @@ class _TableScreenState extends State<TableScreen> {
       for (int i = 0; i < sortedStats.length; i++) {
         sortedStats[i].position = i + 1;
       }
-
-      setState(() {
-        _tableStats = sortedStats;
-        _isLoading = false;
-      });
-
+      if (mounted) {
+        setState(() {
+          _tableStats = sortedStats;
+          _isLoading = false;
+        });
+      }
     } catch (e) {
       print("Fehler bei Tabellenberechnung: $e");
-      setState(() {
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+        });
+      }
     }
   }
 
@@ -117,6 +136,8 @@ class _TableScreenState extends State<TableScreen> {
       child: DataTable(
         columnSpacing: 12.0,
         horizontalMargin: 8.0,
+        // Wir entfernen onSelectChanged von der DataRow
+        // und fügen onTap zur DataCell hinzu.
         columns: const [
           DataColumn(label: Text('#')),
           DataColumn(label: Text('Club')),
@@ -128,24 +149,37 @@ class _TableScreenState extends State<TableScreen> {
           DataColumn(label: Text('Pkt.')),
         ],
         rows: _tableStats.map((stats) {
-          return DataRow(cells: [
-            DataCell(Text(stats.position.toString())),
-            DataCell(
-              Row(
-                children: [
-                  Image.network(stats.imageUrl, width: 24, height: 24, errorBuilder: (c, e, s) => const Icon(Icons.shield, size: 24)),
-                  const SizedBox(width: 8),
-                  Expanded(child: Text(stats.name, overflow: TextOverflow.ellipsis)),
-                ],
+          return DataRow(
+            cells: [
+              DataCell(Text(stats.position.toString())),
+              DataCell(
+                // **ÄNDERUNG HIER:** Wir wickeln den Inhalt in einen InkWell
+                InkWell(
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => TeamScreen(teamId: stats.id),
+                      ),
+                    );
+                  },
+                  child: Row(
+                    children: [
+                      Image.network(stats.imageUrl, width: 24, height: 24, errorBuilder: (c, e, s) => const Icon(Icons.shield, size: 24)),
+                      const SizedBox(width: 8),
+                      Expanded(child: Text(stats.name, overflow: TextOverflow.ellipsis)),
+                    ],
+                  ),
+                ),
               ),
-            ),
-            DataCell(Text(stats.gamesPlayed.toString())),
-            DataCell(Text(stats.wins.toString())),
-            DataCell(Text(stats.draws.toString())),
-            DataCell(Text(stats.losses.toString())),
-            DataCell(Text(stats.goalDifference.toString())),
-            DataCell(Text(stats.points.toString(), style: const TextStyle(fontWeight: FontWeight.bold))),
-          ]);
+              DataCell(Text(stats.gamesPlayed.toString())),
+              DataCell(Text(stats.wins.toString())),
+              DataCell(Text(stats.draws.toString())),
+              DataCell(Text(stats.losses.toString())),
+              DataCell(Text(stats.goalDifference.toString())),
+              DataCell(Text(stats.points.toString(), style: const TextStyle(fontWeight: FontWeight.bold))),
+            ],
+          );
         }).toList(),
       ),
     );
