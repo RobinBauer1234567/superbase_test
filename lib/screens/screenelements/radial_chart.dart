@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'dart:math';
 import 'dart:ui' as ui;
+import 'package:premier_league/utils/color_helper.dart';
 
 /// Repräsentiert ein einzelnes Segment (einen "Balken") im Diagramm.
 class SegmentData {
@@ -15,7 +16,6 @@ class GroupData {
   final String name;
   final List<SegmentData> segments;
   final Color backgroundColor;
-
   const GroupData({
     required this.name,
     required this.segments,
@@ -310,7 +310,7 @@ class _RadialSegmentPainter extends CustomPainter {
         ..addArc(Rect.fromCircle(center: center, radius: layout.baseRadius), startAngle, anglePerSegment)
         ..arcTo(Rect.fromCircle(center: center, radius: segmentOuterRadius), startAngle + anglePerSegment, -anglePerSegment, false);
 
-      final baseColor = _getColorForValue(value);
+      final baseColor = getColorForRating(value, 120);
       final highlightColor = HSLColor.fromColor(baseColor).withLightness(min(1.0, HSLColor.fromColor(baseColor).lightness + 0.2)).toColor();
       final segmentBounds = segmentPath.getBounds();
 
@@ -371,8 +371,8 @@ class _RadialSegmentPainter extends CustomPainter {
   void _drawCenterContent(Canvas canvas, Offset center, _ChartLayout layout) {
     final centerPaint = Paint();
     // ✅ FARBE BASIERT JETZT AUF DEM VERGLEICHSWERT
-    final baseColor = centerComparisonValue != null
-        ? _getColorForValue(centerComparisonValue!)
+    final baseColor = centerDisplayValue != null
+        ? getColorForRating(centerDisplayValue!, 250)
         : Colors.grey.withOpacity(0.1);
 
     if (centerComparisonValue != null) {
@@ -400,17 +400,6 @@ class _RadialSegmentPainter extends CustomPainter {
   }
 
 
-  Color _getColorForValue(double value) {
-    final effectiveMax = maxAbsValue <= 0 ? 1.0 : maxAbsValue;
-    final t = (value.abs() / effectiveMax).clamp(0.0, 1.0);
-
-    final colorSequence = TweenSequence<Color?>([
-      TweenSequenceItem(tween: ColorTween(begin: Colors.red.shade800, end: Colors.orange.shade700), weight: 40.0),
-      TweenSequenceItem(tween: ColorTween(begin: Colors.orange.shade700, end: const Color(0xFFFFD700)), weight: 30.0),
-      TweenSequenceItem(tween: ColorTween(begin: const Color(0xFFFFD700), end: Colors.green.shade500), weight: 30.0),
-    ]);
-    return colorSequence.transform(t)!;
-  }
 
   Size _getTextSize(String text, TextStyle style) {
     final textPainter = TextPainter(text: TextSpan(text: text, style: style), maxLines: 1, textDirection: TextDirection.ltr)..layout();

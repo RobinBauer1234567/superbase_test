@@ -5,8 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:premier_league/screens/player_screen.dart';
 import 'package:premier_league/screens/premier_league/matches_screen.dart';
 import 'package:premier_league/viewmodels/data_viewmodel.dart';
-
-// neu: scrollable_positioned_list
+import 'package:premier_league/utils/color_helper.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 
 class TeamScreen extends StatefulWidget {
@@ -27,6 +26,7 @@ class _TeamScreenState extends State<TeamScreen> with SingleTickerProviderStateM
   Map<String, dynamic>? _teamData;
   List<dynamic> _teamMatches = [];
   List<Map<String, dynamic>> _topPlayers = [];
+  int anzahlMatches = 0;
 
   // scrollable_positioned_list controller/listener
   final ItemScrollController _itemScrollController = ItemScrollController();
@@ -68,6 +68,15 @@ class _TeamScreenState extends State<TeamScreen> with SingleTickerProviderStateM
           .eq('season_id', seasonId)
           .or('heimteam_id.eq.${widget.teamId},auswärtsteam_id.eq.${widget.teamId}')
           .order('datum', ascending: true);
+
+      final matches = await Supabase.instance.client
+          .from('spiel')
+          .select('*, heimteam:team!spiel_heimteam_id_fkey(id, name, image_url), auswaertsteam:team!spiel_auswärtsteam_id_fkey(id, name, image_url)')
+          .eq('season_id', seasonId)
+      .neq('status', 'nicht gestartet')
+          .or('heimteam_id.eq.${widget.teamId},auswärtsteam_id.eq.${widget.teamId}');
+      anzahlMatches = matches.length;
+
 
       final playersResponse = await Supabase.instance.client
           .from('season_players')
@@ -170,10 +179,8 @@ class _TeamScreenState extends State<TeamScreen> with SingleTickerProviderStateM
   }
 
   Color _getColorForRating(int rating) {
-    if (rating >= 150) return Colors.teal;
-    if (rating >= 100) return Colors.green;
-    if (rating >= 50) return Colors.yellow.shade700;
-    return Colors.red;
+    final maxValue = anzahlMatches*250*0.8;
+    return getColorForRating(rating, maxValue.round());
   }
 
   @override

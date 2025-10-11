@@ -9,6 +9,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:math';
 import 'package:premier_league/screens/screenelements/match_screen/formations.dart';
 import 'package:premier_league/screens/screenelements/match_screen/matchrating_screen.dart';
+import 'package:premier_league/utils/color_helper.dart';
 
 
 class PlayerScreen extends StatefulWidget {
@@ -346,13 +347,6 @@ class MatchRatingRow extends StatelessWidget {
     this.playerProfileImageUrl,
   });
 
-  Color _getColorForRating(int rating) {
-    if (rating >= 150) return Colors.teal;
-    if (rating >= 100) return Colors.green;
-    if (rating >= 50) return Colors.yellow.shade700;
-    return Colors.red;
-  }
-
   Widget _buildEventIcon(IconData icon, Color color, int count) {
     if (count == 0) return const SizedBox.shrink();
     return Padding(
@@ -490,7 +484,7 @@ class MatchRatingRow extends StatelessWidget {
                         width: 40,
                         padding: const EdgeInsets.symmetric(vertical: 4),
                         decoration: BoxDecoration(
-                          color: _getColorForRating(punkte),
+                          color: getColorForRating(punkte, 250),
                           borderRadius: BorderRadius.circular(4),
                         ),
                         child: Text(

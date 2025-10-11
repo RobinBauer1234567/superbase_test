@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:premier_league/utils/color_helper.dart';
 import 'dart:ui' as ui;
 
 // PlayerInfo-Modell angepasst, um nur die benötigten Daten zu enthalten
@@ -39,13 +40,7 @@ class PlayerAvatar extends StatelessWidget {
     this.radius = 18,
   });
 
-  // Bestimmt die Farbe für die Rating-Box basierend auf dem Wert
-  Color _getColorForRating(int rating) {
-    if (rating >= 150) return Colors.teal;
-    if (rating >= 100) return Colors.green;
-    if (rating >= 50) return Colors.yellow.shade700;
-    return Colors.red;
-  }
+
 
   // Baut ein Icon für ein bestimmtes Ereignis (Tor, Assist, etc.)
   Widget _buildEventIcon(IconData icon, Color color, int count, double size) {
@@ -106,7 +101,7 @@ class PlayerAvatar extends StatelessWidget {
                 child: Container(
                   padding: EdgeInsets.symmetric(horizontal: radius * 0.2, vertical: radius * 0.05),
                   decoration: BoxDecoration(
-                    color: _getColorForRating(player.rating),
+                    color: getColorForRating(player.rating, 250),
                     borderRadius: BorderRadius.circular(3),
                   ),
                   child: Text(

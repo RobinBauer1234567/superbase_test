@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:premier_league/screens/screenelements/match_screen/formations.dart';
 import 'package:premier_league/viewmodels/data_viewmodel.dart';
 import 'package:premier_league/screens/player_screen.dart';
+import 'package:premier_league/utils/color_helper.dart';
 
 // Die HomeScreen-Klasse bleibt unverändert
 class HomeScreen extends StatefulWidget {
@@ -414,12 +415,6 @@ class SubstitutePlayerRow extends StatelessWidget {
     required this.onTap,
   });
 
-  Color _getColorForRating(int rating) {
-    if (rating >= 150) return Colors.teal;
-    if (rating >= 100) return Colors.green;
-    if (rating >= 50) return Colors.yellow.shade700;
-    return Colors.red;
-  }
 
   Widget _buildEventIcon(IconData icon, Color color, int count) {
     if (count == 0) return const SizedBox.shrink();
@@ -479,7 +474,7 @@ class SubstitutePlayerRow extends StatelessWidget {
       trailing: Container(
         padding: EdgeInsets.symmetric(horizontal: avatarRadius * 0.3, vertical: avatarRadius * 0.1),
         decoration: BoxDecoration(
-          color: _getColorForRating(player.rating),
+          color: getColorForRating(player.rating, 250),
           borderRadius: BorderRadius.circular(4),
         ),
         child: Text(
