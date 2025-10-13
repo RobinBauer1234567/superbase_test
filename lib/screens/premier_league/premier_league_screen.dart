@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:premier_league/screens/premier_league/matches_screen.dart';
 import 'package:premier_league/screens/premier_league/table_screen.dart';
+import 'package:premier_league/screens/premier_league/top_team_screen.dart'; // Importiert
 
 class PremierLeagueScreen extends StatelessWidget {
   const PremierLeagueScreen({super.key});
@@ -12,7 +13,7 @@ class PremierLeagueScreen extends StatelessWidget {
       length: 3,
       child: Scaffold(
         appBar: AppBar(
-          toolbarHeight: 0, // Wir verstecken die Standard-AppBar, da die Tabs die Navigation übernehmen
+          toolbarHeight: 0,
           bottom: const TabBar(
             tabs: [
               Tab(text: 'BEGEGNUNGEN'),
@@ -25,10 +26,9 @@ class PremierLeagueScreen extends StatelessWidget {
         ),
         body: const TabBarView(
           children: [
-            // Die 3 Hauptbereiche
             MatchesScreen(),
             TableScreen(),
-            Center(child: Text('Top-Team Screen (Platzhalter)')),
+            TopTeamScreen(), // Platzhalter ersetzt
           ],
         ),
       ),

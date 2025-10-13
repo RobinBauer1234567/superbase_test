@@ -7,6 +7,7 @@ import 'package:premier_league/screens/premier_league/matches_screen.dart';
 import 'package:premier_league/viewmodels/data_viewmodel.dart';
 import 'package:premier_league/utils/color_helper.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
+import 'package:premier_league/screens/screenelements/player_list_item.dart';
 
 class TeamScreen extends StatefulWidget {
   final int teamId;
@@ -228,35 +229,17 @@ class _TeamScreenState extends State<TeamScreen> with SingleTickerProviderStateM
                     return MatchCard(spiel: match);
                   },
                 ),
-                // Kader-Tab: Liste der Top-Spieler
                 ListView.builder(
                   itemCount: _topPlayers.length,
                   itemBuilder: (context, index) {
                     final player = _topPlayers[index];
-                    return ListTile(
-                      leading: CircleAvatar(
-                        backgroundImage: player['profilbild_url'] != null
-                            ? NetworkImage(player['profilbild_url'])
-                            : null,
-                        child: player['profilbild_url'] == null
-                            ? const Icon(Icons.person)
-                            : null,
-                      ),
-                      title: Text(player['name']),
-                      trailing: Container(
-                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                        decoration: BoxDecoration(
-                          color: _getColorForRating(player['total_punkte']),
-                          borderRadius: BorderRadius.circular(8),
-                        ),
-                        child: Text(
-                          player['total_punkte'].toString(),
-                          style: const TextStyle(
-                            color: Colors.white,
-                            fontWeight: FontWeight.bold,
-                          ),
-                        ),
-                      ),
+                    return PlayerListItem(
+                      rank: index + 1,
+                      profileImageUrl: player['profilbild_url'],
+                      playerName: player['name'],
+                      teamImageUrl: _teamData?['image_url'],
+                      score: player['total_punkte'],
+                      maxScore: (anzahlMatches * 250*0.8).toInt(),
                       onTap: () {
                         Navigator.push(
                           context,
@@ -268,6 +251,7 @@ class _TeamScreenState extends State<TeamScreen> with SingleTickerProviderStateM
                     );
                   },
                 ),
+// ...
               ],
             ),
           ),

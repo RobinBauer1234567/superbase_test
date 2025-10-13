@@ -81,11 +81,6 @@ class ApiService {
       final parsedJson = json.decode(response.body);
       List<dynamic> eventsJson = parsedJson['events'] ?? [];
       for (var event in eventsJson) {
-        if (event['status'] != null &&
-            event['status']['code'] == 60 &&
-            event['status']['description'] == "Postponed") {
-          continue;
-        }
         int matchId = event['id'];
         int homeTeamId = event['homeTeam']['id'];
         int awayTeamId = event['awayTeam']['id'];
@@ -99,7 +94,6 @@ class ApiService {
         String ergebnis = (event['homeScore'] == null || event['awayScore'] == null)
             ? "Noch kein Ergebnis"
             : "$homeScore:$awayScore";
-
         await supabaseService.saveSpiel(
           matchId,
           startTimeString,
@@ -712,13 +706,14 @@ class SupabaseService {
   Future<void> saveSpiel(int id, String datum, int heimteamId, int auswartsteamId, String ergebnis, String status, int round, int seasonId) async {
     try {
       await supabase.from('spiel').upsert({
+
         'id': id,
         'datum': datum,
         'heimteam_id': heimteamId,
         'auswärtsteam_id': auswartsteamId,
         'ergebnis': ergebnis,
         'round': round,
-        'status': null,
+        'status': 'nicht gestartet',
         'season_id': seasonId,
       },
           onConflict: 'id'

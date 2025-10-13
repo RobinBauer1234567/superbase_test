@@ -109,7 +109,7 @@ class _MatchesScreenState extends State<MatchesScreen> {
     try {
       _itemScrollController.scrollTo(
         index: index,
-        duration: const Duration(milliseconds: 500),
+        duration: const Duration(milliseconds: 10),
         curve: Curves.easeOutCubic,
       );
       print("✅ Scroll attempt to index $index (Spieltag $_aktuellerSpieltag)");
@@ -256,7 +256,8 @@ class MatchCard extends StatelessWidget {
         status.toLowerCase() == 'beendet' ||
         status.toLowerCase() == 'final';
     final isNotStarted = status.toLowerCase() == 'not started' ||
-        status.toLowerCase() == 'nicht gestartet';
+        status.toLowerCase() == 'nicht gestartet' ||
+        status.toLowerCase() == 'postponed';
 
     DateTime datum;
     try {
