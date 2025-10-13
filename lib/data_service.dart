@@ -160,9 +160,8 @@ class ApiService {
     var player = playerData['player'];
     int playerId = player['id'];
     String playerName = player['name'];
-    String apiPosition = player['position'];
     String matchPosition = _getPositionFromFormation(formation, formationIndex);
-    String finalPositionsToSave = apiPosition;
+    String finalPositionsToSave = '';
     String? imageUrl;
 
     try {
@@ -172,25 +171,29 @@ class ApiService {
           .eq('id', playerId)
           .maybeSingle();
 
-      String currentPositions = apiPosition;
-      if (playerResponse != null && playerResponse['position'] != null) {
-        currentPositions = playerResponse['position'];
-      }
+      String currentPositions = playerResponse?['position'] ?? '';
 
-      List<String> positionList = currentPositions.split(',').map((p) => p.trim()).toList();
+      List<String> positionList = (currentPositions.isNotEmpty)
+          ? currentPositions.split(',').map((p) => p.trim()).toList()
+          : [];
+
+      positionList.remove('N/V');
       bool positionExists = positionList.contains(matchPosition);
 
-      if(currentPositions.isEmpty){
-        if(!['N/A', 'SUB'].contains(matchPosition)){
-          finalPositionsToSave = matchPosition;
+
+      if (positionList.isEmpty) {
+        if (!['N/A', 'SUB'].contains(matchPosition)) {
+          finalPositionsToSave = matchPosition ?? '';
         } else {
-          finalPositionsToSave = await getPlayerPosition(playerId);
+          final fetchedPosition = await getPlayerPosition(playerId);
+          finalPositionsToSave = fetchedPosition ?? '';
         }
       } else if (!positionExists && !['N/A', 'SUB'].contains(matchPosition)) {
         finalPositionsToSave = '$currentPositions, $matchPosition';
       } else {
         finalPositionsToSave = currentPositions;
       }
+
 
       final imageResponse = await http.get(Uri.parse('https://www.sofascore.com/api/v1/player/$playerId/image'));
       if (imageResponse.statusCode == 200) {
@@ -544,24 +547,21 @@ class ApiService {
     bool hasNextPage = true;
 
     while (hasNextPage) {
-      // Schritt 1: Lade die URLs und die Paginierungs-Info für die aktuelle Seite
       final pageData = await _getLineupUrlsAndPageInfo(playerId, currentPage);
       final lineupUrls = pageData.urls;
-      hasNextPage = pageData.hasNextPage; // Aktualisiere, ob es noch eine nächste Seite gibt
-      // Schritt 2: Suche in den geladenen URLs nach der Position
+      hasNextPage = pageData.hasNextPage;
+
       if (lineupUrls.isNotEmpty) {
         final position = await _findPositionInLineups(lineupUrls, playerId);
-
-        // Überprüfe, ob eine Position gefunden wurde
         if (position != 'NOT_FOUND') {
-          // Position gefunden! Gib das Ergebnis zurück und beende die Funktion.
           return position;
         }
       }
       currentPage++;
     }
 
-    return 'Position konnte auf keiner der verfügbaren Seiten gefunden werden.';
+    final position = await guessPlayerPosition(playerId);
+    return position ?? 'N/V';
   }
 
   Future<({List<String> urls, bool hasNextPage})> _getLineupUrlsAndPageInfo(int playerId, int page) async {
@@ -601,21 +601,60 @@ class ApiService {
         final List<Map<String, dynamic>> teams = [data['home'], data['away']];
 
         for (final teamData in teams) {
-          final String formation = teamData['formation'];
-          final List<dynamic> players = teamData['players'];
+          final String? formation = teamData['formation'];
+          final List<dynamic>? players = teamData['players'];
+
+          if (formation == null || players == null) continue;
 
           for (int i = 0; i < players.length; i++) {
-            if (players[i]['player']['id'] == playerId && i <= 10) {
+            final player = players[i]['player'];
+            if (player != null && player['id'] == playerId && i <= 10) {
               return _getPositionFromFormation(formation, i);
             }
           }
         }
-      } catch (e) {
+      } catch (_) {
         continue;
       }
     }
-    // Spezieller Rückgabewert, wenn nichts gefunden wurde
     return 'NOT_FOUND';
+  }
+  Future<String> guessPlayerPosition(int playerId) async {
+    try {
+      final playerData = 'https://www.sofascore.com/api/v1/player/$playerId';
+      final response = await http.get(Uri.parse(playerData));
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+
+        // 🧩 Sichere Zuweisung
+        final String? position = data['player']['position'] as String?;
+        if (position == null) {
+          print('⚠️ Keine Position gefunden für Spieler $playerId');
+          return 'N/V';
+        }
+
+
+        switch (position) {
+          case 'G':
+            return 'TW';
+          case 'D':
+            return 'IV';
+          case 'M':
+            return 'ZM';
+          case 'F':
+            return 'ST';
+          default:
+            return 'N/V';
+        }
+      } else {
+        print('⚠️ guessPlayerPosition Fehler HTTP ${response.statusCode}');
+        return 'N/V';
+      }
+    } catch (e) {
+      print('❌ Fehler in guessPlayerPosition($playerId): $e');
+      return 'N/V';
+    }
   }
 }
 

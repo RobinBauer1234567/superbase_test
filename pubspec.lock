@@ -201,7 +201,7 @@ packages:
     source: hosted
     version: "2.5.0"
   gotrue:
-    dependency: "direct main"
+    dependency: transitive
     description:
       name: gotrue
       sha256: "636b7d8de00c96cb580c705f9eb12bc107df893595854f1efa08c6b1b449e5e5"
@@ -409,7 +409,7 @@ packages:
     source: hosted
     version: "1.5.2"
   postgrest:
-    dependency: "direct main"
+    dependency: transitive
     description:
       name: postgrest
       sha256: "57637e331af3863fa1f555907ff24c30d69c3ad3ff127d89320e70e8d5e585f5"
