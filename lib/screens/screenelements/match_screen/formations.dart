@@ -190,19 +190,19 @@ class MatchFormationDisplay extends StatelessWidget {
     }
 
     return AspectRatio(
-      aspectRatio: 68 / 105, // Standard-Spielfeldverhältnis
+      aspectRatio: singleTeamMode ? (68 / 60) : (68 / 105), // halbes Feld für Einzelteam
       child: LayoutBuilder(
         builder: (context, constraints) {
           final double playerAvatarRadius = constraints.maxWidth / 23;
 
           return Stack(
             children: [
-              CustomPaint(size: Size.infinite, painter: _SoccerFieldPainter()),
+              CustomPaint(size: Size.infinite, painter: _SoccerFieldPainter(singleTeamMode: singleTeamMode)),
 
               // Spieler für Heimteam / Einzelteam
               if (singleTeamMode) ...[
                 // Positionierung für ein einzelnes Team
-                _buildPlayerLine(constraints, [homeGoalkeeper], 0.9, homeColor, onPlayerTap, playerAvatarRadius),
+                _buildPlayerLine(constraints, [homeGoalkeeper], 0.99, homeColor, onPlayerTap, playerAvatarRadius),
                 ..._buildFormationLines(constraints, homeFormationLines, homeFieldPlayers, false, homeColor, onPlayerTap, playerAvatarRadius, singleTeamMode: true),
               ] else ...[
                 // Positionierung für Heimteam im Zwei-Team-Modus
@@ -210,10 +210,8 @@ class MatchFormationDisplay extends StatelessWidget {
                 ..._buildFormationLines(constraints, homeFormationLines, homeFieldPlayers, false, homeColor, onPlayerTap, playerAvatarRadius),
               ],
 
-              // Spieler für Auswärtsteam (nur im Zwei-Team-Modus)
-              if (!singleTeamMode) ...[
+              if (!singleTeamMode)
                 _buildAwayTeam(constraints, playerAvatarRadius),
-              ]
             ],
           );
         },
@@ -271,8 +269,8 @@ class MatchFormationDisplay extends StatelessWidget {
     double availableVerticalSpace, verticalSpacingFactor;
 
     if (singleTeamMode) {
-      availableVerticalSpace = 0.6;
-      verticalSpacingFactor = availableVerticalSpace / (formationLines.length + 1);
+      availableVerticalSpace = 0.325 *105/60;
+      verticalSpacingFactor = availableVerticalSpace / (formationLines.length > 1 ? formationLines.length - 1 : 1);
     } else {
       availableVerticalSpace = 0.325;
       verticalSpacingFactor = availableVerticalSpace / (formationLines.length > 1 ? formationLines.length - 1 : 1);
@@ -284,7 +282,7 @@ class MatchFormationDisplay extends StatelessWidget {
 
       double lineYPosition;
       if (singleTeamMode) {
-        lineYPosition = 0.8 - ((i + 1) * verticalSpacingFactor);
+        lineYPosition = 0.8 - (i * verticalSpacingFactor);
       } else if (isAwayTeam) {
         lineYPosition = 0.12 + (i * verticalSpacingFactor);
       } else {
@@ -348,24 +346,56 @@ class _PlayerMarker extends StatelessWidget {
 }
 
 class _SoccerFieldPainter extends CustomPainter {
+  final bool singleTeamMode;
+
+  _SoccerFieldPainter({this.singleTeamMode = false});
+
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint();
     paint.color = Colors.green.shade700;
     canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), paint);
+
     paint.color = Colors.white.withOpacity(0.8);
     paint.strokeWidth = 1.5;
     paint.style = PaintingStyle.stroke;
+
+    final centerLineY = singleTeamMode ? size.height * (1 - 52.5 / 65) : size.height / 2;
+
+
+    canvas.drawLine(Offset(0, centerLineY), Offset(size.width, centerLineY), paint);
+    canvas.drawCircle(Offset(size.width / 2, centerLineY), size.width * 0.15, paint);
+    if (!singleTeamMode) {
+      canvas.drawCircle(Offset(size.width / 2, centerLineY), 2, paint..style = PaintingStyle.fill);
+      paint.style = PaintingStyle.stroke;
+    }
+
     canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), paint);
-    canvas.drawLine(Offset(0, size.height / 2), Offset(size.width, size.height / 2), paint);
-    canvas.drawCircle(Offset(size.width / 2, size.height / 2), size.width * 0.15, paint);
-    canvas.drawCircle(Offset(size.width / 2, size.height / 2), 2, paint..style = PaintingStyle.fill);
-    paint.style = PaintingStyle.stroke;
-    final penaltyAreaWidth = size.width * 0.6; // Angepasst für bessere Proportionen
-    final penaltyAreaHeight = size.height * 0.18; // Angepasst für bessere Proportionen
-    canvas.drawRect(Rect.fromCenter(center: Offset(size.width / 2, penaltyAreaHeight / 2), width: penaltyAreaWidth, height: penaltyAreaHeight,), paint,);
-    canvas.drawRect(Rect.fromCenter(center: Offset(size.width / 2, size.height - penaltyAreaHeight / 2), width: penaltyAreaWidth, height: penaltyAreaHeight,), paint,);
+
+    final penaltyAreaWidth = size.width * 0.6;
+    final penaltyAreaHeight = size.height * (singleTeamMode ? (16.5 / 70) : 0.18);
+
+    canvas.drawRect(
+      Rect.fromCenter(
+        center: Offset(size.width / 2, size.height - penaltyAreaHeight / 2),
+        width: penaltyAreaWidth,
+        height: penaltyAreaHeight,
+      ),
+      paint,
+    );
+
+    if (!singleTeamMode) {
+      canvas.drawRect(
+        Rect.fromCenter(
+          center: Offset(size.width / 2, penaltyAreaHeight / 2),
+          width: penaltyAreaWidth,
+          height: penaltyAreaHeight,
+        ),
+        paint,
+      );
+    }
   }
+
   @override
-  bool shouldRepaint(covariant CustomPainter oldDelegate) => false;
+  bool shouldRepaint(covariant _SoccerFieldPainter oldDelegate) => oldDelegate.singleTeamMode != singleTeamMode;
 }

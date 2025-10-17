@@ -316,8 +316,8 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
   void _calculateBestFormation() {
     final formations = {
       '4-4-2': ['TW', 'LV', 'IV', 'IV', 'RV', 'LM', 'ZM', 'ZM', 'RM', 'ST', 'ST'],
-      '4-3-3': ['TW', 'IV', 'IV', 'LV', 'RV', 'ZM', 'ZM', 'ZM', 'LA', 'RA', 'ST'],
-      '3-5-2': ['TW', 'IV', 'IV', 'IV', 'ZM', 'ZM', 'LM', 'RM', 'ZOM', 'ST', 'ST'],
+      '4-3-3': ['TW', 'LV', 'IV', 'IV', 'RV', 'ZM', 'ZM', 'ZM', 'LA', 'ST', 'RA'],
+      '3-5-2': ['TW', 'IV', 'IV', 'IV', 'LA', 'ZM', 'ZM', 'RA', 'ZOM', 'ST', 'ST'],
       '4-2-3-1': ['TW', 'IV', 'IV', 'LV', 'RV', 'ZDM', 'ZDM', 'LM', 'RM', 'ZOM', 'ST'],
     };
 
@@ -421,8 +421,8 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
     ))
         .toList();
 
-    return SingleChildScrollView(
-      child: Column(
+    return LayoutBuilder(builder: (context, constraints) {
+      return Column(
         children: [
           Padding(
             padding: const EdgeInsets.all(8.0),
@@ -431,23 +431,25 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
               style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
           ),
-          // Hier wird jetzt das neue, flexible Widget verwendet
-          MatchFormationDisplay(
-            homeFormation: formationName,
-            homePlayers: players,
-            homeColor: Colors.blue, // Oder eine andere gewünschte Farbe
-            onPlayerTap: (playerId) {
-              Navigator.push(
-                context,
-                MaterialPageRoute(
-                  builder: (context) => PlayerScreen(playerId: playerId),
-                ),
-              );
-            },
+          Expanded(
+            child: MatchFormationDisplay(
+              homeFormation: formationName,
+              homePlayers: players,
+              homeColor: Colors.blue, // Oder eine andere gewünschte Farbe
+              onPlayerTap: (playerId) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => PlayerScreen(playerId: playerId),
+                  ),
+                );
+              },
+            ),
           ),
         ],
-      ),
-    );  }
+      );
+    });
+  }
 
 
   Widget _buildFilterBar() {
