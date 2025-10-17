@@ -1,8 +1,9 @@
+// lib/screens/screenelements/match_screen/formations.dart
 import 'package:flutter/material.dart';
 import 'package:premier_league/utils/color_helper.dart';
 import 'dart:ui' as ui;
 
-// PlayerInfo-Modell angepasst, um nur die benötigten Daten zu enthalten
+// PlayerInfo-Modell bleibt unverändert
 class PlayerInfo {
   final int id;
   final String name;
@@ -151,17 +152,16 @@ class PlayerAvatar extends StatelessWidget {
   }
 }
 
-/// Ein Widget, das die Formationen beider Mannschaften auf einem Spielfeld anzeigt.
 class MatchFormationDisplay extends StatelessWidget {
-  // --- Heimteam ---
+  // --- Heimteam (immer erforderlich) ---
   final String homeFormation;
   final List<PlayerInfo> homePlayers;
   final Color homeColor;
 
-  // --- Auswärtsteam ---
-  final String awayFormation;
-  final List<PlayerInfo> awayPlayers;
-  final Color awayColor;
+  // --- Auswärtsteam (optional) ---
+  final String? awayFormation;
+  final List<PlayerInfo>? awayPlayers;
+  final Color? awayColor;
   final void Function(int playerId) onPlayerTap;
 
 
@@ -169,29 +169,24 @@ class MatchFormationDisplay extends StatelessWidget {
     super.key,
     required this.homeFormation,
     required this.homePlayers,
-    required this.awayFormation,
-    required this.awayPlayers,
+    this.awayFormation,
+    this.awayPlayers,
     required this.onPlayerTap,
     this.homeColor = Colors.blue,
     this.awayColor = Colors.red,
-  })  : assert(homePlayers.length >= 11, 'Heimteam muss 11 Spieler haben.'),
-        assert(awayPlayers.length >= 11, 'Auswärtsteam muss 11 Spieler haben.');
+  });
 
   @override
   Widget build(BuildContext context) {
+    // Prüfen, ob es sich um ein Einzel- oder Zwei-Team-Display handelt
+    final bool singleTeamMode = awayPlayers == null || awayFormation == null;
+
     final homeGoalkeeper = _findGoalkeeper(homePlayers);
     final homeFieldPlayers = _findFieldPlayers(homePlayers, homeGoalkeeper);
     final homeFormationLines = _parseFormation(homeFormation);
 
-    final awayGoalkeeper = _findGoalkeeper(awayPlayers);
-    final awayFieldPlayers = _findFieldPlayers(awayPlayers, awayGoalkeeper);
-    final awayFormationLines = _parseFormation(awayFormation);
-
-    if (homeGoalkeeper == null || awayGoalkeeper == null) {
-      return const Center(child: Text('Fehler: Torwart nicht in beiden Teams gefunden.'));
-    }
-    if (homeFieldPlayers.length < 10 || awayFieldPlayers.length < 10) {
-      return const Center(child: Text('Fehler: Falsche Anzahl an Feldspielern.'));
+    if (homeGoalkeeper == null || homeFieldPlayers.length < 10) {
+      return const Center(child: Text('Ungültige Spielerdaten für das Heimteam.'));
     }
 
     return AspectRatio(
@@ -204,11 +199,21 @@ class MatchFormationDisplay extends StatelessWidget {
             children: [
               CustomPaint(size: Size.infinite, painter: _SoccerFieldPainter()),
 
-              _buildPlayerLine(constraints, [homeGoalkeeper], 0.99, homeColor, false, onPlayerTap, playerAvatarRadius),
-              ..._buildFormationLines(constraints, homeFormationLines, homeFieldPlayers, false, homeColor, onPlayerTap, playerAvatarRadius),
+              // Spieler für Heimteam / Einzelteam
+              if (singleTeamMode) ...[
+                // Positionierung für ein einzelnes Team
+                _buildPlayerLine(constraints, [homeGoalkeeper], 0.9, homeColor, onPlayerTap, playerAvatarRadius),
+                ..._buildFormationLines(constraints, homeFormationLines, homeFieldPlayers, false, homeColor, onPlayerTap, playerAvatarRadius, singleTeamMode: true),
+              ] else ...[
+                // Positionierung für Heimteam im Zwei-Team-Modus
+                _buildPlayerLine(constraints, [homeGoalkeeper], 0.99, homeColor, onPlayerTap, playerAvatarRadius),
+                ..._buildFormationLines(constraints, homeFormationLines, homeFieldPlayers, false, homeColor, onPlayerTap, playerAvatarRadius),
+              ],
 
-              _buildPlayerLine(constraints, [awayGoalkeeper], 0.01, awayColor, true, onPlayerTap, playerAvatarRadius),
-              ..._buildFormationLines(constraints, awayFormationLines, awayFieldPlayers, true, awayColor, onPlayerTap, playerAvatarRadius),
+              // Spieler für Auswärtsteam (nur im Zwei-Team-Modus)
+              if (!singleTeamMode) ...[
+                _buildAwayTeam(constraints, playerAvatarRadius),
+              ]
             ],
           );
         },
@@ -216,9 +221,26 @@ class MatchFormationDisplay extends StatelessWidget {
     );
   }
 
+  Widget _buildAwayTeam(BoxConstraints constraints, double playerAvatarRadius) {
+    final awayGoalkeeper = _findGoalkeeper(awayPlayers!);
+    final awayFieldPlayers = _findFieldPlayers(awayPlayers!, awayGoalkeeper);
+    final awayFormationLines = _parseFormation(awayFormation!);
+
+    if (awayGoalkeeper == null || awayFieldPlayers.length < 10) {
+      return const SizedBox.shrink(); // Oder eine Fehlermeldung
+    }
+
+    return Stack(
+      children: [
+        _buildPlayerLine(constraints, [awayGoalkeeper], 0.01, awayColor!, onPlayerTap, playerAvatarRadius),
+        ..._buildFormationLines(constraints, awayFormationLines, awayFieldPlayers, true, awayColor!, onPlayerTap, playerAvatarRadius),
+      ],
+    );
+  }
+
   PlayerInfo? _findGoalkeeper(List<PlayerInfo> players) {
     try {
-      return players.firstWhere((p) => p.position.toUpperCase() == 'TW' || p.position.toUpperCase() == 'G');
+      return players.firstWhere((p) => (p.position).contains('TW'));
     } catch (e) {
       return null;
     }
@@ -240,30 +262,37 @@ class MatchFormationDisplay extends StatelessWidget {
       bool isAwayTeam,
       Color teamColor,
       void Function(int) onPlayerTap,
-      double avatarRadius) { // Radius wird übergeben
+      double avatarRadius, {
+        bool singleTeamMode = false,
+      }) {
     final List<Widget> lines = [];
     int playerIndexOffset = 0;
-    // Der vertikale Raum, der für die Feldspieler zur Verfügung steht
-    final double availableVerticalSpace = 0.325;
-    // Der Abstand zwischen den Linien
-    final double verticalSpacingFactor = availableVerticalSpace / (formationLines.length > 1 ? formationLines.length - 1 : 1);
+
+    double availableVerticalSpace, verticalSpacingFactor;
+
+    if (singleTeamMode) {
+      availableVerticalSpace = 0.6;
+      verticalSpacingFactor = availableVerticalSpace / (formationLines.length + 1);
+    } else {
+      availableVerticalSpace = 0.325;
+      verticalSpacingFactor = availableVerticalSpace / (formationLines.length > 1 ? formationLines.length - 1 : 1);
+    }
 
     for (int i = 0; i < formationLines.length; i++) {
       final linePlayerCount = formationLines[i];
       if (playerIndexOffset + linePlayerCount > fieldPlayers.length) continue;
 
       double lineYPosition;
-      if (isAwayTeam) {
-        // Obere Hälfte: Verteidigung (i=0) weiter oben
+      if (singleTeamMode) {
+        lineYPosition = 0.8 - ((i + 1) * verticalSpacingFactor);
+      } else if (isAwayTeam) {
         lineYPosition = 0.12 + (i * verticalSpacingFactor);
       } else {
-        // Untere Hälfte: Verteidigung (i=0) weiter unten
         lineYPosition = 0.88 - (i * verticalSpacingFactor);
       }
 
       final linePlayers = fieldPlayers.sublist(playerIndexOffset, playerIndexOffset + linePlayerCount);
-
-      lines.add(_buildPlayerLine(constraints, linePlayers, lineYPosition, teamColor, isAwayTeam, onPlayerTap, avatarRadius));
+      lines.add(_buildPlayerLine(constraints, linePlayers, lineYPosition, teamColor, onPlayerTap, avatarRadius));
       playerIndexOffset += linePlayerCount;
     }
     return lines;
@@ -274,9 +303,8 @@ class MatchFormationDisplay extends StatelessWidget {
       List<PlayerInfo> players,
       double lineYPosition,
       Color teamColor,
-      bool isAwayTeam,
       void Function(int) onPlayerTap,
-      double avatarRadius) { // Radius wird übergeben
+      double avatarRadius) {
     final playerCount = players.length;
     return Positioned.fill(
       child: LayoutBuilder(

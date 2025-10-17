@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:premier_league/viewmodels/data_viewmodel.dart';
 import 'package:premier_league/screens/player_screen.dart';
 import 'package:premier_league/screens/screenelements/player_list_item.dart';
+import 'package:premier_league/screens/screenelements/match_screen/formations.dart';
 
 class TopTeamScreen extends StatefulWidget {
   const TopTeamScreen({super.key});
@@ -17,11 +18,13 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
   // View State
   bool _showGesamt = true;
   bool _isLoading = true;
+  bool _showFormation = false; // Neu: Umschalter für die Ansicht
 
   // Data
   List<Map<String, dynamic>> _topPlayers = [];
   List<Map<String, dynamic>> _teams = [];
   List<String> _positions = [];
+  Map<String, dynamic>? _bestFormation; // Neu: Speichert die beste Elf
 
   // Filter & Selection
   int? _selectedSpieltag;
@@ -48,6 +51,9 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
       if (_selectedSpieltag != null) {
         await _fetchSpieltagStats();
       }
+    }
+    if (_showFormation) {
+      _calculateBestFormation();
     }
     setState(() => _isLoading = false);
   }
@@ -194,6 +200,7 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
             'profilbild_url': player['profilbild_url'],
             'team_image_url': team['image_url'],
             'total_punkte': totalPunkte,
+            'position': player['position'],
           });
         } catch (e) {
           // Einzelne Spieler können fehlschlagen — skip, aber weiter verarbeiten
@@ -286,6 +293,7 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
           'profilbild_url': player['profilbild_url'],
           'team_image_url': team['image_url'],
           'total_punkte': rating['punkte'],
+          'position': player['position'],
         });
       }
 
@@ -304,6 +312,53 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
     }
   }
 
+  // Neue Methode zur Berechnung der besten Formation
+  void _calculateBestFormation() {
+    final formations = {
+      '4-4-2': ['TW', 'LV', 'IV', 'IV', 'RV', 'LM', 'ZM', 'ZM', 'RM', 'ST', 'ST'],
+      '4-3-3': ['TW', 'IV', 'IV', 'LV', 'RV', 'ZM', 'ZM', 'ZM', 'LA', 'RA', 'ST'],
+      '3-5-2': ['TW', 'IV', 'IV', 'IV', 'ZM', 'ZM', 'LM', 'RM', 'ZOM', 'ST', 'ST'],
+      '4-2-3-1': ['TW', 'IV', 'IV', 'LV', 'RV', 'ZDM', 'ZDM', 'LM', 'RM', 'ZOM', 'ST'],
+    };
+
+    Map<String, dynamic>? bestFormation;
+    int maxScore = 0;
+
+    formations.forEach((formationName, positions) {
+      List<Map<String, dynamic>> currentFormation = [];
+      int currentScore = 0;
+      List<int> usedPlayerIds = [];
+
+      for (var pos in positions) {
+        final bestPlayerForPos = _topPlayers.firstWhere(
+              (p) =>
+          !usedPlayerIds.contains(p['id']) &&
+              (p['position'] as String).contains(pos),
+          orElse: () => {},
+        );
+
+        if (bestPlayerForPos.isNotEmpty) {
+          currentFormation.add(bestPlayerForPos);
+          currentScore += bestPlayerForPos['total_punkte'] as int;
+          usedPlayerIds.add(bestPlayerForPos['id']);
+        }
+      }
+
+      if (currentFormation.length == 11 && currentScore > maxScore) {
+        maxScore = currentScore;
+        bestFormation = {
+          'name': formationName,
+          'players': currentFormation,
+          'score': maxScore,
+        };
+      }
+    });
+
+    setState(() {
+      _bestFormation = bestFormation;
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     return Column(
@@ -312,33 +367,88 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
         Expanded(
           child: _isLoading
               ? const Center(child: CircularProgressIndicator())
-              : ListView.builder(
-            itemCount: _topPlayers.length,
-            itemBuilder: (context, index) {
-              final player = _topPlayers[index];
-              return PlayerListItem(
-                rank: index + 1,
-                profileImageUrl: player['profilbild_url'],
-                playerName: player['name'],
-                teamImageUrl: player['team_image_url'],
-                score: player['total_punkte'],
-                maxScore: _showGesamt ? (_spieltage.length*250*0.8).toInt() : 250,
-                onTap: () {
-                  Navigator.push(
-                    context,
-                    MaterialPageRoute(
-                      builder: (context) =>
-                          PlayerScreen(playerId: player['id']),
-                    ),
-                  );
-                },
-              );
-            },
-          ),
+              : _showFormation
+              ? _buildFormationView()
+              : _buildPlayerListView(),
         ),
       ],
     );
   }
+
+  Widget _buildPlayerListView() {
+    return ListView.builder(
+      itemCount: _topPlayers.length,
+      itemBuilder: (context, index) {
+        final player = _topPlayers[index];
+        return PlayerListItem(
+          rank: index + 1,
+          profileImageUrl: player['profilbild_url'],
+          playerName: player['name'],
+          teamImageUrl: player['team_image_url'],
+          score: player['total_punkte'],
+          maxScore: _showGesamt ? (_spieltage.length * 250 * 0.8).toInt() : 250,
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => PlayerScreen(playerId: player['id']),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildFormationView() {
+    if (_bestFormation == null) {
+      return const Center(
+        child: Text("Keine gültige Formation gefunden."),
+      );
+    }
+
+    final formationName = _bestFormation!['name'] as String;
+    final players = (_bestFormation!['players'] as List)
+        .map((p) => PlayerInfo(
+      id: p['id'],
+      name: p['name'],
+      position: p['position'],
+      profileImageUrl: p['profilbild_url'],
+      rating: p['total_punkte'],
+      goals: 0, // Diese Daten sind hier nicht verfügbar
+      assists: 0,
+      ownGoals: 0,
+    ))
+        .toList();
+
+    return SingleChildScrollView(
+      child: Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.all(8.0),
+            child: Text(
+              'Beste Formation: $formationName (Gesamtpunkte: ${_bestFormation!['score']})',
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            ),
+          ),
+          // Hier wird jetzt das neue, flexible Widget verwendet
+          MatchFormationDisplay(
+            homeFormation: formationName,
+            homePlayers: players,
+            homeColor: Colors.blue, // Oder eine andere gewünschte Farbe
+            onPlayerTap: (playerId) {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (context) => PlayerScreen(playerId: playerId),
+                ),
+              );
+            },
+          ),
+        ],
+      ),
+    );  }
+
 
   Widget _buildFilterBar() {
     return Card(
@@ -412,6 +522,17 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
               onChanged: (value) {
                 setState(() => _selectedPosition = value);
                 _fetchData();
+              },
+            ),
+            IconButton(
+              icon: Icon(_showFormation ? Icons.list : Icons.sports_soccer),
+              onPressed: () {
+                setState(() {
+                  _showFormation = !_showFormation;
+                });
+                if (_showFormation) {
+                  _calculateBestFormation();
+                }
               },
             ),
           ],
