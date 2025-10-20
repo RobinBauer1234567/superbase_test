@@ -1,5 +1,6 @@
 // lib/screens/premier_league/top_team_screen.dart
 import 'package:flutter/material.dart';
+import 'package:premier_league/data_service.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:premier_league/viewmodels/data_viewmodel.dart';
@@ -313,13 +314,9 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
   }
 
   // Neue Methode zur Berechnung der besten Formation
-  void _calculateBestFormation() {
-    final formations = {
-      '4-4-2': ['TW', 'LV', 'IV', 'IV', 'RV', 'LM', 'ZM', 'ZM', 'RM', 'ST', 'ST'],
-      '4-3-3': ['TW', 'LV', 'IV', 'IV', 'RV', 'ZM', 'ZM', 'ZM', 'LA', 'ST', 'RA'],
-      '3-5-2': ['TW', 'IV', 'IV', 'IV', 'LA', 'ZM', 'ZM', 'RA', 'ZOM', 'ST', 'ST'],
-      '4-2-3-1': ['TW', 'IV', 'IV', 'LV', 'RV', 'ZDM', 'ZDM', 'LM', 'RM', 'ZOM', 'ST'],
-    };
+  Future <void> _calculateBestFormation() async{
+    SupabaseService supabaseService = SupabaseService();
+    final formations = await supabaseService.fetchFormationsFromDb();
 
     Map<String, dynamic>? bestFormation;
     int maxScore = 0;
@@ -415,6 +412,7 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
       position: p['position'],
       profileImageUrl: p['profilbild_url'],
       rating: p['total_punkte'],
+      maxRating: _showGesamt? (_spieltage.length*250*0.8).toInt(): 250,
       goals: 0, // Diese Daten sind hier nicht verfügbar
       assists: 0,
       ownGoals: 0,

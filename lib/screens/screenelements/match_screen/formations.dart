@@ -11,6 +11,7 @@ class PlayerInfo {
   final String? profileImageUrl;
   final int rating; // Das ist der 'punkte'-Wert
   final int goals;
+  final int maxRating;
   final int assists;
   final int ownGoals;
   final int? jerseyNumber;
@@ -26,6 +27,7 @@ class PlayerInfo {
     required this.assists,
     required this.ownGoals,
     this.jerseyNumber,
+    this.maxRating = 250
   });
 }
 /// Ein wiederverwendbares Widget für Spieler-Avatare mit Team-farbigem Rand.
@@ -102,7 +104,7 @@ class PlayerAvatar extends StatelessWidget {
                 child: Container(
                   padding: EdgeInsets.symmetric(horizontal: radius * 0.2, vertical: radius * 0.05),
                   decoration: BoxDecoration(
-                    color: getColorForRating(player.rating, 250),
+                    color: getColorForRating(player.rating, player.maxRating),
                     borderRadius: BorderRadius.circular(3),
                   ),
                   child: Text(

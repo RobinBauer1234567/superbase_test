@@ -154,7 +154,7 @@ class ApiService {
     var player = playerData['player'];
     int playerId = player['id'];
     String playerName = player['name'];
-    String matchPosition = _getPositionFromFormation(formation, formationIndex);
+    String matchPosition = await _getPositionFromFormation(formation, formationIndex);
     String finalPositionsToSave = '';
     String? imageUrl;
 
@@ -225,8 +225,75 @@ class ApiService {
     await supabaseService.saveMatchrating(ratingId, spielId, playerId, punktzahl, stats, newRating, formationIndex, matchPosition);
   }
 
-  String _getPositionFromFormation(String formation, int index) {
-    if (index == 0) return 'TW'; // Index 0 (erster Spieler in der API-Liste) ist immer der Torwart.
+
+// Neue asynchrone Version, die DB prüft / anlegt
+  Future<String> _getPositionFromFormation(String formation, int index) async {
+    // indices in deinem System: 0..10 (0 = TW)
+    if (index == 0) return 'TW';
+
+    final supabase = Supabase.instance.client;
+
+    try {
+      // 1) Prüfen, ob die Formation bereits existiert
+      final existing = await supabase
+          .from('formation')
+          .select('positionsliste')
+          .eq('formation', formation)
+          .maybeSingle();
+
+      if (existing != null && existing['positionsliste'] != null) {
+        final List<dynamic> raw = existing['positionsliste'] as List<dynamic>;
+        final List<String> positions = raw.map((e) => e.toString()).toList();
+
+        if (index >= 0 && index < positions.length) {
+          return positions[index];
+        }
+        // falls Index außerhalb der Länge liegt
+        return 'N/A';
+      }
+
+      // 2) Wenn nicht vorhanden: positionsliste berechnen (für index 0..10)
+      final List<String> positionsList = List.generate(11, (i) {
+        return _computePositionFromFormation(formation, i);
+      });
+
+      // 3) In DB speichern (Formation ist primary key vom Typ text)
+      try {
+        await supabase.from('formation').insert({
+          'formation': formation,
+          'positionsliste': positionsList,
+        }).select().maybeSingle();
+      } catch (e) {
+        // Falls Insert fehlschlägt (z.B. Race-Condition), ignoriere es ruhig —
+        // Formation könnte in der Zwischenzeit von anderem Prozess angelegt worden sein.
+        // Optional: erneut SELECT ausführen, um sicherzugehen.
+        final retry = await supabase
+            .from('formation')
+            .select('positionsliste')
+            .eq('formation', formation)
+            .maybeSingle();
+        if (retry != null && retry['positionsliste'] != null) {
+          final List<dynamic> raw = retry['positionsliste'] as List<dynamic>;
+          final List<String> positions = raw.map((e) => e.toString()).toList();
+          if (index >= 0 && index < positions.length) return positions[index];
+        }
+      }
+
+      // 4) Rückgabe der für den index berechneten Position
+      if (index >= 0 && index < positionsList.length) {
+        return positionsList[index];
+      }
+      return 'N/A';
+    } catch (e, st) {
+      // Bei DB-Fehlern: fallback auf lokale Berechnung (ohne Speichern)
+      print('Error fetching/inserting formation: $e\n$st');
+      return _computePositionFromFormation(formation, index);
+    }
+  }
+
+// Hilfsfunktion: die ursprüngliche Logik (leicht umgesteckt)
+  String _computePositionFromFormation(String formation, int index) {
+    if (index == 0) return 'TW'; // Torwart
 
     final parts = formation.split('-').map(int.tryParse).where((i) => i != null).cast<int>().toList();
     if (parts.length < 2) return 'N/A'; // Ungültige Formation
@@ -585,7 +652,8 @@ class ApiService {
     }
   }
 
-  Future<String> _findPositionInLineups(List<String> lineupUrls, int playerId) async {
+  Future<String> _findPositionInLineups(List<String> lineupUrls, int playerId) async
+  {
     for (final url in lineupUrls) {
       try {
         final response = await http.get(Uri.parse(url));
@@ -810,4 +878,82 @@ class SupabaseService {
     print("--- DEBUG: Rohdaten von Supabase erhalten (${data.length} Spieler) ---");
     return data.length;
   }
+
+  Future<Map<String, List<String>>> fetchFormationsFromDb({SupabaseClient? client}) async {
+    final supabase = client ?? Supabase.instance.client;
+
+    try {
+      final response = await supabase
+          .from('formation')
+          .select('formation, positionsliste');
+
+      // Falls Supabase ein Fehlerobjekt statt List zurückgibt, fange das auf:
+      if (response == null) return {};
+
+      final Map<String, List<String>> result = {};
+
+      // response ist üblicherweise List<Map<String, dynamic>>
+      if (response is List) {
+        for (final row in response) {
+          if (row == null) continue;
+          final String? name = (row['formation'] ?? row['formation_name'])?.toString();
+          final dynamic rawPositions = row['positionsliste'];
+
+          if (name == null) continue;
+
+          List<String> positions = [];
+
+          if (rawPositions == null) {
+            // nichts vorhanden => skip
+            continue;
+          }
+
+          // Falls DB schon ein JSON-Array zurückgibt
+          if (rawPositions is List) {
+            positions = rawPositions.map((e) => e.toString()).toList();
+          } else if (rawPositions is String) {
+            // rawPositions könnte ein JSON-encoded string oder ein CSV-String sein
+            // Versuch JSON zuerst:
+            try {
+              final decoded = jsonDecode(rawPositions);
+              if (decoded is List) {
+                positions = decoded.map((e) => e.toString()).toList();
+              } else if (decoded is String) {
+                // selten: JSON-string mit Komma-liste
+                positions = decoded.split(',').map((s) => s.trim()).toList();
+              } else {
+                // fallback
+                positions = rawPositions.split(',').map((s) => s.trim()).toList();
+              }
+            } catch (_) {
+              // kein JSON -> als Komma-getrennte Liste parsen
+              positions = rawPositions.split(',').map((s) => s.trim()).toList();
+            }
+          } else {
+            // Sonstiger Typ (z.B. Map) -> versuche vernünftige Extraktion
+            try {
+              final jsonString = jsonEncode(rawPositions);
+              final decoded = jsonDecode(jsonString);
+              if (decoded is List) {
+                positions = decoded.map((e) => e.toString()).toList();
+              }
+            } catch (_) {
+              // leave empty
+            }
+          }
+
+          if (positions.isNotEmpty) {
+            result[name] = positions;
+          }
+        }
+      }
+
+      return result;
+    } catch (e, st) {
+      // debug-Ausgabe, falls nötig
+      print('fetchFormationsFromDb error: $e\n$st');
+      return {};
+    }
+  }
+
 }

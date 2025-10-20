@@ -16,7 +16,7 @@ void main() async {
       'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJjZmV0bHpsZGNjd2pudWFiZmdqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTM5OTkwNDQsImV4cCI6MjA2OTU3NTA0NH0.Fe4Aa3b7vxn9gnye1Cl0VvhxyT7UREJYDCRvICkGNsM'
   );
   DataManagement dataManagement = DataManagement(seasonId: activeSeasonId);
-  await dataManagement.updateData();
+  await dataManagement.collectNewData();
   runApp(MyApp(activeSeasonId: activeSeasonId));
 }
 
