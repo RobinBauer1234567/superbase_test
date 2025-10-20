@@ -204,11 +204,11 @@ class MatchFormationDisplay extends StatelessWidget {
               // Spieler für Heimteam / Einzelteam
               if (singleTeamMode) ...[
                 // Positionierung für ein einzelnes Team
-                _buildPlayerLine(constraints, [homeGoalkeeper], 0.99, homeColor, onPlayerTap, playerAvatarRadius),
+                _buildPlayerLine(constraints, [homeGoalkeeper], 0.99, homeColor, onPlayerTap, playerAvatarRadius, false),
                 ..._buildFormationLines(constraints, homeFormationLines, homeFieldPlayers, false, homeColor, onPlayerTap, playerAvatarRadius, singleTeamMode: true),
               ] else ...[
                 // Positionierung für Heimteam im Zwei-Team-Modus
-                _buildPlayerLine(constraints, [homeGoalkeeper], 0.99, homeColor, onPlayerTap, playerAvatarRadius),
+                _buildPlayerLine(constraints, [homeGoalkeeper], 0.99, homeColor, onPlayerTap, playerAvatarRadius, false),
                 ..._buildFormationLines(constraints, homeFormationLines, homeFieldPlayers, false, homeColor, onPlayerTap, playerAvatarRadius),
               ],
 
@@ -232,7 +232,7 @@ class MatchFormationDisplay extends StatelessWidget {
 
     return Stack(
       children: [
-        _buildPlayerLine(constraints, [awayGoalkeeper], 0.01, awayColor!, onPlayerTap, playerAvatarRadius),
+        _buildPlayerLine(constraints, [awayGoalkeeper], 0.01, awayColor!, onPlayerTap, playerAvatarRadius, true),
         ..._buildFormationLines(constraints, awayFormationLines, awayFieldPlayers, true, awayColor!, onPlayerTap, playerAvatarRadius),
       ],
     );
@@ -292,7 +292,7 @@ class MatchFormationDisplay extends StatelessWidget {
       }
 
       final linePlayers = fieldPlayers.sublist(playerIndexOffset, playerIndexOffset + linePlayerCount);
-      lines.add(_buildPlayerLine(constraints, linePlayers, lineYPosition, teamColor, onPlayerTap, avatarRadius));
+      lines.add(_buildPlayerLine(constraints, linePlayers, lineYPosition, teamColor, onPlayerTap, avatarRadius, isAwayTeam));
       playerIndexOffset += linePlayerCount;
     }
     return lines;
@@ -304,8 +304,10 @@ class MatchFormationDisplay extends StatelessWidget {
       double lineYPosition,
       Color teamColor,
       void Function(int) onPlayerTap,
-      double avatarRadius) {
+      double avatarRadius,
+      bool isAwayTeam) {
     final playerCount = players.length;
+    final orderedPlayers = isAwayTeam ? players : players.reversed.toList();
     return Positioned.fill(
       child: LayoutBuilder(
         builder: (context, constraints) {
@@ -314,7 +316,7 @@ class MatchFormationDisplay extends StatelessWidget {
               final playerXPosition = (i + 1) / (playerCount + 1);
               return Align(
                 alignment: Alignment((playerXPosition * 2) - 1, (lineYPosition * 2) - 1),
-                child: _PlayerMarker(player: players[i], teamColor: teamColor, onPlayerTap: onPlayerTap, radius: avatarRadius),
+                child: _PlayerMarker(player: orderedPlayers[i], teamColor: teamColor, onPlayerTap: onPlayerTap, radius: avatarRadius),
               );
             }),
           );

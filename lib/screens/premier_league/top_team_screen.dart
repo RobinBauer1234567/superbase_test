@@ -19,13 +19,16 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
   // View State
   bool _showGesamt = true;
   bool _isLoading = true;
-  bool _showFormation = false; // Neu: Umschalter für die Ansicht
+  bool _showFormation = false;
+  bool _isCalculatingFormation = false;
 
   // Data
   List<Map<String, dynamic>> _topPlayers = [];
   List<Map<String, dynamic>> _teams = [];
   List<String> _positions = [];
-  Map<String, dynamic>? _bestFormation; // Neu: Speichert die beste Elf
+  Map<String, dynamic>? _bestFormation;
+  Map<String, List<String>> _allFormations = {};
+  String? _selectedFormationName;
 
   // Filter & Selection
   int? _selectedSpieltag;
@@ -54,7 +57,7 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
       }
     }
     if (_showFormation) {
-      _calculateBestFormation();
+      await _calculateInitialBestFormation();
     }
     setState(() => _isLoading = false);
   }
@@ -63,7 +66,6 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
     final dataManagement = Provider.of<DataManagement>(context, listen: false);
     final seasonId = dataManagement.seasonId;
 
-    // Teams für die aktuelle Saison abrufen
     final teamsResponse = await Supabase.instance.client
         .from('season_teams')
         .select('team:team(id, name, image_url)')
@@ -74,7 +76,6 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
       _teams.sort((a, b) => a['name'].compareTo(b['name']));
     }
 
-    // Gespielte Spieltage abrufen
     final spieltageResponse = await Supabase.instance.client
         .from('spieltag')
         .select('round')
@@ -86,7 +87,6 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
       _selectedSpieltag = _spieltage.isNotEmpty ? _spieltage.last : null;
     }
 
-    // Alle einzigartigen Positionen abrufen
     final positionsResponse =
     await Supabase.instance.client.from('spieler').select('position');
     final positionSet = <String>{};
@@ -109,7 +109,6 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
     setState(() => _isLoading = true);
     try {
       final dataManagement = Provider.of<DataManagement>(context, listen: false);
-      // seasonId kann int oder String sein - normalisiere beides
       final dynamic rawSeasonId = dataManagement.seasonId;
       final String seasonIdStr = rawSeasonId.toString();
       final int? seasonIdInt = int.tryParse(seasonIdStr);
@@ -124,27 +123,21 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
         query = query.eq('season_players.team_id', teamId);
       }
 
-      // Serverseitiges ilike entfernen — clientseitig filtern
       final response = await query;
-      print('🧾 _fetchGesamtStats: DB Einträge erhalten: ${response.length}');
-
       List<Map<String, dynamic>> topPlayersList = [];
       final String? selectedPosition = _selectedPosition?.toLowerCase();
 
       for (var player in response) {
         try {
           final dynamic stats = player['gesamtstatistiken'];
-          // Robust: finde seasonStats in verschiedenen möglichen Strukturen
           dynamic seasonStats;
 
           if (stats is Map) {
-            // JSON decode -> keys sind meistens Strings, aber wir prüfen beides
             if (stats.containsKey(seasonIdStr)) {
               seasonStats = stats[seasonIdStr];
             } else if (seasonIdInt != null && stats.containsKey(seasonIdInt)) {
               seasonStats = stats[seasonIdInt];
             } else {
-              // Fallback: suche erste passende Map-Entry dessen key numeric mit seasonId übereinstimmt
               for (var k in stats.keys) {
                 if (k.toString() == seasonIdStr) {
                   seasonStats = stats[k];
@@ -153,14 +146,12 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
               }
             }
           } else if (stats is List) {
-            // evtl. Liste mit Objekten, die season_id enthalten
             seasonStats = stats.firstWhere(
                   (e) => (e is Map && (e['season_id']?.toString() == seasonIdStr || e['season_id'] == seasonIdInt)),
               orElse: () => null,
             );
           }
 
-          // seasonPlayers robust auslesen
           final dynamic seasonPlayers = player['season_players'];
           dynamic team;
           if (seasonPlayers is List && seasonPlayers.isNotEmpty) {
@@ -169,14 +160,10 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
             team = seasonPlayers['team'];
           }
 
-          // Wenn keine seasonStats oder kein Team -> skip
           if (seasonStats == null || team == null) {
-            // optional: kurze Debug-Info nur für die Fälle, die gefiltert werden
-            // print('⚠️ skipping player ${player['id']} — seasonStats: ${seasonStats==null}, team: ${team==null}');
             continue;
           }
 
-          // Clientseitiges Positionsfilter: handle String OR List
           if (selectedPosition != null && selectedPosition.isNotEmpty) {
             final dynamic rawPos = player['position'];
             String playerPosStr = '';
@@ -204,7 +191,6 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
             'position': player['position'],
           });
         } catch (e) {
-          // Einzelne Spieler können fehlschlagen — skip, aber weiter verarbeiten
           print('⚠️ Fehler beim Verarbeiten eines Spielers in _fetchGesamtStats: $e');
           continue;
         }
@@ -217,8 +203,6 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
           _topPlayers = topPlayersList.take(50).toList();
         });
       }
-
-      print('✅ _fetchGesamtStats: Gefilterte Spieler: ${_topPlayers.length}');
     } catch (e, st) {
       print('❌ Fehler in _fetchGesamtStats: $e\n$st');
       if (mounted) {
@@ -246,10 +230,8 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
           .eq('spiel.round', spieltag)
           .eq('spiel.season_id', seasonId);
 
-      // Kein serverseitiges ilike auf 'spieler.position' — filtere in Dart
       final response = await query;
 
-      // Spieler-IDs sammeln
       final playerTeamQueryIds = response
           .where((r) => r['spieler'] != null)
           .map<int>((r) => r['spieler']['id'] as int)
@@ -276,7 +258,6 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
         final player = rating['spieler'];
         if (player == null) continue;
 
-        // Clientseitiges Positionsfilter
         if (selectedPosition != null && selectedPosition.isNotEmpty) {
           final playerPos = (player['position'] ?? '').toString().toLowerCase();
           if (!playerPos.contains(selectedPosition)) continue;
@@ -313,13 +294,15 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
     }
   }
 
-  // Neue Methode zur Berechnung der besten Formation
-  Future <void> _calculateBestFormation() async{
+  Future<void> _calculateInitialBestFormation() async {
+    setState(() => _isCalculatingFormation = true);
     SupabaseService supabaseService = SupabaseService();
     final formations = await supabaseService.fetchFormationsFromDb();
+    _allFormations = formations;
 
     Map<String, dynamic>? bestFormation;
     int maxScore = 0;
+    String? bestFormationName;
 
     formations.forEach((formationName, positions) {
       List<Map<String, dynamic>> currentFormation = [];
@@ -343,6 +326,7 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
 
       if (currentFormation.length == 11 && currentScore > maxScore) {
         maxScore = currentScore;
+        bestFormationName = formationName;
         bestFormation = {
           'name': formationName,
           'players': currentFormation,
@@ -353,8 +337,58 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
 
     setState(() {
       _bestFormation = bestFormation;
+      _selectedFormationName = bestFormationName;
+      _isCalculatingFormation = false;
     });
   }
+
+  void _calculateTeamForSelectedFormation(String formationName) {
+    setState(() => _isCalculatingFormation = true);
+
+    final positions = _allFormations[formationName];
+    if (positions == null) {
+      setState(() {
+        _bestFormation = null;
+        _isCalculatingFormation = false;
+      });
+      return;
+    }
+
+    List<Map<String, dynamic>> currentFormation = [];
+    int currentScore = 0;
+    List<int> usedPlayerIds = [];
+
+    for (var pos in positions) {
+      final bestPlayerForPos = _topPlayers.firstWhere(
+            (p) =>
+        !usedPlayerIds.contains(p['id']) &&
+            (p['position'] as String).contains(pos),
+        orElse: () => {},
+      );
+
+      if (bestPlayerForPos.isNotEmpty) {
+        currentFormation.add(bestPlayerForPos);
+        currentScore += bestPlayerForPos['total_punkte'] as int;
+        usedPlayerIds.add(bestPlayerForPos['id']);
+      }
+    }
+
+    Map<String, dynamic>? newFormation;
+    if (currentFormation.length == 11) {
+      newFormation = {
+        'name': formationName,
+        'players': currentFormation,
+        'score': currentScore,
+      };
+    }
+
+    setState(() {
+      _bestFormation = newFormation;
+      _selectedFormationName = formationName;
+      _isCalculatingFormation = false;
+    });
+  }
+
 
   @override
   Widget build(BuildContext context) {
@@ -398,13 +432,16 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
   }
 
   Widget _buildFormationView() {
-    if (_bestFormation == null) {
+    if (_isCalculatingFormation) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_bestFormation == null || _selectedFormationName == null) {
       return const Center(
         child: Text("Keine gültige Formation gefunden."),
       );
     }
 
-    final formationName = _bestFormation!['name'] as String;
     final players = (_bestFormation!['players'] as List)
         .map((p) => PlayerInfo(
       id: p['id'],
@@ -413,27 +450,45 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
       profileImageUrl: p['profilbild_url'],
       rating: p['total_punkte'],
       maxRating: _showGesamt? (_spieltage.length*250*0.8).toInt(): 250,
-      goals: 0, // Diese Daten sind hier nicht verfügbar
+      goals: 0,
       assists: 0,
       ownGoals: 0,
     ))
         .toList();
 
     return LayoutBuilder(builder: (context, constraints) {
+      // Sort the keys for the dropdown
+      final sortedFormationKeys = _allFormations.keys.toList()..sort();
+
       return Column(
         children: [
           Padding(
-            padding: const EdgeInsets.all(8.0),
-            child: Text(
-              'Beste Formation: $formationName (Gesamtpunkte: ${_bestFormation!['score']})',
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+            child: Column(
+              children: [
+                DropdownButton<String>(
+                  value: _selectedFormationName,
+                  isExpanded: true,
+                  items: sortedFormationKeys.map((String value) {
+                    return DropdownMenuItem<String>(
+                      value: value,
+                      child: Text('Formation: $value'),
+                    );
+                  }).toList(),
+                  onChanged: (String? newValue) {
+                    if (newValue != null && newValue != _selectedFormationName) {
+                      _calculateTeamForSelectedFormation(newValue);
+                    }
+                  },
+                ),
+              ],
             ),
           ),
           Expanded(
             child: MatchFormationDisplay(
-              homeFormation: formationName,
+              homeFormation: _selectedFormationName!,
               homePlayers: players,
-              homeColor: Colors.blue, // Oder eine andere gewünschte Farbe
+              homeColor: Colors.blue,
               onPlayerTap: (playerId) {
                 Navigator.push(
                   context,
@@ -457,7 +512,6 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
         padding: const EdgeInsets.symmetric(horizontal: 8.0),
         child: Row(
           children: [
-            // Gesamt/Spieltag Buttons
             ToggleButtons(
               isSelected: [_showGesamt, !_showGesamt],
               onPressed: (index) {
@@ -489,7 +543,6 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
               ],
             ),
             const Spacer(),
-            // Team Filter
             _buildDropdownFilter<int?>(
               value: _selectedTeamId,
               hint: 'Team',
@@ -501,13 +554,12 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
                   child: Text(team['name']),
                 )),
               ],
-              onChanged: (value) {
+              onChanged: _showFormation ? null : (value) {
                 setState(() => _selectedTeamId = value);
                 _fetchData();
               },
             ),
             const SizedBox(width: 8),
-            // Positions Filter
             _buildDropdownFilter<String?>(
               value: _selectedPosition,
               hint: 'Position',
@@ -519,7 +571,7 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
                   child: Text(pos),
                 )),
               ],
-              onChanged: (value) {
+              onChanged: _showFormation ? null : (value) {
                 setState(() => _selectedPosition = value);
                 _fetchData();
               },
@@ -527,12 +579,19 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
             IconButton(
               icon: Icon(_showFormation ? Icons.list : Icons.sports_soccer),
               onPressed: () {
+                final newShowFormation = !_showFormation;
                 setState(() {
-                  _showFormation = !_showFormation;
+                  _showFormation = newShowFormation;
+                  if (newShowFormation) {
+                    if (_selectedTeamId != null || _selectedPosition != null) {
+                      _selectedTeamId = null;
+                      _selectedPosition = null;
+                      _fetchData();
+                    } else {
+                      _calculateInitialBestFormation();
+                    }
+                  }
                 });
-                if (_showFormation) {
-                  _calculateBestFormation();
-                }
               },
             ),
           ],
@@ -545,7 +604,7 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
     required T value,
     required String hint,
     required List<DropdownMenuItem<T>> items,
-    required ValueChanged<T?> onChanged,
+    required ValueChanged<T?>? onChanged,
   }) {
     return DropdownButtonHideUnderline(
       child: DropdownButton<T>(
