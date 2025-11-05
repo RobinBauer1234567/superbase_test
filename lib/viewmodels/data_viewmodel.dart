@@ -76,7 +76,7 @@ class DataManagement {
           if (status != 'final') {
             String neuerStatus = await getSpielStatus(spielId);
             if (status != neuerStatus) {
-              await supabaseService.updateSpielStatus(spielId, neuerStatus);
+              await apiService.updateSpielData(seasonId, spielId, neuerStatus);
               status = neuerStatus;
             }
             if (neuerStatus != 'nicht gestartet') {

@@ -110,9 +110,41 @@ class ApiService {
     }
   }
 
+  Future<void> updateSpielData(int seasonId, int spielId, status) async {
+    final url = '$baseUrl/event/$spielId';
+    print (url);
+    final response = await http.get(Uri.parse(url));
+
+    if (response.statusCode == 200) {
+      final parsedJson = json.decode(response.body);
+
+        var homeScore = parsedJson['event']['homeScore']?['current'] ?? 0;
+        var awayScore = parsedJson['event']['awayScore']?['current'] ?? 0;
+
+        String ergebnis = (parsedJson['event']['homeScore'] == null ||
+            parsedJson['event']['awayScore'] == null)
+            ? "Noch kein Ergebnis"
+            : "$homeScore:$awayScore";
+        await supabaseService.updateSpiel(
+            spielId,
+            ergebnis,
+            status
+        );
+      }
+
+  }
+
   Future<void> fetchAndStoreSpielerundMatchratings(int spielId, int hometeamId, int awayteamId, int seasonId) async {
     final url = 'https://www.sofascore.com/api/v1/event/$spielId/lineups';
     final response = await http.get(Uri.parse(url));
+
+    // --- KORREKTUR FÜR 404 ---
+    // Wenn die API eine 404 (Not Found) zurückgibt, gibt es (noch) keine Aufstellung.
+    if (response.statusCode == 404) {
+      print(">>> INFO bei Spiel $spielId: Keine Aufstellung von API verfügbar (Statuscode: 404). Spiel wird übersprungen.");
+      return; // Beende die Funktion hier, es gibt nichts zu verarbeiten.
+    }
+    // --- ENDE KORREKTUR 404 ---
 
     if (response.statusCode == 200) {
       try {
@@ -125,7 +157,16 @@ class ApiService {
 
         final String homeFormation = parsedJson['home']?['formation'] ?? 'N/A';
         final String awayFormation = parsedJson['away']?['formation'] ?? 'N/A';
+
+        // --- KORREKTUR DER REIHENFOLGE ---
+        // 1. Stelle sicher, dass die Formationen in der DB existieren, BEVOR du sie verwendest.
+        await ensureFormationExists(homeFormation);
+        await ensureFormationExists(awayFormation);
+
+        // 2. Jetzt, da die Formationen garantiert existieren, aktualisiere das Spiel.
+        // Der Foreign Key-Fehler wird nicht mehr auftreten.
         await supabaseService.updateSpielFormation(spielId, homeFormation, awayFormation);
+        // --- ENDE KORREKTUR ---
 
         List<dynamic> homePlayers = parsedJson['home']['players'] ?? [];
         List<dynamic> awayPlayers = parsedJson['away']['players'] ?? [];
@@ -225,73 +266,78 @@ class ApiService {
     await supabaseService.saveMatchrating(ratingId, spielId, playerId, punktzahl, stats, newRating, formationIndex, matchPosition);
   }
 
-
-// Neue asynchrone Version, die DB prüft / anlegt
   Future<String> _getPositionFromFormation(String formation, int index) async {
-    // indices in deinem System: 0..10 (0 = TW)
-    if (index == 0) return 'TW';
-
-    final supabase = Supabase.instance.client;
+    if (index > 10) return 'SUB'; // Ersatzspieler
+    if (index == 0) return 'TW'; // Torwart
+    if (formation == 'N/A') return 'N/A'; // Keine Formation
 
     try {
-      // 1) Prüfen, ob die Formation bereits existiert
-      final existing = await supabase
+      // 1. Prüfen, ob die Formation existiert
+      final existing = await supabaseService.supabase
           .from('formation')
           .select('positionsliste')
           .eq('formation', formation)
           .maybeSingle();
 
+      List<String> positionsList;
+
       if (existing != null && existing['positionsliste'] != null) {
-        final List<dynamic> raw = existing['positionsliste'] as List<dynamic>;
-        final List<String> positions = raw.map((e) => e.toString()).toList();
-
-        if (index >= 0 && index < positions.length) {
-          return positions[index];
-        }
-        // falls Index außerhalb der Länge liegt
-        return 'N/A';
+        // Fall A: Formation existiert, nutze die Liste
+        positionsList = List<String>.from(existing['positionsliste'] as List);
+      } else {
+        // Fall B: Formation existiert nicht, erstelle sie
+        positionsList = await _createFormationEntry(formation);
       }
 
-      // 2) Wenn nicht vorhanden: positionsliste berechnen (für index 0..10)
-      final List<String> positionsList = List.generate(11, (i) {
-        return _computePositionFromFormation(formation, i);
-      });
-
-      // 3) In DB speichern (Formation ist primary key vom Typ text)
-      try {
-        await supabase.from('formation').insert({
-          'formation': formation,
-          'positionsliste': positionsList,
-        }).select().maybeSingle();
-      } catch (e) {
-        // Falls Insert fehlschlägt (z.B. Race-Condition), ignoriere es ruhig —
-        // Formation könnte in der Zwischenzeit von anderem Prozess angelegt worden sein.
-        // Optional: erneut SELECT ausführen, um sicherzugehen.
-        final retry = await supabase
-            .from('formation')
-            .select('positionsliste')
-            .eq('formation', formation)
-            .maybeSingle();
-        if (retry != null && retry['positionsliste'] != null) {
-          final List<dynamic> raw = retry['positionsliste'] as List<dynamic>;
-          final List<String> positions = raw.map((e) => e.toString()).toList();
-          if (index >= 0 && index < positions.length) return positions[index];
-        }
-      }
-
-      // 4) Rückgabe der für den index berechneten Position
-      if (index >= 0 && index < positionsList.length) {
+      // 4. Position aus der Liste zurückgeben
+      if (index < positionsList.length) {
         return positionsList[index];
       }
-      return 'N/A';
+      return 'N/A'; // Sollte nicht passieren
     } catch (e, st) {
-      // Bei DB-Fehlern: fallback auf lokale Berechnung (ohne Speichern)
-      print('Error fetching/inserting formation: $e\n$st');
-      return _computePositionFromFormation(formation, index);
+      print('Error in _getPositionFromFormation: $e\n$st');
+      // Fallback auf die reine Rechenfunktion bei DB-Fehler
+      return ApiService()._computePositionFromFormation(formation, index);
     }
   }
 
-// Hilfsfunktion: die ursprüngliche Logik (leicht umgesteckt)
+  Future<List<String>> _createFormationEntry(String formation) async {
+    // 2. Positionsliste berechnen
+    final List<String> positionsList = List.generate(11, (i) {
+      return _computePositionFromFormation(formation, i);
+    });
+
+    // 3. In DB speichern
+    try {
+      await supabaseService.supabase.from('formation').insert({
+        'formation': formation,
+        'positionsliste': positionsList,
+      });
+    } catch (e) {
+      // Ignoriert den Fehler, wenn die Formation bereits existiert (Race Condition)
+      if (e is PostgrestException && e.code == '23505') { // 23505 = unique_violation
+        // Bereits von einem anderen Prozess hinzugefügt, alles gut.
+      } else {
+        print('Fehler beim Speichern der Formation $formation: $e');
+      }
+    }
+    return positionsList;
+  }
+  Future<void> ensureFormationExists(String formation) async {
+    if (formation == 'N/A' || formation.isEmpty) return; // 'N/A' nicht speichern
+
+    // 1. Prüfen, ob die Formation bereits existiert
+    final existing = await supabaseService.supabase
+        .from('formation')
+        .select('formation')
+        .eq('formation', formation)
+        .maybeSingle();
+
+    // 2. Wenn nicht, erstelle sie
+    if (existing == null) {
+      await _createFormationEntry(formation);
+    }
+  }
   String _computePositionFromFormation(String formation, int index) {
     if (index == 0) return 'TW'; // Torwart
 
@@ -796,7 +842,8 @@ class SupabaseService {
     return DateTime.parse(response['datum']);
   }
 
-  Future<void> updateSpielStatus(int spielId, String neuerStatus) async {
+  Future<void> updateSpiel(int spielId,String ergebnis, String neuerStatus) async {
+    await supabase.from('spiel').update({'ergebnis': ergebnis}).eq('id', spielId);
     await supabase.from('spiel').update({'status': neuerStatus}).eq('id', spielId);
   }
 
@@ -845,16 +892,6 @@ class SupabaseService {
     }
   }
 
-  Future<void> updateSpielFormation(int spielId, String homeFormation, String awayFormation) async {
-    try {
-      await supabase.from('spiel').update({
-        'hometeam_formation': homeFormation,
-        'awayteam_formation': awayFormation,
-      }).eq('id', spielId);
-    } catch (error) {
-      print('Fehler beim Speichern der Formationen: $error');
-    }
-  }
 
   Future<List<int>> fetchSpielIdsForRound(int round) async {
     final supabase = Supabase.instance.client;
@@ -953,6 +990,191 @@ class SupabaseService {
       // debug-Ausgabe, falls nötig
       print('fetchFormationsFromDb error: $e\n$st');
       return {};
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> getPublicLeagues() async {
+    final user = supabase.auth.currentUser;
+    if (user == null) return [];
+
+    try {
+      // Hole zuerst die IDs der Ligen, in denen der User bereits ist
+      final userLeaguesResponse = await supabase
+          .from('league_members')
+          .select('league_id')
+          .eq('user_id', user.id);
+
+      final List<int> joinedLeagueIds = userLeaguesResponse.map<int>((e) => e['league_id'] as int).toList();
+
+      var query = supabase
+          .from('leagues')
+          .select()
+          .eq('is_public', true);
+
+      // Filtere die Ligen heraus, in denen der User schon ist
+      if (joinedLeagueIds.isNotEmpty) {
+        query = query.not('id', 'in', joinedLeagueIds);
+      }
+
+      final publicLeaguesResponse = await query;
+      return List<Map<String, dynamic>>.from(publicLeaguesResponse);
+
+    } catch (error) {
+      print('Fehler beim Laden öffentlicher Ligen: $error');
+      return [];
+    }
+  }
+
+  Future<void> joinLeague(int leagueId) async {
+    final user = supabase.auth.currentUser;
+    if (user == null) throw Exception('Nicht angemeldet');
+
+    try {
+      // Hol die Liga-Infos, um das Budget zu bekommen
+      final leagueData = await supabase
+          .from('leagues')
+          .select('starting_budget, admin_id')
+          .eq('id', leagueId)
+          .single();
+
+      final adminProfile = await supabase
+          .from('profiles')
+          .select('username')
+          .eq('user_id', leagueData['admin_id'])
+          .single();
+      final adminUsername = adminProfile['username'] ?? 'Managers';
+
+      await supabase.from('league_members').insert({
+        'league_id': leagueId,
+        'user_id': user.id,
+        'budget': leagueData['starting_budget'],
+        'manager_team_name': '${adminUsername}''s Liga Team',
+      });
+    } catch (error) {
+      print('Fehler beim Beitreten der Liga: $error');
+      throw Exception('Fehler beim Beitreten der Liga.');
+    }
+  }
+
+  Future<void> createLeague({required String name, required double startingBudget, required int seasonId, required bool isPublic}) async {
+    try {
+      await supabase.rpc('create_league_and_add_admin', params: {
+        'league_name': name,
+        'start_budget': startingBudget,
+        's_id': seasonId,
+        'is_league_public': isPublic, // Neuer Parameter
+      });
+    } catch (error) {
+      print('Fehler beim Erstellen der Liga: $error');
+      throw Exception('Liga konnte nicht erstellt werden.');
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> getLeagueRanking(int leagueId) async {
+    try {
+      final response = await supabase.rpc(
+        'get_league_ranking',
+        params: {'p_league_id': leagueId},
+      );
+      // Die RPC-Antwort ist direkt die Liste der Ergebnisse
+      return List<Map<String, dynamic>>.from(response);
+    } catch (error) {
+      print('Fehler beim Laden des Rankings: $error');
+      return [];
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> getLeaguesForUser() async {
+    final user = supabase.auth.currentUser;
+    if (user == null) return [];
+
+    try {
+      // 'id' wird jetzt explizit mit abgefragt
+      final response = await supabase
+          .from('league_members')
+          .select('id, leagues(*), position')
+          .eq('user_id', user.id)
+          .order('position', ascending: true);
+
+      // Explizite Typ-Umwandlung, um den Fehler zu beheben
+      final leaguesData = List<Map<String, dynamic>>.from(response);
+
+      return leaguesData.map((entry) {
+        // Sicherstellen, dass die verknüpften Liga-Daten korrekt behandelt werden
+        final leagueData = entry['leagues'] as Map<String, dynamic>? ?? {};
+
+        return {
+          ...leagueData, // Fügt alle Daten der Liga hinzu (id, name, etc.)
+          'position': entry['position'], // Fügt die Sortierposition hinzu
+          'league_member_id': entry['id'], // Fügt die ID der Mitgliedschaft hinzu
+        };
+      }).toList();
+
+    } catch (error) {
+      print('Fehler beim Laden der Ligen: $error');
+      return [];
+    }
+  }
+
+  Future<void> updateUserLeagueOrder(List<Map<String, dynamic>> orderedLeagues) async {
+    final user = supabase.auth.currentUser;
+    if (user == null) return;
+
+    try {
+      // Wir gehen die Liste durch und senden für jede Liga ein separates Update.
+      // Das ist effizient und umgeht das Problem mit der ID-Spalte.
+      for (int i = 0; i < orderedLeagues.length; i++) {
+        final league = orderedLeagues[i];
+        await supabase
+            .from('league_members')
+            .update({'position': i}) // Setze die neue Position
+            .match({'user_id': user.id, 'league_id': league['id']}); // Finde die korrekte Zeile
+      }
+    } catch (error) {
+      print('Fehler beim Speichern der Liga-Reihenfolge: $error');
+    }
+  }
+
+  Future<void> updateSpielFormation(int spielId, String homeFormation, String awayFormation) async {
+    try {
+      await supabase.from('spiel').update({
+        'hometeam_formation': homeFormation,
+        'awayteam_formation': awayFormation,
+      }).eq('id', spielId);
+    } catch (error) {
+      print('Fehler beim Speichern der Formationen: $error');
+      // Wir werfen den Fehler weiter, damit der Aufrufer ihn bemerkt
+      throw error;
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> fetchPlayerGameHistoryForSeason({required int playerId, required int teamId, required int seasonId,}) async {
+    try {
+      final response = await supabase
+          .from('spiel')
+          .select('''
+            id,
+            round,
+            status,
+            hometeam:team!spiel_hometeam_id_fkey(name, image_url),
+            awayteam:team!spiel_awayteam_id_fkey(name, image_url),
+            hometeam_score,
+            awayteam_score,
+            matchrating (
+              punkte,
+              match_position
+            )
+          ''')
+          .eq('season_id', seasonId)
+          .or('hometeam_id.eq.$teamId,awayteam_id.eq.$teamId')
+      // Filtere die verschachtelte matchrating-Tabelle nach unserem Spieler
+          .eq('matchrating.spieler_id', playerId)
+          .order('round', ascending: true);
+
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      print('Fehler in fetchPlayerGameHistoryForSeason: $e');
+      return [];
     }
   }
 
