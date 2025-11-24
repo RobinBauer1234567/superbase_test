@@ -2,6 +2,7 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'dart:math';
 
 class ApiService {
   final String baseUrl = 'https://www.sofascore.com/api/v1';
@@ -198,6 +199,7 @@ class ApiService {
     String matchPosition = await _getPositionFromFormation(formation, formationIndex);
     String finalPositionsToSave = '';
     String? imageUrl;
+    int? marktwert;
 
     try {
       final playerResponse = await supabaseService.supabase
@@ -228,7 +230,16 @@ class ApiService {
       } else {
         finalPositionsToSave = currentPositions;
       }
+      final existingPlayer = await supabaseService.supabase
+          .from('spieler')
+          .select('marktwert')
+          .eq('id', playerId)
+          .maybeSingle();
 
+      if (existingPlayer == null || existingPlayer['marktwert'] == null) {
+        print('Initialisiere Marktwert für Spieler $playerId ...');
+        marktwert = await _calculateInitialMarketValue(playerId);
+      }
 
       final imageResponse = await http.get(Uri.parse('https://www.sofascore.com/api/v1/player/$playerId/image'));
       if (imageResponse.statusCode == 200) {
@@ -260,8 +271,14 @@ class ApiService {
     Map<String, dynamic> stats = playerData['statistics'] as Map<String, dynamic>? ?? {};
     int newRating = buildNewRating(primaryPosition, stats);
 
-    await supabaseService.saveSpieler(playerId, playerName, finalPositionsToSave, teamId, imageUrl);
-    // NEU: Beziehung speichern
+    await supabaseService.saveSpieler(
+        playerId,
+        playerName,
+        finalPositionsToSave,
+        teamId,
+        imageUrl,
+        marktwert
+    );
     await supabaseService.saveSeasonPlayer(seasonId, playerId, teamId);
     await supabaseService.saveMatchrating(ratingId, spielId, playerId, punktzahl, stats, newRating, formationIndex, matchPosition);
   }
@@ -698,8 +715,7 @@ class ApiService {
     }
   }
 
-  Future<String> _findPositionInLineups(List<String> lineupUrls, int playerId) async
-  {
+  Future<String> _findPositionInLineups(List<String> lineupUrls, int playerId) async {
     for (final url in lineupUrls) {
       try {
         final response = await http.get(Uri.parse(url));
@@ -727,6 +743,7 @@ class ApiService {
     }
     return 'NOT_FOUND';
   }
+
   Future<String> guessPlayerPosition(int playerId) async {
     try {
       final playerData = 'https://www.sofascore.com/api/v1/player/$playerId';
@@ -762,6 +779,91 @@ class ApiService {
     } catch (e) {
       print('❌ Fehler in guessPlayerPosition($playerId): $e');
       return 'N/V';
+    }
+  }
+
+  Future<http.Response> _throttledGet(String url) async {
+    // 1. Pause vor JEDER Anfrage (z.B. 300ms), um die API nicht zu fluten
+    await Future.delayed(const Duration(milliseconds: 300));
+
+    int retryCount = 0;
+    while (retryCount < 3) {
+      try {
+        final response = await http.get(Uri.parse(url));
+
+        // Wenn erfolgreich, zurückgeben
+        if (response.statusCode == 200) {
+          return response;
+        }
+        // Wenn wir zu schnell waren (429) oder geblockt wurden (403), länger warten
+        else if (response.statusCode == 429 || response.statusCode == 403) {
+          print('⚠️ API-Limit erreicht ($url). Warte 5 Sekunden...');
+          await Future.delayed(const Duration(seconds: 5));
+          retryCount++;
+        } else {
+          // Anderer Fehler -> Abbruch
+          return response;
+        }
+      } catch (e) {
+        print('Netzwerkfehler: $e. Retry...');
+        await Future.delayed(const Duration(seconds: 2));
+        retryCount++;
+      }
+    }
+    throw Exception('Failed to fetch $url after retries');
+  }
+
+  Future<int?> _calculateInitialMarketValue(int playerId) async {
+    try {
+      final response = await _throttledGet('https://www.sofascore.com/api/v1/player/$playerId/events/last/0');
+
+      if (response.statusCode != 200) return null;
+
+      final data = json.decode(response.body);
+      final List<dynamic> events = data['events'] ?? [];
+
+      final recentEvents = events.toList();
+      if (recentEvents.isEmpty) return null;
+
+      List<int> punkte = [];
+
+      // 2. Details (Rating) für jedes dieser Spiele holen
+      for (var event in recentEvents) {
+        String eventId = event['id'].toString();
+        // AUCH HIER: Gedrosselter Aufruf für die Lineups
+        final lineupResp = await _throttledGet('https://www.sofascore.com/api/v1/event/$eventId/lineups');
+
+        if (lineupResp.statusCode == 200) {
+          final lineupData = json.decode(lineupResp.body);
+          // Finde den Spieler in Heim- oder Auswärtsteam
+          final allPlayers = [
+            ...(lineupData['home']?['players'] ?? []),
+            ...(lineupData['away']?['players'] ?? [])
+          ];
+
+          final playerStats = allPlayers.firstWhere(
+                  (p) => p['player']['id'] == playerId,
+              orElse: () => null
+          );
+
+          if (playerStats != null) {
+            double rating = playerStats['statistics']?['rating'] ?? 6.0;
+            // Deine Punkteformel
+            punkte.add(((rating - 6) * 100).round());
+          }
+        }
+      }
+
+      if (punkte.isEmpty) return null;
+
+      // Durchschnitt berechnen
+      double avgPoints = punkte.reduce((a, b) => a + b) / punkte.length;
+      double calculatedMarktwert =  15000 * pow(avgPoints, 1.5) + 1000000;
+      return calculatedMarktwert.round();
+
+    } catch (e) {
+      print('Fehler bei Marktwertberechnung für $playerId: $e');
+      return null;
     }
   }
 }
@@ -851,13 +953,17 @@ class SupabaseService {
     await supabase.from('spieltag').update({'status': neuerStatus}).eq('round', round).eq('season_id', seasonId);
   }
 
-  Future<void> saveSpieler(int id, String name, String position, int teamId, String? profilbildUrl) async {
+  Future<void> saveSpieler(int id, String name, String position, int teamId, String? profilbildUrl, int? marktwert) async {
     try {
       final updateData = {'id': id, 'name': name, 'position': position};
       if (profilbildUrl != null) {
         updateData['profilbild_url'] = profilbildUrl;
       }
+      if (marktwert != null) {
+        updateData['marktwert'] = marktwert;
+      }
       await supabase.from('spieler').upsert(updateData, onConflict: 'id');
+
     } catch (error) {
       print('Fehler beim Speichern des Spielers: $error');
     }
@@ -891,7 +997,6 @@ class SupabaseService {
       print("!!! DATENBANK-FEHLER beim Speichern des Matchratings für Spieler $spielerId in Spiel $spielId: $error");
     }
   }
-
 
   Future<List<int>> fetchSpielIdsForRound(int round) async {
     final supabase = Supabase.instance.client;

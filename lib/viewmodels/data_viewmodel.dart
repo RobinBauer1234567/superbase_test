@@ -41,7 +41,7 @@ class DataManagement {
     print('Update für Saison $seasonId gestartet');
 
     // Der Pool bleibt nützlich, um die Spiele *innerhalb* eines Spieltags parallel zu verarbeiten
-    final pool = Pool(50);
+    final pool = Pool(5);
 
     // Sequenzielle Schleife über die sortierten Spieltage
     for (final spieltagId in spieltage) {
