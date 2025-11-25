@@ -115,7 +115,7 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
 
       var query = Supabase.instance.client
           .from('spieler')
-          .select('id, name, profilbild_url, position, gesamtstatistiken, season_players!inner(team:team(id, name, image_url))')
+          .select('id, name, profilbild_url, position, marktwert, gesamtstatistiken, season_players!inner(team:team(id, name, image_url))')
           .eq('season_players.season_id', '$seasonIdInt');
 
       final teamId = _selectedTeamId;
@@ -187,6 +187,7 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
             'name': player['name'],
             'profilbild_url': player['profilbild_url'],
             'team_image_url': team['image_url'],
+            'marktwert': player['marktwert'], // Mapping
             'total_punkte': totalPunkte,
             'position': player['position'],
           });
@@ -226,7 +227,8 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
 
       var query = Supabase.instance.client
           .from('matchrating')
-          .select('punkte, spieler:spieler!inner(id, name, profilbild_url, position), spiel!inner(round, season_id)')
+      // 'marktwert' im nested select hinzufügen
+          .select('punkte, spieler:spieler!inner(id, name, profilbild_url, position, marktwert), spiel!inner(round, season_id)')
           .eq('spiel.round', spieltag)
           .eq('spiel.season_id', seasonId);
 
@@ -274,6 +276,7 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
           'name': player['name'],
           'profilbild_url': player['profilbild_url'],
           'team_image_url': team['image_url'],
+          'marktwert': player['marktwert'], // Mapping
           'total_punkte': rating['punkte'],
           'position': player['position'],
         });
@@ -416,6 +419,7 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
           profileImageUrl: player['profilbild_url'],
           playerName: player['name'],
           teamImageUrl: player['team_image_url'],
+          marketValue: player['marktwert'], // Übergeben
           score: player['total_punkte'],
           maxScore: _showGesamt ? (_spieltage.length * 250 * 0.8).toInt() : 250,
           onTap: () {

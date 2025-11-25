@@ -1130,51 +1130,69 @@ class SupabaseService {
     }
   }
 
+
+  Future<int> createLeague({required String name, required double startingBudget, required int seasonId, required bool isPublic, required int? squadLimit, required int numStartingPlayers, required double startingTeamValue,}) async {
+    try {
+      // Wir erwarten jetzt einen Rückgabewert (die ID)
+      final response = await supabase.rpc('create_league_and_add_admin', params: {
+        'league_name': name,
+        'start_budget': startingBudget,
+        's_id': seasonId,
+        'is_league_public': isPublic,
+        'squad_limit': squadLimit,
+        'num_starting_players': numStartingPlayers,
+        'starting_team_value': startingTeamValue,
+      });
+      return response as int;
+    } catch (error) {
+      print('Fehler beim Erstellen der Liga: $error');
+      throw Exception('Liga konnte nicht erstellt werden: $error');
+    }
+  }
+
+  // Ruft jetzt die RPC auf, die auch das Team zulost
   Future<void> joinLeague(int leagueId) async {
     final user = supabase.auth.currentUser;
     if (user == null) throw Exception('Nicht angemeldet');
 
     try {
-      // Hol die Liga-Infos, um das Budget zu bekommen
-      final leagueData = await supabase
-          .from('leagues')
-          .select('starting_budget, admin_id')
-          .eq('id', leagueId)
-          .single();
-
-      final adminProfile = await supabase
-          .from('profiles')
-          .select('username')
-          .eq('user_id', leagueData['admin_id'])
-          .single();
-      final adminUsername = adminProfile['username'] ?? 'Managers';
-
-      await supabase.from('league_members').insert({
-        'league_id': leagueId,
-        'user_id': user.id,
-        'budget': leagueData['starting_budget'],
-        'manager_team_name': '${adminUsername}''s Liga Team',
-      });
+      await supabase.rpc('join_league', params: {'p_league_id': leagueId});
     } catch (error) {
-      print('Fehler beim Beitreten der Liga: $error');
-      throw Exception('Fehler beim Beitreten der Liga.');
+      print('Fehler beim Beitreten: $error');
+      throw Exception('Fehler beim Beitreten der Liga: $error');
     }
   }
 
-  Future<void> createLeague({required String name, required double startingBudget, required int seasonId, required bool isPublic}) async {
+  // Neue Methode: Holt den zugelosten Kader für den Reveal-Screen
+  Future<List<Map<String, dynamic>>> fetchUserLeaguePlayers(int leagueId) async {
+    final user = supabase.auth.currentUser;
+    if (user == null) return [];
+
     try {
-      await supabase.rpc('create_league_and_add_admin', params: {
-        'league_name': name,
-        'start_budget': startingBudget,
-        's_id': seasonId,
-        'is_league_public': isPublic, // Neuer Parameter
-      });
-    } catch (error) {
-      print('Fehler beim Erstellen der Liga: $error');
-      throw Exception('Liga konnte nicht erstellt werden.');
+      final response = await supabase
+          .from('league_players')
+          .select('player:spieler(*, season_players!inner(team:team(*)))') // Nested Select für Team-Infos
+          .eq('league_id', leagueId)
+          .eq('user_id', user.id);
+
+      // Die Struktur etwas flacher machen für einfacheren Zugriff
+      return List<Map<String, dynamic>>.from(response.map((e) {
+        final player = e['player'] as Map<String, dynamic>;
+        // Team Info extrahieren (falls vorhanden)
+        final seasonPlayers = player['season_players'] as List<dynamic>;
+        final team = seasonPlayers.isNotEmpty ? seasonPlayers[0]['team'] : null;
+
+        return {
+          ...player,
+          'team_image_url': team?['image_url'],
+          'team_name': team?['name'],
+        };
+      }));
+    } catch (e) {
+      print('Fehler beim Laden des Kaders: $e');
+      return [];
     }
   }
-
   Future<List<Map<String, dynamic>>> getLeagueRanking(int leagueId) async {
     try {
       final response = await supabase.rpc(

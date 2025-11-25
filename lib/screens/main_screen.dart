@@ -40,6 +40,168 @@ class _MainScreenState extends State<MainScreen> {
     _loadInitialData();
   }
 
+  Future<void> _handleNewLeague(int newLeagueId) async {
+    setState(() => _isLoading = true);
+
+    // 1. Daten neu laden
+    await _refreshLeagues();
+
+
+    // 2. Die neue Liga suchen
+    final index = _userLeagues.indexWhere((l) => l['id'] == newLeagueId);
+
+    if (index != -1) {
+      // 3. Lokale Liste manipulieren: Liga entfernen und an den Anfang setzen
+      final league = _userLeagues.removeAt(index);
+      _userLeagues.insert(0, league);
+
+      // 4. Neue Reihenfolge in der DB speichern
+      // Wir machen das im Hintergrund (kein await nötig für UI Update)
+      context.read<DataManagement>().supabaseService.updateUserLeagueOrder(_userLeagues).catchError((e) {
+        print("Fehler beim Speichern der Reihenfolge: $e");
+      });
+
+      // 5. UI aktualisieren und Tab wechseln
+      if (mounted) {
+        setState(() {
+          _selectedIndex = 1; // Tab 1 ist die erste Liga (Tab 0 ist PL)
+          _isLoading = false;
+        });
+      }
+    } else {
+      // Fallback: Wenn Liga nicht gefunden wurde (sollte nicht passieren)
+      print("Warnung: Neue Liga ID $newLeagueId nicht in geladener Liste gefunden.");
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  void _toggleOverflowMenu() {
+    if (_isOverflowMenuOpen) {
+      _closeOverflowMenu();
+    } else {
+      _openOverflowMenu();
+    }
+  }
+
+  void _closeOverflowMenu() {
+    if (_overflowOverlay != null) {
+      _overflowOverlay!.remove();
+      _overflowOverlay = null;
+    }
+    if (mounted) {
+      setState(() {
+        _isOverflowMenuOpen = false;
+      });
+    }
+  }
+
+  void _openOverflowMenu() {
+    // 1. Position des Buttons finden
+    final renderBox = _moreButtonKey.currentContext?.findRenderObject() as RenderBox?;
+    if (renderBox == null) return;
+
+    final size = renderBox.size;
+    final offset = renderBox.localToGlobal(Offset.zero);
+
+    // 2. Overlay erstellen
+    _overflowOverlay = OverlayEntry(
+      builder: (context) => Stack(
+        children: [
+          // Klick in den Hintergrund schließt das Menü
+          Positioned.fill(
+            child: GestureDetector(
+              onTap: _closeOverflowMenu,
+              behavior: HitTestBehavior.translucent,
+              child: Container(color: Colors.transparent),
+            ),
+          ),
+          // Das eigentliche Menü
+          Positioned(
+            left: offset.dx - 120 + (size.width / 2), // Zentriert über dem Button ausrichten
+            bottom: MediaQuery.of(context).viewInsets.bottom + 80, // Über der NavBar
+            width: 200,
+            child: Material(
+              elevation: 8,
+              borderRadius: BorderRadius.circular(12),
+              color: Colors.white,
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  // Header
+                  Container(
+                    padding: const EdgeInsets.all(12),
+                    decoration: BoxDecoration(
+                      color: Theme.of(context).primaryColor.withOpacity(0.1),
+                      borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                    ),
+                    child: Row(
+                      children: [
+                        Icon(Icons.list, size: 16, color: Theme.of(context).primaryColor),
+                        const SizedBox(width: 8),
+                        Text(
+                          "Weitere Ligen",
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            color: Theme.of(context).primaryColor,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+                  // Liste der versteckten Ligen (Index 3 bis Ende)
+                  if (_userLeagues.length > 3)
+                    Flexible(
+                      child: ListView.separated(
+                        shrinkWrap: true,
+                        padding: EdgeInsets.zero,
+                        itemCount: _userLeagues.length - 3,
+                        separatorBuilder: (ctx, i) => const Divider(height: 1),
+                        itemBuilder: (context, index) {
+                          // Der Index in der _userLeagues Liste ist um 3 verschoben
+                          final realIndex = index + 3;
+                          final league = _userLeagues[realIndex];
+
+                          return ListTile(
+                            dense: true,
+                            title: Text(league['name']),
+                            trailing: const Icon(Icons.arrow_forward_ios, size: 14),
+                            onTap: () => _swapAndSelectLeague(realIndex),
+                          );
+                        },
+                      ),
+                    ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+
+    // 3. Overlay anzeigen
+    Overlay.of(context).insert(_overflowOverlay!);
+    setState(() {
+      _isOverflowMenuOpen = true;
+    });
+  }
+
+  void _swapAndSelectLeague(int selectedLeagueIndexInFullList) {
+    _closeOverflowMenu();
+
+    setState(() {
+      // 1. Die ausgewählte Liga aus der Liste nehmen
+      final league = _userLeagues.removeAt(selectedLeagueIndexInFullList);
+
+      // 2. Liga an die erste Stelle setzen (damit sie sichtbar wird)
+      _userLeagues.insert(2, league);
+
+      // 3. Den Tab wechseln (Index 1 = Erste User-Liga, da Index 0 = PL ist)
+      _selectedIndex = 3;
+    });
+
+    // 4. Neue Reihenfolge speichern
+    context.read<DataManagement>().supabaseService.updateUserLeagueOrder(_userLeagues);
+  }
   Future<void> _loadInitialData() async {
     // Warten auf den ersten Frame, damit der context verfügbar ist
     await WidgetsBinding.instance.endOfFrame;
@@ -49,7 +211,7 @@ class _MainScreenState extends State<MainScreen> {
     final dataManagement = context.read<DataManagement>();
 
     // Ruft updateData() (für PL-Daten) und getLeaguesForUser() (für Ligen) auf
-    await dataManagement.updateData();
+    // await dataManagement.updateData();
     final leagues = await dataManagement.supabaseService.getLeaguesForUser();
 
     if (mounted) {
@@ -90,14 +252,6 @@ class _MainScreenState extends State<MainScreen> {
 
     context.read<DataManagement>().supabaseService.updateUserLeagueOrder(_userLeagues);
   }
-
-  // --- Overlay-Methoden (unverändert) ---
-  void _toggleOverflowMenu() { /* ... */ }
-  void _openOverflowMenu() { /* ... */ }
-  void _closeOverflowMenu() { /* ... */ }
-  void _swapAndSelectLeague(int selectedLeagueIndexInFullList) { /* ... */ }
-  // --- Ende Overlay-Methoden ---
-
   // --- Suchfunktion (wieder vollständig integriert) ---
   Future<List<Widget>> _fetchSuggestions(String query, SearchFilter filter) async {
     final dataManagement = Provider.of<DataManagement>(context, listen: false);
@@ -290,14 +444,25 @@ class _MainScreenState extends State<MainScreen> {
       bottomNavigationBar: DraggableNavBar(
         items: navItems,
         currentIndex: _selectedIndex,
-        onTap: (index) {
+        onTap: (index) async { // HIER async hinzufügen
           if (_userLeagues.length > 3 && index == 4) return;
 
           if (index == navItems.length - 1) {
-            Navigator.of(context).push(
+            // "Hinzufügen" wurde geklickt -> LeagueHubScreen öffnen
+            // Wir warten auf das Ergebnis (die ID der neuen Liga)
+            final newLeagueId = await Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => const LeagueHubScreen())
-            ).then((_) => _refreshLeagues());
+            );
+
+            // Wenn wir eine ID zurückbekommen, rufen wir unsere Logik auf
+            if (newLeagueId != null && newLeagueId is int) {
+              await _handleNewLeague(newLeagueId);
+            } else {
+              // Wenn abgebrochen wurde, nur refreshen um sicher zu gehen
+              _refreshLeagues();
+            }
           } else {
+            // Normaler Tab-Wechsel
             setState(() { _selectedIndex = index; });
           }
         },

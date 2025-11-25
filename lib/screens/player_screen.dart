@@ -31,6 +31,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   // Player Info
   String playerName = "";
   String teamName = "";
+  int? marketValue; // Variable für den State
   List<GroupData> radarChartData = [];
   String? profileImageUrl;
   String? teamImageUrl;
@@ -64,7 +65,6 @@ class _PlayerScreenState extends State<PlayerScreen>
     fetchPlayerData();
   }
 
-  // NEU: Scrollt zum nächsten anstehenden Spiel
   void _scrollToUpcomingMatch() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (teamMatches.isEmpty || !_scrollController.hasClients) return;
@@ -123,7 +123,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       final playerResponse = await supabase
           .from('season_players')
           .select(
-          'team:team(id, name, image_url), spieler:spieler(name, position, profilbild_url)')
+          'team:team(id, name, image_url), spieler:spieler(name, position, profilbild_url, marktwert)')
           .eq('season_id', seasonId)
           .eq('player_id', widget.playerId)
           .single();
@@ -189,6 +189,7 @@ class _PlayerScreenState extends State<PlayerScreen>
 
       setState(() {
         playerName = spielerData['name'];
+        marketValue = spielerData['marktwert'];
         teamName = teamData!['name'];
         teamImageUrl = teamData!['image_url'];
         profileImageUrl = spielerData['profilbild_url'] ??
@@ -219,6 +220,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       }
     }
   }
+
   Future<void> _triggerRadarChartCalculation(String comparisonPosition) async {
     if (!mounted) return;
     setState(() {
@@ -238,6 +240,11 @@ class _PlayerScreenState extends State<PlayerScreen>
         isLoading = false;
       });
     }
+  }
+  String _formatMarketValue(int? value) {
+    if (value == null) return 'N/A';
+    final formatter = NumberFormat.decimalPattern('de_DE');
+    return '${formatter.format(value)} €';
   }
 
   @override
@@ -298,8 +305,11 @@ class _PlayerScreenState extends State<PlayerScreen>
                   ),
                 ),
                 const SizedBox(height: 16),
-                Text("Team: $teamName",
-                    style: const TextStyle(fontSize: 18)),
+                // Statt "Team: $teamName" jetzt Marktwert anzeigen
+                Text(
+                    "Marktwert: ${_formatMarketValue(marketValue)}",
+                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)
+                ),
                 Text("Positionen: ${availablePositions.join(', ')}",
                     style: const TextStyle(fontSize: 18)),
               ],

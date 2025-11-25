@@ -101,6 +101,7 @@ class _TeamScreenState extends State<TeamScreen> with SingleTickerProviderStateM
           'id': player['id'],
           'name': player['name'],
           'profilbild_url': player['profilbild_url'],
+          'marktwert': player['marktwert'], // Marktwert aus DB mappen
           'total_punkte': totalPoints,
         });
       }
@@ -237,7 +238,9 @@ class _TeamScreenState extends State<TeamScreen> with SingleTickerProviderStateM
                       rank: index + 1,
                       profileImageUrl: player['profilbild_url'],
                       playerName: player['name'],
-                      teamImageUrl: _teamData?['image_url'],
+                      // teamImageUrl auf null setzen, damit stattdessen der Marktwert angezeigt wird
+                      teamImageUrl: null,
+                      marketValue: player['marktwert'], // Marktwert übergeben
                       score: player['total_punkte'],
                       maxScore: (anzahlMatches * 250*0.8).toInt(),
                       onTap: () {
