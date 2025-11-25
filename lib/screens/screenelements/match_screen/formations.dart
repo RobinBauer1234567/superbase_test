@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:premier_league/utils/color_helper.dart';
 import 'dart:ui' as ui;
+import 'dart:math';
 
 // PlayerInfo-Modell bleibt unverändert
 class PlayerInfo {
@@ -165,6 +166,7 @@ class MatchFormationDisplay extends StatelessWidget {
   final List<PlayerInfo>? awayPlayers;
   final Color? awayColor;
   final void Function(int playerId) onPlayerTap;
+  final List<PlayerInfo>? substitutes;
 
 
   const MatchFormationDisplay({
@@ -176,12 +178,14 @@ class MatchFormationDisplay extends StatelessWidget {
     required this.onPlayerTap,
     this.homeColor = Colors.blue,
     this.awayColor = Colors.red,
+    this.substitutes,
   });
 
   @override
+  @override
   Widget build(BuildContext context) {
-    // Prüfen, ob es sich um ein Einzel- oder Zwei-Team-Display handelt
     final bool singleTeamMode = awayPlayers == null || awayFormation == null;
+    final bool showBench = substitutes != null && substitutes!.isNotEmpty;
 
     final homeGoalkeeper = _findGoalkeeper(homePlayers);
     final homeFieldPlayers = _findFieldPlayers(homePlayers, homeGoalkeeper);
@@ -191,49 +195,108 @@ class MatchFormationDisplay extends StatelessWidget {
       return const Center(child: Text('Ungültige Spielerdaten für das Heimteam.'));
     }
 
-    return AspectRatio(
-      aspectRatio: singleTeamMode ? (68 / 60) : (68 / 105), // halbes Feld für Einzelteam
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          final double playerAvatarRadius = constraints.maxWidth / 23;
+    return LayoutBuilder(
+      builder: (context, constraints) {
+        final double w = constraints.maxWidth;
+        final double h = constraints.maxHeight;
 
-          return Stack(
-            children: [
-              CustomPaint(size: Size.infinite, painter: _SoccerFieldPainter(singleTeamMode: singleTeamMode)),
+        // 1. Feld-Berechnung
+        const double widthFactor = 23.0;
+        final double fieldAspectRatio = singleTeamMode ? (68 / 60) : (68 / 105);
+        final double fieldHeightFactor = widthFactor / fieldAspectRatio;
 
-              // Spieler für Heimteam / Einzelteam
-              if (singleTeamMode) ...[
-                // Positionierung für ein einzelnes Team
-                _buildPlayerLine(constraints, [homeGoalkeeper], 0.99, homeColor, onPlayerTap, playerAvatarRadius, false),
-                ..._buildFormationLines(constraints, homeFormationLines, homeFieldPlayers, false, homeColor, onPlayerTap, playerAvatarRadius, singleTeamMode: true),
-              ] else ...[
-                // Positionierung für Heimteam im Zwei-Team-Modus
-                _buildPlayerLine(constraints, [homeGoalkeeper], 0.99, homeColor, onPlayerTap, playerAvatarRadius, false),
-                ..._buildFormationLines(constraints, homeFormationLines, homeFieldPlayers, false, homeColor, onPlayerTap, playerAvatarRadius),
-              ],
+        // 2. Bank-Berechnung (KORRIGIERT)
+        // Höhe Container: 4.5 * Radius
+        // Margin oben: 0.5 * Radius
+        // Gesamtbedarf: 5.0 * Radius
+        const double benchContainerFactor = 4.5;
+        const double benchMarginFactor = 0.5;
 
-              if (!singleTeamMode)
-                _buildAwayTeam(constraints, playerAvatarRadius),
-            ],
-          );
-        },
-      ),
+        final double totalBenchFactor = showBench ? (benchContainerFactor + benchMarginFactor) : 0.0;
+        final double totalHeightFactor = fieldHeightFactor + totalBenchFactor;
+
+        // 3. Radius berechnen (Min aus Breite und Höhe)
+        double radius = min(w / widthFactor, h / totalHeightFactor);
+        radius = radius.clamp(5.0, 50.0);
+
+        // 4. Tatsächliche Pixel-Größen
+        final double fieldWidth = radius * widthFactor;
+        final double fieldHeight = radius * fieldHeightFactor;
+        final double benchHeight = radius * benchContainerFactor;
+        final double benchMargin = radius * benchMarginFactor;
+
+        return Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            // --- SPIELFELD ---
+            SizedBox(
+              width: fieldWidth,
+              height: fieldHeight,
+              child: Stack(
+                children: [
+                  CustomPaint(size: Size.infinite, painter: _SoccerFieldPainter(singleTeamMode: singleTeamMode)),
+
+                  if (singleTeamMode) ...[
+                    _buildPlayerLine(context, [homeGoalkeeper], 0.99, homeColor, onPlayerTap, radius, false),
+                    ..._buildFormationLines(context, homeFormationLines, homeFieldPlayers, false, homeColor, onPlayerTap, radius, singleTeamMode: true),
+                  ] else ...[
+                    _buildPlayerLine(context, [homeGoalkeeper], 0.99, homeColor, onPlayerTap, radius, false),
+                    ..._buildFormationLines(context, homeFormationLines, homeFieldPlayers, false, homeColor, onPlayerTap, radius),
+                  ],
+
+                  if (!singleTeamMode)
+                    _buildAwayTeam(context, constraints, radius),
+                ],
+              ),
+            ),
+
+            // --- BANK ---
+            if (showBench)
+              Container(
+                height: benchHeight,
+                width: fieldWidth,
+                margin: EdgeInsets.only(top: benchMargin), // Nutzt den jetzt eingerechneten Margin
+                decoration: BoxDecoration(
+                  color: Colors.black.withOpacity(0.05),
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: Colors.black.withOpacity(0.1)),
+                ),
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  padding: EdgeInsets.symmetric(horizontal: radius),
+                  child: Row(
+                    children: substitutes!.map((player) {
+                      return Padding(
+                        padding: EdgeInsets.symmetric(horizontal: radius * 0.5),
+                        child: GestureDetector(
+                          onTap: () => onPlayerTap(player.id),
+                          child: PlayerAvatar(
+                            player: player,
+                            teamColor: homeColor,
+                            radius: radius,
+                          ),
+                        ),
+                      );
+                    }).toList(),
+                  ),
+                ),
+              ),
+          ],
+        );
+      },
     );
   }
-
-  Widget _buildAwayTeam(BoxConstraints constraints, double playerAvatarRadius) {
+  Widget _buildAwayTeam(BuildContext context, BoxConstraints constraints, double radius) {
     final awayGoalkeeper = _findGoalkeeper(awayPlayers!);
     final awayFieldPlayers = _findFieldPlayers(awayPlayers!, awayGoalkeeper);
     final awayFormationLines = _parseFormation(awayFormation!);
 
-    if (awayGoalkeeper == null || awayFieldPlayers.length < 10) {
-      return const SizedBox.shrink(); // Oder eine Fehlermeldung
-    }
+    if (awayGoalkeeper == null || awayFieldPlayers.length < 10) return const SizedBox.shrink();
 
     return Stack(
       children: [
-        _buildPlayerLine(constraints, [awayGoalkeeper], 0.01, awayColor!, onPlayerTap, playerAvatarRadius, true),
-        ..._buildFormationLines(constraints, awayFormationLines, awayFieldPlayers, true, awayColor!, onPlayerTap, playerAvatarRadius),
+        _buildPlayerLine(context, [awayGoalkeeper], 0.01, awayColor!, onPlayerTap, radius, true),
+        ..._buildFormationLines(context, awayFormationLines, awayFieldPlayers, true, awayColor!, onPlayerTap, radius),
       ],
     );
   }
@@ -256,13 +319,13 @@ class MatchFormationDisplay extends StatelessWidget {
   }
 
   List<Widget> _buildFormationLines(
-      BoxConstraints constraints,
+      BuildContext context,
       List<int> formationLines,
       List<PlayerInfo> fieldPlayers,
       bool isAwayTeam,
       Color teamColor,
       void Function(int) onPlayerTap,
-      double avatarRadius, {
+      double radius, { // Radius statt constraints nutzen
         bool singleTeamMode = false,
       }) {
     final List<Widget> lines = [];
@@ -271,7 +334,7 @@ class MatchFormationDisplay extends StatelessWidget {
     double availableVerticalSpace, verticalSpacingFactor;
 
     if (singleTeamMode) {
-      availableVerticalSpace = 0.325 *105/60;
+      availableVerticalSpace = 0.325 * 105 / 60;
       verticalSpacingFactor = availableVerticalSpace / (formationLines.length > 1 ? formationLines.length - 1 : 1);
     } else {
       availableVerticalSpace = 0.325;
@@ -292,22 +355,23 @@ class MatchFormationDisplay extends StatelessWidget {
       }
 
       final linePlayers = fieldPlayers.sublist(playerIndexOffset, playerIndexOffset + linePlayerCount);
-      lines.add(_buildPlayerLine(constraints, linePlayers, lineYPosition, teamColor, onPlayerTap, avatarRadius, isAwayTeam));
+      lines.add(_buildPlayerLine(context, linePlayers, lineYPosition, teamColor, onPlayerTap, radius, isAwayTeam));
       playerIndexOffset += linePlayerCount;
     }
     return lines;
   }
 
   Widget _buildPlayerLine(
-      BoxConstraints constraints,
+      BuildContext context,
       List<PlayerInfo> players,
       double lineYPosition,
       Color teamColor,
       void Function(int) onPlayerTap,
-      double avatarRadius,
+      double radius,
       bool isAwayTeam) {
     final playerCount = players.length;
     final orderedPlayers = isAwayTeam ? players : players.reversed.toList();
+
     return Positioned.fill(
       child: LayoutBuilder(
         builder: (context, constraints) {
@@ -316,7 +380,14 @@ class MatchFormationDisplay extends StatelessWidget {
               final playerXPosition = (i + 1) / (playerCount + 1);
               return Align(
                 alignment: Alignment((playerXPosition * 2) - 1, (lineYPosition * 2) - 1),
-                child: _PlayerMarker(player: orderedPlayers[i], teamColor: teamColor, onPlayerTap: onPlayerTap, radius: avatarRadius),
+                child: GestureDetector(
+                  onTap: () => onPlayerTap(orderedPlayers[i].id),
+                  child: PlayerAvatar(
+                    player: orderedPlayers[i],
+                    teamColor: teamColor,
+                    radius: radius, // Nutzung des berechneten Radius
+                  ),
+                ),
               );
             }),
           );
@@ -357,47 +428,116 @@ class _SoccerFieldPainter extends CustomPainter {
   @override
   void paint(Canvas canvas, Size size) {
     final paint = Paint();
-    paint.color = Colors.green.shade700;
+
+    // 1. Rasen: Schickes Streifenmuster
+    final Color grassLight = const Color(0xFF4CAF50); // Klassisches Fußballgrün
+    final Color grassDark = const Color(0xFF43A047);  // Leicht dunklerer Streifen
+
+    // Hintergrund
+    paint.color = grassLight;
     canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), paint);
 
-    paint.color = Colors.white.withOpacity(0.8);
-    paint.strokeWidth = 1.5;
+    // Streifen zeichnen
+    paint.color = grassDark;
+    final double stripeHeight = size.height / 12; // 12 horizontale Streifen
+    for (int i = 0; i < 12; i++) {
+      if (i % 2 == 0) { // Jeder zweite Streifen
+        canvas.drawRect(
+          Rect.fromLTWH(0, i * stripeHeight, size.width, stripeHeight),
+          paint,
+        );
+      }
+    }
+
+    // 2. Linien (Weiß, leicht transparent für besseres Blending)
+    paint.color = Colors.white.withOpacity(0.9);
+    paint.strokeWidth = 1.5; // Feine Linien
     paint.style = PaintingStyle.stroke;
+
+    // Außenlinie
+    canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), paint);
 
     final centerLineY = singleTeamMode ? size.height * (1 - 52.5 / 65) : size.height / 2;
 
-
+    // Mittellinie
     canvas.drawLine(Offset(0, centerLineY), Offset(size.width, centerLineY), paint);
+
+    // Mittelkreis
     canvas.drawCircle(Offset(size.width / 2, centerLineY), size.width * 0.15, paint);
-    if (!singleTeamMode) {
-      canvas.drawCircle(Offset(size.width / 2, centerLineY), 2, paint..style = PaintingStyle.fill);
-      paint.style = PaintingStyle.stroke;
-    }
 
-    canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), paint);
+    // Anstoßpunkt
+    paint.style = PaintingStyle.fill;
+    canvas.drawCircle(Offset(size.width / 2, centerLineY), 2.5, paint);
+    paint.style = PaintingStyle.stroke;
 
-    final penaltyAreaWidth = size.width * 0.6;
-    final penaltyAreaHeight = size.height * (singleTeamMode ? (16.5 / 70) : 0.18);
+    // --- Strafraumbereiche ---
 
-    canvas.drawRect(
-      Rect.fromCenter(
-        center: Offset(size.width / 2, size.height - penaltyAreaHeight / 2),
-        width: penaltyAreaWidth,
-        height: penaltyAreaHeight,
-      ),
-      paint,
-    );
+    // Funktion zum Zeichnen einer Strafraumseite
+    void drawPenaltyArea(bool isBottom) {
+      final double yBase = isBottom ? size.height : 0;
+      final int direction = isBottom ? -1 : 1;
 
-    if (!singleTeamMode) {
+      final penaltyAreaWidth = size.width * 0.6;
+      final penaltyAreaHeight = size.height * (singleTeamMode ? 0.18 : 0.16);
+
+      final goalAreaWidth = size.width * 0.25;
+      final goalAreaHeight = size.height * (singleTeamMode ? 0.06 : 0.05);
+
+      // Großer Strafraum (16er)
       canvas.drawRect(
         Rect.fromCenter(
-          center: Offset(size.width / 2, penaltyAreaHeight / 2),
+          center: Offset(size.width / 2, yBase + (penaltyAreaHeight / 2 * direction)),
           width: penaltyAreaWidth,
           height: penaltyAreaHeight,
         ),
         paint,
       );
+
+      // Torraum (5er)
+      canvas.drawRect(
+        Rect.fromCenter(
+          center: Offset(size.width / 2, yBase + (goalAreaHeight / 2 * direction)),
+          width: goalAreaWidth,
+          height: goalAreaHeight,
+        ),
+        paint,
+      );
+
+      // Elfmeterpunkt
+      final penaltySpotDist = size.height * (singleTeamMode ? 0.12 : 0.11);
+      paint.style = PaintingStyle.fill;
+      canvas.drawCircle(Offset(size.width / 2, yBase + (penaltySpotDist * direction)), 2, paint);
+      paint.style = PaintingStyle.stroke;
+
+      // Strafraum-Halbkreis (Arc)
+      final arcRectSize = penaltyAreaWidth * 0.35;
+      final arcRect = Rect.fromCenter(
+        center: Offset(size.width / 2, yBase + (penaltySpotDist * direction)),
+        width: arcRectSize,
+        height: arcRectSize,
+      );
+
+      // Zeichnet nur den Teil des Kreises außerhalb des Strafraums
+      final startAngle = isBottom ? pi : 0.0;
+      // Wir zeichnen hier vereinfacht den Bogen, clipping wäre komplexer aber für die Größe okay
+      // canvas.drawArc(arcRect, startAngle - 0.6, 1.2, false, paint);
+      // (Optional: Bogen hinzufügen, wenn gewünscht, oft reicht der Punkt bei kleinen Screens)
     }
+
+    // Zeichne unteren Strafraum (Heim)
+    drawPenaltyArea(true);
+
+    // Zeichne oberen Strafraum (Auswärts) nur im 2-Team-Modus
+    if (!singleTeamMode) {
+      drawPenaltyArea(false);
+    }
+
+    // Ecken (Corner Arcs)
+    final double cornerSize = size.width * 0.02;
+    if (!singleTeamMode) canvas.drawArc(Rect.fromLTWH(-cornerSize, -cornerSize, cornerSize*2, cornerSize*2), 0, pi/2, false, paint); // TL
+    if (!singleTeamMode) canvas.drawArc(Rect.fromLTWH(size.width-cornerSize, -cornerSize, cornerSize*2, cornerSize*2), pi/2, pi/2, false, paint); // TR
+    canvas.drawArc(Rect.fromLTWH(-cornerSize, size.height-cornerSize, cornerSize*2, cornerSize*2), -pi/2, pi/2, false, paint); // BL
+    canvas.drawArc(Rect.fromLTWH(size.width-cornerSize, size.height-cornerSize, cornerSize*2, cornerSize*2), pi, pi/2, false, paint); // BR
   }
 
   @override
