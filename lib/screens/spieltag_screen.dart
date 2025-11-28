@@ -294,7 +294,7 @@ tempHomePlayersData.sort((a, b) {
                       awayFormation: awayFormation,
                       awayPlayers: awayPlayers,
                       awayColor: awayColor,
-                      onPlayerTap: (playerId) {
+                      onPlayerTap: (playerId, radius) {
                         Navigator.push(
                           context,
                           MaterialPageRoute(

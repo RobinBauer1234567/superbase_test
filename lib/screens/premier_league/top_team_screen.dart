@@ -493,7 +493,7 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
               homeFormation: _selectedFormationName!,
               homePlayers: players,
               homeColor: Colors.blue,
-              onPlayerTap: (playerId) {
+              onPlayerTap: (playerId, radius) {
                 Navigator.push(
                   context,
                   MaterialPageRoute(
