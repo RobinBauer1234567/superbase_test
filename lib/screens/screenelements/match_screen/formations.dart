@@ -31,12 +31,11 @@ class PlayerInfo {
     this.maxRating = 250
   });
 }
-/// Ein wiederverwendbares Widget für Spieler-Avatare mit Team-farbigem Rand.
+
 class PlayerAvatar extends StatelessWidget {
   final PlayerInfo player;
   final Color teamColor;
   final double radius;
-  // Optional: Visual overrides für Drag & Drop Status
   final bool showHoverEffect;
   final bool showValidTargetEffect;
 
@@ -52,47 +51,60 @@ class PlayerAvatar extends StatelessWidget {
   Widget _buildEventIcon(IconData icon, Color color, int count, double size) {
     if (count == 0) return const SizedBox.shrink();
     return Container(
-      padding: EdgeInsets.all(size * 0.15),
+      margin: const EdgeInsets.only(bottom: 2),
+      padding: EdgeInsets.all(size * 0.1),
       decoration: BoxDecoration(
-        color: Colors.black.withOpacity(0.6),
+        color: Colors.white,
         shape: BoxShape.circle,
-        border: Border.all(color: Colors.white, width: 0.5),
+        border: Border.all(color: Colors.grey.shade300, width: 0.5),
+        boxShadow: [
+          BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 2, offset: const Offset(0, 1))
+        ],
       ),
-      child: Icon(icon, color: color, size: size),
+      child: Icon(icon, color: color, size: size * 0.9),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final bool isGoalkeeper = player.position.toUpperCase() == 'TW' || player.position.toUpperCase() == 'G';
+    final bool isGoalkeeper = player.position.toUpperCase().contains('TW') ||
+        player.position.toUpperCase().contains('GK');
     final bool isPlaceholder = player.id < 0;
 
-    final double ratingFontSize = radius * 0.5;
+    // --- Größen-Berechnung ---
+    // Wir nutzen den Radius als Basis für das BILD. Alles andere kommt oben drauf/daneben.
+    final double imageRadius = radius;
+
+    // Rahmen-Dicken
+    final double whiteRingWidth = 1.5;
+    final double colorRingWidth = isPlaceholder ? 1.5 : 2.5;
+
+    // Gesamtradius inkl. Rahmen
+    final double totalRadius = imageRadius + whiteRingWidth + colorRingWidth;
+
+    // Font Sizes
+    final double ratingFontSize = radius * 0.55;
+    final double posFontSize = radius * 0.4;
     final double nameFontSize = radius * 0.45;
     final double eventIconSize = radius * 0.45;
-    final double spaceAfterAvatar = radius * 0.15;
 
-    // --- Drag & Drop Visual Effects ---
+    // Farben
+    Color outerColor = isGoalkeeper ? Colors.orange.shade700 : teamColor;
+    if (isPlaceholder) outerColor = Colors.grey.shade400;
+
+    // Drag & Drop Skalierung
     double scale = 1.0;
-    Color borderColor = isPlaceholder
-        ? Colors.grey.shade400
-        : (isGoalkeeper ? Colors.orange.shade700 : teamColor);
-    double borderWidth = 1.5;
-
     if (showHoverEffect) {
-      scale = 1.15; // "Snap" / Vergrößerung
-      borderColor = Colors.greenAccent.shade700; // Grüner Rand beim Fangen
-      borderWidth = 3.0;
+      scale = 1.2;
+      outerColor = Colors.green.shade600;
     } else if (showValidTargetEffect) {
-      borderColor = Colors.yellow.shade700; // Gelber Rand für mögliche Ziele
-      borderWidth = 2.5;
+      outerColor = Colors.yellow.shade700;
     }
-    // ----------------------------------
 
     return Transform.scale(
       scale: scale,
       child: SizedBox(
-        width: radius * 3,
+        width: totalRadius * 2.4, // Platz für Badges links/rechts
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -100,49 +112,102 @@ class PlayerAvatar extends StatelessWidget {
               clipBehavior: Clip.none,
               alignment: Alignment.center,
               children: [
+                // 1. Schatten (Ganz unten)
                 Container(
-                  width: radius * 2,
-                  height: radius * 2,
+                  width: totalRadius * 2,
+                  height: totalRadius * 2,
                   decoration: BoxDecoration(
-                    color: Colors.grey.shade200,
                     shape: BoxShape.circle,
-                    border: Border.all(
-                      color: borderColor,
-                      width: borderWidth,
-                    ),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black.withOpacity(0.2),
-                        blurRadius: 4,
+                        color: Colors.black.withOpacity(0.3),
+                        blurRadius: 5,
                         offset: const Offset(0, 2),
-                      )
+                      ),
                     ],
-                    image: player.profileImageUrl != null
-                        ? DecorationImage(
-                      image: NetworkImage(player.profileImageUrl!),
-                      fit: BoxFit.cover,
-                    )
-                        : null,
                   ),
-                  child: player.profileImageUrl == null
+                ),
+
+                // 2. Äußerer Farb-Kreis (Teamfarbe)
+                CircleAvatar(
+                  radius: totalRadius,
+                  backgroundColor: outerColor,
+                ),
+
+                // 3. Weißer Trenn-Kreis
+                CircleAvatar(
+                  radius: imageRadius + whiteRingWidth,
+                  backgroundColor: Colors.white,
+                ),
+
+                // 4. Das BILD (Ganz oben, maximale Größe)
+                CircleAvatar(
+                  radius: imageRadius,
+                  backgroundColor: Colors.grey.shade200,
+                  backgroundImage: (player.profileImageUrl != null && !isPlaceholder)
+                      ? NetworkImage(player.profileImageUrl!)
+                      : null,
+                  child: (player.profileImageUrl == null || isPlaceholder)
                       ? Icon(
-                    isPlaceholder ? Icons.add : Icons.person,
-                    color: isPlaceholder ? Colors.grey.shade500 : Colors.grey.shade400,
-                    size: radius * (isPlaceholder ? 1.0 : 1.2),
+                    isPlaceholder ? Icons.add_rounded : Icons.person,
+                    color: isPlaceholder ? Colors.grey.shade400 : Colors.grey.shade400,
+                    size: imageRadius * 1.2,
                   )
                       : null,
                 ),
+
+                // 5. Positions-Badge (Oben Links - etwas kleiner & dezenter)
                 if (!isPlaceholder)
                   Positioned(
-                    bottom: -radius * 0.25,
+                    top: -2,
+                    left: -2,
                     child: Container(
-                      padding: EdgeInsets.symmetric(horizontal: radius * 0.25, vertical: radius * 0.05),
+                      width: radius * 0.9,
+                      height: radius * 0.9,
+                      alignment: Alignment.center,
+                      decoration: BoxDecoration(
+                        color: teamColor,
+                        shape: BoxShape.circle,
+                        border: Border.all(color: Colors.white, width: 1.5),
+                        boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 2, offset: Offset(1,1))],
+                      ),
+                      child: Text(
+                        player.position,
+                        style: TextStyle(
+                          color: Colors.white,
+                          fontSize: posFontSize,
+                          fontWeight: FontWeight.bold,
+                        ),
+                      ),
+                    ),
+                  ),
+
+                // 6. Event Icons (Rechts)
+                if (!isPlaceholder)
+                  Positioned(
+                    top: 0,
+                    right: -radius * 0.5,
+                    child: Column(
+                      children: [
+                        _buildEventIcon(Icons.sports_soccer, const Color(0xFF2E7D32), player.goals, eventIconSize),
+                        _buildEventIcon(Icons.auto_fix_high, Colors.blueAccent, player.assists, eventIconSize),
+                        _buildEventIcon(Icons.cancel, Colors.redAccent, player.ownGoals, eventIconSize),
+                      ],
+                    ),
+                  ),
+
+                // 7. Rating Pill (Tiefer gesetzt, damit das Kinn frei bleibt)
+                if (!isPlaceholder)
+                  Positioned(
+                    bottom: -radius * 0.4, // Tiefer als vorher (-0.25)
+                    child: Container(
+                      padding: EdgeInsets.symmetric(horizontal: radius * 0.3, vertical: 1),
                       decoration: BoxDecoration(
                         color: getColorForRating(player.rating, player.maxRating),
-                        borderRadius: BorderRadius.circular(4),
-                        border: Border.all(color: Colors.white, width: 1),
+                        borderRadius: BorderRadius.circular(8),
+                        border: Border.all(color: Colors.white, width: 1.5),
                         boxShadow: [
-                          BoxShadow(color: Colors.black12, blurRadius: 2, offset: const Offset(0, 1))
+                          BoxShadow(color: Colors.black26, blurRadius: 2, offset: const Offset(0, 1))
                         ],
                       ),
                       child: Text(
@@ -150,41 +215,33 @@ class PlayerAvatar extends StatelessWidget {
                         style: TextStyle(
                           color: Colors.white,
                           fontSize: ratingFontSize,
-                          fontWeight: FontWeight.bold,
+                          fontWeight: FontWeight.w800,
                         ),
                       ),
                     ),
                   ),
-                if (!isPlaceholder)
-                  Positioned(
-                    top: -radius * 0.2,
-                    right: -radius * 0.3,
-                    child: Column(
-                      children: [
-                        _buildEventIcon(Icons.sports_soccer, Colors.white, player.goals, eventIconSize),
-                        if (player.goals > 0) SizedBox(height: 1),
-                        _buildEventIcon(Icons.assistant, Colors.lightBlueAccent, player.assists, eventIconSize),
-                        if (player.assists > 0) SizedBox(height: 1),
-                        _buildEventIcon(Icons.sports_soccer, Colors.red, player.ownGoals, eventIconSize),
-                      ],
-                    ),
-                  ),
               ],
             ),
-            SizedBox(height: spaceAfterAvatar),
+
+            // Platzhalter zwischen Avatar und Name (etwas mehr Platz wegen dem tiefen Rating Badge)
+            SizedBox(height: radius * 0.35),
+
+            // 8. Name
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
               decoration: BoxDecoration(
-                color: isPlaceholder ? Colors.white.withOpacity(0.8) : Colors.black.withOpacity(0.6),
-                borderRadius: BorderRadius.circular(10),
-                border: isPlaceholder ? Border.all(color: Colors.grey.shade300, width: 0.5) : null,
+                color: Colors.white.withOpacity(isPlaceholder ? 0.8 : 0.95),
+                borderRadius: BorderRadius.circular(4),
+                boxShadow: isPlaceholder ? [] : [
+                  BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 2, offset: const Offset(0, 1))
+                ],
               ),
               child: Text(
-                player.name.split(' ').last,
+                player.name.split(' ').last.toUpperCase(),
                 style: TextStyle(
-                    color: isPlaceholder ? Colors.black87 : Colors.white,
+                    color: Colors.grey.shade800,
                     fontSize: nameFontSize,
-                    fontWeight: FontWeight.w600,
+                    fontWeight: FontWeight.bold,
                     letterSpacing: 0.3
                 ),
                 textAlign: TextAlign.center,
@@ -197,8 +254,7 @@ class PlayerAvatar extends StatelessWidget {
       ),
     );
   }
-}
-class MatchFormationDisplay extends StatefulWidget {
+}class MatchFormationDisplay extends StatefulWidget {
   final String homeFormation;
   final List<PlayerInfo> homePlayers;
   final Color homeColor;
@@ -345,17 +401,13 @@ class _MatchFormationDisplayState extends State<MatchFormationDisplay> {
                 ),
               ),
             ),
-
-            // --- BANK (Drop Target & Draggable Source) ---
-            // --- BANK (Drop Target & Draggable Source) ---
             if (showBench)
               DragTarget<PlayerInfo>(
-                // 1. ZIEL: Akzeptiere Drops von überall, solange es ein echter Spieler ist
                 onWillAccept: (player) {
+                  // Akzeptiere echte Spieler
                   return player != null && player.id > 0;
                 },
                 onAccept: (player) {
-                  // WICHTIG: Hier wird der Move ausgeführt!
                   if (widget.onMoveToBench != null) {
                     widget.onMoveToBench!(player);
                   }
@@ -364,23 +416,16 @@ class _MatchFormationDisplayState extends State<MatchFormationDisplay> {
                 builder: (context, candidateData, rejectedData) {
                   final bool isHovering = candidateData.isNotEmpty;
 
-                  // Container Design
                   return Container(
                     height: benchHeight,
                     width: fieldWidth,
                     margin: EdgeInsets.only(top: benchMargin),
                     decoration: BoxDecoration(
-                      color: isHovering ? Colors.green.withOpacity(0.1) : Colors
-                          .white, // Visuelles Feedback
+                      // WICHTIG: Visuelles Feedback beim Hovern
+                      color: isHovering ? Colors.green.withOpacity(0.2) : Colors.white,
                       borderRadius: BorderRadius.circular(12),
-                      boxShadow: [
-                        BoxShadow(color: Colors.black.withOpacity(0.08),
-                            blurRadius: 8,
-                            offset: const Offset(0, 2))
-                      ],
                       border: Border.all(
-                          color: isHovering ? Colors.green : Colors.grey
-                              .shade200,
+                          color: isHovering ? Colors.green : Colors.grey.shade200,
                           width: isHovering ? 2 : 1
                       ),
                     ),
@@ -388,31 +433,25 @@ class _MatchFormationDisplayState extends State<MatchFormationDisplay> {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Padding(
-                          padding: EdgeInsets.only(left: radius * 0.8,
-                              top: radius * 0.3,
-                              bottom: radius * 0.1),
+                          padding: EdgeInsets.only(left: radius * 0.8, top: radius * 0.3, bottom: radius * 0.1),
                           child: Text(
                             isHovering ? "LOSLASSEN ZUM AUSWECHSELN" : "BANK",
-                            // Text Feedback
                             style: TextStyle(
                                 fontSize: radius * 0.5,
                                 fontWeight: FontWeight.bold,
-                                color: isHovering ? Colors.green : Colors.grey
-                                    .shade600,
+                                color: isHovering ? Colors.green : Colors.grey.shade600,
                                 letterSpacing: 1.0
                             ),
                           ),
                         ),
-                        // ... (Restlicher Inhalt der Bank: ScrollView, Row, Draggables wie zuvor) ...
+                        // Scrollbare Liste der Bankspieler
                         Expanded(
                           child: SingleChildScrollView(
                             scrollDirection: Axis.horizontal,
                             physics: const BouncingScrollPhysics(),
-                            padding: EdgeInsets.symmetric(
-                                horizontal: radius * 0.5),
+                            padding: EdgeInsets.symmetric(horizontal: radius * 0.5),
                             child: Row(
                               children: widget.substitutes!.map((player) {
-                                // ... (Code für Bank-Spieler Draggable bleibt gleich) ...
                                 return Padding(
                                   padding: EdgeInsets.only(right: radius * 0.2),
                                   child: LongPressDraggable<PlayerInfo>(
@@ -420,26 +459,22 @@ class _MatchFormationDisplayState extends State<MatchFormationDisplay> {
                                     delay: const Duration(milliseconds: 200),
                                     feedback: Material(
                                       color: Colors.transparent,
-                                      child: Opacity(opacity: 0.9,
-                                          child: PlayerAvatar(player: player,
-                                              teamColor: widget.homeColor,
-                                              radius: radius * 1.1)),
+                                      child: Opacity(
+                                        opacity: 0.9,
+                                        child: PlayerAvatar(player: player, teamColor: widget.homeColor, radius: radius * 1.1),
+                                      ),
                                     ),
-                                    childWhenDragging: Opacity(opacity: 0.3,
-                                        child: PlayerAvatar(player: player,
-                                            teamColor: widget.homeColor,
-                                            radius: radius)),
+                                    childWhenDragging: Opacity(
+                                      opacity: 0.3,
+                                      child: PlayerAvatar(player: player, teamColor: widget.homeColor, radius: radius),
+                                    ),
                                     onDragStarted: () {
                                       setState(() => _draggingPlayer = player);
                                     },
-                                    onDragEnd: (_) =>
-                                        setState(() => _draggingPlayer = null),
+                                    onDragEnd: (_) => setState(() => _draggingPlayer = null),
                                     child: GestureDetector(
-                                      onTap: () =>
-                                          widget.onPlayerTap(player.id, radius),
-                                      child: PlayerAvatar(player: player,
-                                          teamColor: widget.homeColor,
-                                          radius: radius),
+                                      onTap: () => widget.onPlayerTap(player.id, radius),
+                                      child: PlayerAvatar(player: player, teamColor: widget.homeColor, radius: radius),
                                     ),
                                   ),
                                 );
@@ -458,6 +493,111 @@ class _MatchFormationDisplayState extends State<MatchFormationDisplay> {
     );
   }
 
+  // --- WICHTIG: Korrigierte _buildPlayerLine (Damit Feldspieler ziehbar sind) ---
+  Widget _buildPlayerLine(BuildContext context, List<PlayerInfo> players, double lineYPosition, Color teamColor, void Function(int, double) onPlayerTap, double radius, bool isAwayTeam) {
+    final playerCount = players.length;
+    final orderedPlayers = isAwayTeam ? players : players.reversed.toList();
+
+    return Positioned.fill(
+      child: LayoutBuilder(
+        builder: (context, constraints) {
+          return Stack(
+            children: List.generate(playerCount, (i) {
+              final playerXPosition = (i + 1) / (playerCount + 1);
+              final targetPlayer = orderedPlayers[i];
+
+              final int slotIndex = widget.homePlayers.indexOf(targetPlayer);
+              String requiredRole = "";
+              if (slotIndex != -1 && slotIndex < widget.requiredPositions.length) {
+                requiredRole = widget.requiredPositions[slotIndex];
+              }
+
+              final bool isValidTarget = _draggingPlayer != null &&
+                  requiredRole.isNotEmpty &&
+                  _isPositionValid(requiredRole, _draggingPlayer!.position);
+
+              final avatarWidget = GestureDetector(
+                onTap: () => onPlayerTap(targetPlayer.id, radius),
+                child: PlayerAvatar(
+                  player: targetPlayer,
+                  teamColor: teamColor,
+                  radius: radius,
+                  showHoverEffect: false, // Wird unten vom DragTarget gesteuert
+                  showValidTargetEffect: isValidTarget,
+                ),
+              );
+
+              return Align(
+                alignment: Alignment((playerXPosition * 2) - 1, (lineYPosition * 2) - 1),
+                child: DragTarget<PlayerInfo>(
+                  onWillAccept: (incomingPlayer) {
+                    if (incomingPlayer == null || requiredRole.isEmpty) return false;
+                    return _isPositionValid(requiredRole, incomingPlayer.position);
+                  },
+                  onAccept: (incomingPlayer) {
+                    if (widget.onPlayerDrop != null) {
+                      widget.onPlayerDrop!(targetPlayer, incomingPlayer);
+                    }
+                    setState(() => _draggingPlayer = null);
+                  },
+                  builder: (context, candidateData, rejectedData) {
+                    final bool isHovering = candidateData.isNotEmpty;
+
+                    // Das Basis-Widget (Avatar)
+                    final displayWidget = PlayerAvatar(
+                      player: targetPlayer,
+                      teamColor: teamColor,
+                      radius: radius,
+                      showHoverEffect: isHovering,
+                      showValidTargetEffect: isValidTarget,
+                    );
+
+                    // Fallunterscheidung: Echter Spieler vs. Platzhalter
+                    if (targetPlayer.id > 0) {
+                      // Echter Spieler -> Ziehbar (Draggable)
+                      return LongPressDraggable<PlayerInfo>(
+                        data: targetPlayer,
+                        delay: const Duration(milliseconds: 100),
+                        feedback: Material(
+                          color: Colors.transparent,
+                          child: Opacity(
+                            opacity: 0.9,
+                            child: PlayerAvatar(player: targetPlayer, teamColor: teamColor, radius: radius * 1.1),
+                          ),
+                        ),
+                        childWhenDragging: Opacity(
+                          opacity: 0.3,
+                          child: displayWidget,
+                        ),
+                        onDragStarted: () => setState(() => _draggingPlayer = targetPlayer),
+                        onDragEnd: (_) => setState(() => _draggingPlayer = null),
+                        onDraggableCanceled: (_, __) => setState(() => _draggingPlayer = null),
+
+                        // Auch der Draggable braucht einen GestureDetector für normale Taps!
+                        child: GestureDetector(
+                          onTap: () => onPlayerTap(targetPlayer.id, radius),
+                          child: displayWidget,
+                        ),
+                      );
+                    } else {
+                      // Platzhalter -> NICHT ziehbar, aber KLICKBAR!
+                      return GestureDetector(
+                        onTap: () {
+                          // Debugging-Hilfe, falls es immer noch nicht geht:
+                          print("Platzhalter getippt: ${targetPlayer.id}");
+                          onPlayerTap(targetPlayer.id, radius);
+                        },
+                        child: displayWidget,
+                      );
+                    }
+                  },                ),
+              );
+            }),
+          );
+        },
+      ),
+    );
+  }
   Widget _buildAwayTeam(BuildContext context, BoxConstraints constraints,
       double radius) {
     final awayGoalkeeper = _findGoalkeeper(widget.awayPlayers!);
@@ -550,127 +690,6 @@ class _MatchFormationDisplayState extends State<MatchFormationDisplay> {
     return lines;
   }
 
-  Widget _buildPlayerLine(BuildContext context, List<PlayerInfo> players,
-      double lineYPosition, Color teamColor,
-      void Function(int, double) onPlayerTap, double radius, bool isAwayTeam) {
-    final playerCount = players.length;
-    final orderedPlayers = isAwayTeam ? players : players.reversed.toList();
-
-    return Positioned.fill(
-      child: LayoutBuilder(
-        builder: (context, constraints) {
-          return Stack(
-            children: List.generate(playerCount, (i) {
-              final playerXPosition = (i + 1) / (playerCount + 1);
-              final targetPlayer = orderedPlayers[i];
-
-              // Validierung für Drag Targets
-              final int slotIndex = widget.homePlayers.indexOf(targetPlayer);
-              String requiredRole = "";
-              if (slotIndex != -1 &&
-                  slotIndex < widget.requiredPositions.length) {
-                requiredRole = widget.requiredPositions[slotIndex];
-              }
-              final bool isValidTarget = _draggingPlayer != null &&
-                  requiredRole.isNotEmpty &&
-                  _isPositionValid(requiredRole, _draggingPlayer!.position);
-
-              // Avatar Widget (Basis)
-              final avatarWidget = GestureDetector(
-                onTap: () => onPlayerTap(targetPlayer.id, radius),
-                child: PlayerAvatar(
-                  player: targetPlayer,
-                  teamColor: teamColor,
-                  radius: radius,
-                  showHoverEffect: false,
-                  // Wird unten vom DragTarget gesteuert
-                  showValidTargetEffect: isValidTarget,
-                ),
-              );
-
-              return Align(
-                alignment: Alignment(
-                    (playerXPosition * 2) - 1, (lineYPosition * 2) - 1),
-
-                // 1. ZIEL (Empfänger)
-                child: DragTarget<PlayerInfo>(
-                  onWillAccept: (incomingPlayer) {
-                    if (incomingPlayer == null || requiredRole.isEmpty)
-                      return false;
-                    return _isPositionValid(
-                        requiredRole, incomingPlayer.position);
-                  },
-                  onAccept: (incomingPlayer) {
-                    if (widget.onPlayerDrop != null) {
-                      widget.onPlayerDrop!(targetPlayer, incomingPlayer);
-                    }
-                    setState(() => _draggingPlayer = null);
-                  },
-                  builder: (context, candidateData, rejectedData) {
-                    final bool isHovering = candidateData.isNotEmpty;
-
-                    // Wrapper für Hover-Effekt
-                    final displayWidget = PlayerAvatar(
-                      player: targetPlayer,
-                      teamColor: teamColor,
-                      radius: radius,
-                      showHoverEffect: isHovering,
-                      showValidTargetEffect: isValidTarget,
-                    );
-
-                    // 2. QUELLE (Sender): Ist es ein echter Spieler? Dann mach ihn ziehbar.
-                    if (targetPlayer.id > 0) {
-                      return LongPressDraggable<PlayerInfo>(
-                        data: targetPlayer,
-                        delay: const Duration(milliseconds: 100),
-                        feedback: Material(
-                          color: Colors.transparent,
-                          child: Opacity(
-                            opacity: 0.9,
-                            child: PlayerAvatar(player: targetPlayer,
-                                teamColor: teamColor,
-                                radius: radius * 1.1),
-                          ),
-                        ),
-                        childWhenDragging: Opacity(
-                          opacity: 0.3,
-                          // Spieler wird blass, bleibt aber visuell da
-                          child: displayWidget,
-                        ),
-                        onDragStarted: () {
-                          setState(() => _draggingPlayer = targetPlayer);
-                        },
-                        // WICHTIG: Hier darf KEINE Logik stehen, die Daten ändert!
-                        onDragEnd: (details) {
-                          setState(() => _draggingPlayer = null);
-                        },
-                        // WICHTIG: Auch hier NICHTS tun (außer Reset)
-                        // Wenn der Spieler ins Leere gezogen wird, passiert einfach nichts.
-                        onDraggableCanceled: (velocity, offset) {
-                          setState(() => _draggingPlayer = null);
-                        },
-
-                        child: GestureDetector(
-                          onTap: () => onPlayerTap(targetPlayer.id, radius),
-                          child: displayWidget,
-                        ),
-                      );
-                    } else {
-                      // Platzhalter: Nur Ziel, nicht Quelle
-                      return GestureDetector(
-                        onTap: () => onPlayerTap(targetPlayer.id, radius),
-                        child: displayWidget,
-                      );
-                    }
-                  },
-                ),
-              );
-            }),
-          );
-        },
-      ),
-    );
-  }
 }
 
 class _SoccerFieldPainter extends CustomPainter {

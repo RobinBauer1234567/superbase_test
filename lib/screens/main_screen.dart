@@ -335,7 +335,11 @@ class _MainScreenState extends State<MainScreen> {
     final int visibleLeagueCount = min(_userLeagues.length, 3);
     for (int i = 0; i < visibleLeagueCount; i++) {
       final league = _userLeagues[i];
-      screens.add(LeagueDetailScreen(league: league));
+      screens.add(LeagueDetailScreen(
+          key: ValueKey(league['id']), // <--- WICHTIG: Das zwingt zum Neuladen
+          league: league
+      ));
+
       navItems.add(NavItem(icon: const Icon(Icons.groups), label: league['name'], isDraggable: true));
     }
     if (_userLeagues.length > 3) {

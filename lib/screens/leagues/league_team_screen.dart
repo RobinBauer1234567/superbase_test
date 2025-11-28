@@ -105,7 +105,6 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
     }
 
 
-
     if (mounted) {
       setState(() {
         _allFormations = formations;
@@ -564,61 +563,87 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
       ),
     );
   }
+// Diese Methode generiert die Platzhalter basierend auf der aktuellen Formation
+  void _generateFieldPlaceholders() {
+    // Hole die Positions-Liste (z.B. ["TW", "RV", "IV", ...])
+    final positions = _allFormations[_selectedFormationName];
 
+    // Sicherheitscheck
+    if (positions == null || positions.length != 11) {
+      print("Warnung: Keine oder ungültige Formation für $_selectedFormationName gefunden.");
+      return;
+    }
+
+    List<PlayerInfo> newField = [];
+    for (int i = 0; i < 11; i++) {
+      newField.add(PlayerInfo(
+        id: -1 - i, // WICHTIG: Negative IDs von -1 bis -11 für die Platzhalter
+        name: positions[i], // Name ist die Position (z.B. "IV")
+        position: positions[i], // Position für die Logik
+        rating: 0,
+        goals: 0,
+        assists: 0,
+        ownGoals: 0,
+        profileImageUrl: null,
+      ));
+    }
+
+    setState(() {
+      _fieldPlayers = newField;
+    });
+  }
   void _handlePlayerDrop(PlayerInfo fieldSlot, PlayerInfo incomingPlayer) {
     setState(() {
-      // Prüfen: Kommt der Spieler von der Bank oder vom Feld?
       bool cameFromBench = false;
       int sourceFieldIndex = -1;
 
-      // Check Bank
+      // 1. Herkunft ermitteln
       if (_substitutePlayers.any((p) => p.id == incomingPlayer.id)) {
         cameFromBench = true;
         _substitutePlayers.removeWhere((p) => p.id == incomingPlayer.id);
-      }
-      // Check Feld (Source Index finden)
-      else {
+      } else {
         sourceFieldIndex = _fieldPlayers.indexWhere((p) => p.id == incomingPlayer.id);
-        if (sourceFieldIndex == -1) return; // Spieler nicht gefunden, Abbruch
+        if (sourceFieldIndex == -1) return;
       }
 
-      // Ziel-Index finden
+      // 2. Ziel ermitteln
       final int targetIndex = _fieldPlayers.indexWhere((p) => p.id == fieldSlot.id);
       if (targetIndex == -1) return;
 
-      // Aktion ausführen
+      // --- BUGFIX: Self-Drop verhindern ---
+      // Wenn der Spieler auf sich selbst fallen gelassen wird -> Nichts tun!
+      if (!cameFromBench && sourceFieldIndex == targetIndex) {
+        return;
+      }
+
+      // 3. Aktion ausführen
       if (cameFromBench) {
-        // Fall 1: Bank -> Feld (Einwechseln)
+        // Bank -> Feld (Einwechseln)
         if (fieldSlot.id > 0) {
-          // Alter Spieler zurück auf die Bank
           _substitutePlayers.add(fieldSlot);
           _sortBench();
         }
         _fieldPlayers[targetIndex] = incomingPlayer;
 
       } else {
-        // Fall 2: Feld -> Feld (Verschieben)
+        // Feld -> Feld (Verschieben)
 
-        // a) Wir setzen den Spieler auf den neuen Platz
+        // a) Spieler auf neuen Platz
         _fieldPlayers[targetIndex] = incomingPlayer;
 
-        // b) Was passiert mit dem alten Platz (sourceFieldIndex)?
-        // Wir müssen ihn wieder zum Placeholder machen.
-        // Dafür brauchen wir die Position aus der Formation.
+        // b) Alten Platz leeren (Placeholder wiederherstellen)
         final List<String> positions = _allFormations[_selectedFormationName] ?? [];
         if (sourceFieldIndex < positions.length) {
           final String roleName = positions[sourceFieldIndex];
           _fieldPlayers[sourceFieldIndex] = PlayerInfo(
-              id: -1 - sourceFieldIndex, // Eindeutige ID für Placeholder
+              id: -1 - sourceFieldIndex,
               name: roleName,
               position: roleName,
               rating: 0, goals: 0, assists: 0, ownGoals: 0, profileImageUrl: null
           );
         }
 
-        // c) Was passiert mit dem Spieler, der auf dem Zielplatz war (fieldSlot)?
-        // Wenn da jemand ECHTES war (ID > 0), schicken wir ihn auf die Bank.
-        // (Einfache Lösung, vermeidet komplizierte Täusche, die invalide Positionen erzeugen könnten)
+        // c) Verdrängten Spieler auf die Bank (falls einer da war)
         if (fieldSlot.id > 0) {
           _substitutePlayers.add(fieldSlot);
           _sortBench();
@@ -627,9 +652,7 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
     });
 
     _saveLineupToDb();
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("${incomingPlayer.name} verschoben!"), duration: Duration(milliseconds: 800)));
   }
-
   // 2. Drop auf die Bank
   void _handleMoveToBench(PlayerInfo player) {
     setState(() {
@@ -657,7 +680,6 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
       }
     });
     _saveLineupToDb();
-    ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("${player.name} ausgewechselt."), duration: Duration(milliseconds: 800)));
   }
 
   void _sortBench() {
@@ -722,8 +744,7 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
                         _substitutePlayers.sort((a, b) =>
                             _getPositionOrder(a.position).compareTo(_getPositionOrder(b.position))
                         );
-
-
+                        _generateFieldPlaceholders();
                       });
                       _saveLineupToDb();
                     }
@@ -745,6 +766,7 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
 
             // --- NEUE PARAMETER ---
             onPlayerDrop: _handlePlayerDrop,
+            onMoveToBench: _handleMoveToBench,
             requiredPositions: currentRequiredPositions,
           ),
         ),
