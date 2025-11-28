@@ -72,20 +72,18 @@ class PlayerAvatar extends StatelessWidget {
     final bool isPlaceholder = player.id < 0;
 
     // --- Größen-Berechnung ---
-    // Wir nutzen den Radius als Basis für das BILD. Alles andere kommt oben drauf/daneben.
     final double imageRadius = radius;
 
-    // Rahmen-Dicken
-    final double whiteRingWidth = 1.5;
-    final double colorRingWidth = isPlaceholder ? 1.5 : 2.5;
+    // 1. RAHMEN VERKLEINERT
+    final double whiteRingWidth = radius * 0.02; // Vorher 1.5
+    final double colorRingWidth = radius * 0.1; // Vorher 1.5 / 2.5
 
-    // Gesamtradius inkl. Rahmen
     final double totalRadius = imageRadius + whiteRingWidth + colorRingWidth;
 
     // Font Sizes
     final double ratingFontSize = radius * 0.55;
-    final double posFontSize = radius * 0.4;
-    final double nameFontSize = radius * 0.45;
+    final double posFontSize = radius * 0.7; // Kleiner für die kleineren Badges
+    final double nameFontSize = radius * 0.42;
     final double eventIconSize = radius * 0.45;
 
     // Farben
@@ -101,10 +99,16 @@ class PlayerAvatar extends StatelessWidget {
       outerColor = Colors.yellow.shade700;
     }
 
+    // Positionen parsen
+    List<String> positions = player.position.split(',').map((e) => e.trim()).toList();
+    if (positions.isEmpty || (positions.length == 1 && positions.first.isEmpty)) {
+      positions = [];
+    }
+
     return Transform.scale(
       scale: scale,
       child: SizedBox(
-        width: totalRadius * 2.4, // Platz für Badges links/rechts
+        width: totalRadius * 2.8,
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -112,35 +116,21 @@ class PlayerAvatar extends StatelessWidget {
               clipBehavior: Clip.none,
               alignment: Alignment.center,
               children: [
-                // 1. Schatten (Ganz unten)
+                // 1. Schatten
                 Container(
                   width: totalRadius * 2,
                   height: totalRadius * 2,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.3),
-                        blurRadius: 5,
-                        offset: const Offset(0, 2),
-                      ),
+                      BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 4, offset: const Offset(0, 2)),
                     ],
                   ),
                 ),
 
-                // 2. Äußerer Farb-Kreis (Teamfarbe)
-                CircleAvatar(
-                  radius: totalRadius,
-                  backgroundColor: outerColor,
-                ),
-
-                // 3. Weißer Trenn-Kreis
-                CircleAvatar(
-                  radius: imageRadius + whiteRingWidth,
-                  backgroundColor: Colors.white,
-                ),
-
-                // 4. Das BILD (Ganz oben, maximale Größe)
+                // 2. Kreise (Rahmen + Bild)
+                CircleAvatar(radius: totalRadius, backgroundColor: outerColor),
+                CircleAvatar(radius: imageRadius + whiteRingWidth, backgroundColor: Colors.white),
                 CircleAvatar(
                   radius: imageRadius,
                   backgroundColor: Colors.grey.shade200,
@@ -148,41 +138,61 @@ class PlayerAvatar extends StatelessWidget {
                       ? NetworkImage(player.profileImageUrl!)
                       : null,
                   child: (player.profileImageUrl == null || isPlaceholder)
-                      ? Icon(
-                    isPlaceholder ? Icons.add_rounded : Icons.person,
-                    color: isPlaceholder ? Colors.grey.shade400 : Colors.grey.shade400,
-                    size: imageRadius * 1.2,
-                  )
+                      ? Icon(isPlaceholder ? Icons.add_rounded : Icons.person, color: Colors.grey.shade400, size: imageRadius * 1.2)
                       : null,
                 ),
 
-                // 5. Positions-Badge (Oben Links - etwas kleiner & dezenter)
-                if (!isPlaceholder)
-                  Positioned(
-                    top: -2,
-                    left: -2,
-                    child: Container(
-                      width: radius * 0.9,
-                      height: radius * 0.9,
-                      alignment: Alignment.center,
-                      decoration: BoxDecoration(
-                        color: teamColor,
-                        shape: BoxShape.circle,
-                        border: Border.all(color: Colors.white, width: 1.5),
-                        boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 2, offset: Offset(1,1))],
-                      ),
-                      child: Text(
-                        player.position,
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: posFontSize,
-                          fontWeight: FontWeight.bold,
+                // 3. Positions-Badges (Verteilt am linken Radius)
+                if (!isPlaceholder && positions.isNotEmpty)
+                  ...List.generate(positions.length, (index) {
+
+                    const double startAngle = 225 * (pi / 180); // Oben Links
+                    // 2. WINKEL VERKLEINERT (Näher zusammen)
+                    const double stepAngle = 22 * (pi / 180); // Vorher 30
+                    final double angle = startAngle - (index * stepAngle);
+
+                    final double dist = totalRadius*1.2;
+
+                    // 3. BADGE GRÖSSE VERKLEINERT
+                    final double badgeSize = radius * 0.7; // Vorher 0.9
+
+                    final double left = totalRadius + (dist * cos(angle)) - (badgeSize / 2);
+                    final double top = totalRadius + (dist * sin(angle)) - (badgeSize / 2);
+
+                    return Positioned(
+                      left: left,
+                      top: top,
+                      child: Container(
+                        width: badgeSize,
+                        height: badgeSize,
+                        alignment: Alignment.center,
+                        decoration: BoxDecoration(
+                          color: teamColor,
+                          shape: BoxShape.circle,
+                          // 4. BADGE RAHMEN VERKLEINERT
+                          border: Border.all(color: Colors.white, width: radius*0.025), // Vorher 1.2
+                          boxShadow: [
+                            BoxShadow(color: Colors.black38, blurRadius: 1, offset: const Offset(1, 1))
+                          ],
+                        ),
+                        child: FittedBox(
+                          child: Padding(
+                            padding: const EdgeInsets.all(1.0),
+                            child: Text(
+                              positions[index],
+                              style: TextStyle(
+                                color: Colors.white,
+                                fontSize: posFontSize,
+                                fontWeight: FontWeight.bold,
+                              ),
+                            ),
+                          ),
                         ),
                       ),
-                    ),
-                  ),
+                    );
+                  }),
 
-                // 6. Event Icons (Rechts)
+                // 4. Event Icons (Rechts)
                 if (!isPlaceholder)
                   Positioned(
                     top: 0,
@@ -196,10 +206,10 @@ class PlayerAvatar extends StatelessWidget {
                     ),
                   ),
 
-                // 7. Rating Pill (Tiefer gesetzt, damit das Kinn frei bleibt)
+                // 5. Rating Pill (Unten)
                 if (!isPlaceholder)
                   Positioned(
-                    bottom: -radius * 0.4, // Tiefer als vorher (-0.25)
+                    bottom: -radius * 0.45,
                     child: Container(
                       padding: EdgeInsets.symmetric(horizontal: radius * 0.3, vertical: 1),
                       decoration: BoxDecoration(
@@ -212,21 +222,16 @@ class PlayerAvatar extends StatelessWidget {
                       ),
                       child: Text(
                         player.rating.toString(),
-                        style: TextStyle(
-                          color: Colors.white,
-                          fontSize: ratingFontSize,
-                          fontWeight: FontWeight.w800,
-                        ),
+                        style: TextStyle(color: Colors.white, fontSize: ratingFontSize, fontWeight: FontWeight.w800),
                       ),
                     ),
                   ),
               ],
             ),
 
-            // Platzhalter zwischen Avatar und Name (etwas mehr Platz wegen dem tiefen Rating Badge)
             SizedBox(height: radius * 0.35),
 
-            // 8. Name
+            // 6. Name
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
               decoration: BoxDecoration(
@@ -236,17 +241,18 @@ class PlayerAvatar extends StatelessWidget {
                   BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 2, offset: const Offset(0, 1))
                 ],
               ),
-              child: Text(
-                player.name.split(' ').last.toUpperCase(),
-                style: TextStyle(
-                    color: Colors.grey.shade800,
-                    fontSize: nameFontSize,
-                    fontWeight: FontWeight.bold,
-                    letterSpacing: 0.3
+              child: FittedBox(
+                fit: BoxFit.scaleDown,
+                child: Text(
+                  player.name.split(' ').last.toUpperCase(),
+                  style: TextStyle(
+                      color: Colors.grey.shade800,
+                      fontSize: nameFontSize,
+                      fontWeight: FontWeight.bold,
+                      letterSpacing: 0.3
+                  ),
+                  textAlign: TextAlign.center,
                 ),
-                textAlign: TextAlign.center,
-                overflow: TextOverflow.ellipsis,
-                maxLines: 1,
               ),
             ),
           ],
@@ -254,7 +260,9 @@ class PlayerAvatar extends StatelessWidget {
       ),
     );
   }
-}class MatchFormationDisplay extends StatefulWidget {
+}
+
+class MatchFormationDisplay extends StatefulWidget {
   final String homeFormation;
   final List<PlayerInfo> homePlayers;
   final Color homeColor;
@@ -314,21 +322,35 @@ class _MatchFormationDisplayState extends State<MatchFormationDisplay> {
     }
 
     return LayoutBuilder(
+      // ... innerhalb von MatchFormationDisplay -> build -> LayoutBuilder ...
+
       builder: (context, constraints) {
         final double w = constraints.maxWidth;
         final double h = constraints.maxHeight;
 
-        const double widthFactor = 23.0;
+        // --- ANPASSUNG 1: Radius verkleinern ---
+        // War 23.0. Erhöhen auf 28.0 sorgt für kleinere Avatare,
+        // damit sie sich bei 5er-Ketten nicht überlappen.
+        const double widthFactor = 28.0;
+
         final double fieldAspectRatio = singleTeamMode ? (68 / 60) : (68 / 105);
         final double fieldHeightFactor = widthFactor / fieldAspectRatio;
-        const double benchContainerFactor = 4.5;
+
+        // --- ANPASSUNG 2: Bank höher machen ---
+        // War 4.5. Das neue Design mit Name drunter braucht mehr Platz.
+        const double benchContainerFactor = 6.0;
+
         const double benchMarginFactor = 0.5;
-        final double totalBenchFactor = showBench ? (benchContainerFactor +
-            benchMarginFactor) : 0.0;
+        final double totalBenchFactor = showBench ? (benchContainerFactor + benchMarginFactor) : 0.0;
         final double totalHeightFactor = fieldHeightFactor + totalBenchFactor;
 
         double radius = min(w / widthFactor, h / totalHeightFactor);
-        radius = radius.clamp(5.0, 50.0);
+
+        // --- ANPASSUNG 3: Limits anpassen ---
+        // Minimum etwas senken, damit es auf kleinen Screens nicht kaputt geht
+        radius = radius.clamp(4.0, 50.0);
+
+        // ... Rest bleibt gleich ...
 
         final double fieldWidth = radius * widthFactor;
         final double fieldHeight = radius * fieldHeightFactor;
