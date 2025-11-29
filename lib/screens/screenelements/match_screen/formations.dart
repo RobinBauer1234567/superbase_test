@@ -10,13 +10,17 @@ class PlayerInfo {
   final String name;
   final String position;
   final String? profileImageUrl;
-  final int rating; // Das ist der 'punkte'-Wert
+  final int rating;
   final int goals;
   final int maxRating;
   final int assists;
   final int ownGoals;
   final int? jerseyNumber;
 
+  // NEUE FELDER für Liste & Filter
+  final String? teamImageUrl;
+  final int? marketValue;
+  final String? teamName; // Für den Team-Filter
 
   const PlayerInfo({
     required this.id,
@@ -28,7 +32,10 @@ class PlayerInfo {
     required this.assists,
     required this.ownGoals,
     this.jerseyNumber,
-    this.maxRating = 250
+    this.maxRating = 250,
+    this.teamImageUrl,
+    this.marketValue,
+    this.teamName,
   });
 }
 

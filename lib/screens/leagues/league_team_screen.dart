@@ -5,6 +5,7 @@ import 'package:premier_league/viewmodels/data_viewmodel.dart';
 import 'package:premier_league/screens/screenelements/match_screen/formations.dart';
 import 'package:premier_league/screens/player_screen.dart';
 import 'package:premier_league/utils/color_helper.dart'; // Für die Rating-Farben
+import 'package:premier_league/screens/screenelements/player_list_item.dart';
 
 class LeagueTeamScreen extends StatefulWidget {
   final int leagueId;
@@ -17,13 +18,15 @@ class LeagueTeamScreen extends StatefulWidget {
 
 class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
   bool _isLoading = true;
+  bool _isListView = false;
 
   Map<String, List<String>> _allFormations = {};
   String _selectedFormationName = '4-4-2';
 
   List<PlayerInfo> _fieldPlayers = [];
   List<PlayerInfo> _substitutePlayers = [];
-
+  String? _filterTeam;
+  String? _filterPosition;
   @override
   void initState() {
     super.initState();
@@ -90,6 +93,9 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
         assists: 0,
         ownGoals: 0,
         maxRating: 2500,
+        teamImageUrl: p['team_image_url'],
+        marketValue: p['marktwert'],
+        teamName: p['team_name'],
       );
 
       // WICHTIG: Prüfen, wo der Spieler hin soll
@@ -127,6 +133,41 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
         _isLoading = false;
       });
     }
+  }
+  List<PlayerInfo> _getFilteredPlayers() {
+    List<PlayerInfo> allPlayers = [
+      ..._fieldPlayers.where((p) => p.id > 0),
+      ..._substitutePlayers
+    ];
+
+    if (_filterTeam != null) {
+      allPlayers = allPlayers.where((p) => p.teamName == _filterTeam).toList();
+    }
+    if (_filterPosition != null) {
+      allPlayers = allPlayers.where((p) => p.position.contains(_filterPosition!)).toList();
+    }
+
+    // Sortieren nach Punkten (Top-Team Style)
+    allPlayers.sort((a, b) => b.rating.compareTo(a.rating));
+    return allPlayers;
+  }
+
+  List<String> _getAvailableTeams() {
+    final all = [..._fieldPlayers.where((p) => p.id > 0), ..._substitutePlayers];
+    final teams = all.map((p) => p.teamName).whereType<String>().toSet().toList();
+    teams.sort();
+    return teams;
+  }
+
+  List<String> _getAvailablePositions() {
+    final all = [..._fieldPlayers.where((p) => p.id > 0), ..._substitutePlayers];
+    final positions = <String>{};
+    for (var p in all) {
+      // Split "IV, RV" -> ["IV", "RV"]
+      p.position.split(',').forEach((pos) => positions.add(pos.trim()));
+    }
+    final sortedList = positions.toList()..sort();
+    return sortedList;
   }
 
   void _updatePlaceholderNames() {
@@ -469,100 +510,7 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
     return 5;
   }
 
-  Widget _buildPlayerSelectionCard(
-    PlayerInfo player,
-    PlayerInfo placeholder,
-    double radius,
-  ) {
-    return Container(
-      margin: const EdgeInsets.only(bottom: 10), // Etwas weniger Abstand
-      decoration: BoxDecoration(
-        color: Colors.white,
-        borderRadius: BorderRadius.circular(12), // Radius etwas dezenter
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.03),
-            blurRadius: 6,
-            offset: const Offset(0, 2),
-          ),
-        ],
-      ),
-      child: Material(
-        color: Colors.transparent,
-        borderRadius: BorderRadius.circular(12),
-        child: InkWell(
-          borderRadius: BorderRadius.circular(12),
-          onTap: () {
-            _swapPlayer(placeholder, player);
-            Navigator.pop(context);
-          },
-          child: Padding(
-            padding: const EdgeInsets.symmetric(
-              horizontal: 12.0,
-              vertical: 8.0,
-            ),
-            child: Row(
-              children: [
-                // 1. Avatar (Exakt die Größe vom Spielfeld nutzen)
-                Hero(
-                  tag: 'player_${player.id}_overlay',
-                  child: PlayerAvatar(
-                    player: player,
-                    teamColor: Theme.of(context).primaryColor,
-                    radius:
-                        radius, // <--- HIER nutzen wir den durchgereichten Radius
-                  ),
-                ),
-                const SizedBox(width: 16),
 
-                // 2. Details
-                Expanded(
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Text(
-                        player.name,
-                        style: const TextStyle(
-                          fontWeight: FontWeight.bold,
-                          fontSize: 15,
-                        ),
-                        maxLines: 1,
-                        overflow: TextOverflow.ellipsis,
-                      ),
-                      const SizedBox(height: 2),
-                      Row(
-                        children: [
-                          Text(
-                            player.position,
-                            style: TextStyle(
-                              color: Colors.grey.shade600,
-                              fontSize: 12,
-                              fontWeight: FontWeight.w500,
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          Text(
-                            "•  ${player.rating} Pkt",
-                            style: TextStyle(
-                              color: Colors.grey.shade500,
-                              fontSize: 12,
-                            ),
-                          ),
-                        ],
-                      ),
-                    ],
-                  ),
-                ),
-
-                // 3. Action Button (etwas kleiner passend zum Rest)
-                Icon(Icons.add_circle, color: Colors.green.shade600, size: 28),
-              ],
-            ),
-          ),
-        ),
-      ),
-    );
-  }
 // Diese Methode generiert die Platzhalter basierend auf der aktuellen Formation
   void _generateFieldPlaceholders() {
     // Hole die Positions-Liste (z.B. ["TW", "RV", "IV", ...])
@@ -686,85 +634,188 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
     _substitutePlayers.sort((a, b) => _getPositionOrder(a.position).compareTo(_getPositionOrder(b.position)));
   }
 
-  @override
-  Widget build(BuildContext context) {
-    if (_isLoading) return const Center(child: CircularProgressIndicator());
+  Widget _buildFormationDropdown() {
     final sortedFormationKeys = _allFormations.keys.toList()..sort();
-    final primaryColor = Theme.of(context).primaryColor;
+    return Card(
+      elevation: 2,
+      shadowColor: Colors.black12,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+      margin: EdgeInsets.zero,
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 4.0),
+        child: DropdownButtonHideUnderline(
+          child: DropdownButton<String>(
+            value: _selectedFormationName,
+            isExpanded: true,
+            icon: const Icon(Icons.keyboard_arrow_down_rounded),
+            items: sortedFormationKeys.map((String value) {
+              return DropdownMenuItem<String>(
+                value: value,
+                child: Text('Formation: $value', style: const TextStyle(fontWeight: FontWeight.bold)),
+              );
+            }).toList(),
+            onChanged: (String? newValue) {
+              if (newValue != null && newValue != _selectedFormationName) {
+                setState(() {
+                  _selectedFormationName = newValue;
+                  for (var player in _fieldPlayers) {
+                    if (player.id > 0) _substitutePlayers.add(player);
+                  }
+                  _substitutePlayers.sort((a, b) => _getPositionOrder(a.position).compareTo(_getPositionOrder(b.position)));
+                  _generateFieldPlaceholders();
+                });
+                _saveLineupToDb();
+              }
+            },
+          ),
+        ),
+      ),
+    );
+  }
 
-    // Aktuelle Positionsliste für das Widget holen
-    final List<String> currentRequiredPositions =
-        _allFormations[_selectedFormationName] ?? [];
+  Widget _buildFilterBar() {
+    final teams = _getAvailableTeams();
+    final positions = _getAvailablePositions();
 
-    return Column(
+    return Row(
       children: [
-        // Dropdown (unverändert)
-        Padding(
-          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+        // Team Filter
+        Expanded(
           child: Card(
             elevation: 2,
             shadowColor: Colors.black12,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(12),
-            ),
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
             margin: EdgeInsets.zero,
             child: Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 12.0,
-                vertical: 4.0,
-              ),
+              padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 4.0),
               child: DropdownButtonHideUnderline(
-                child: DropdownButton<String>(
-                  value: _selectedFormationName,
+                child: DropdownButton<String?>(
+                  value: _filterTeam,
+                  hint: const Text("Team", style: TextStyle(fontSize: 13)),
                   isExpanded: true,
                   icon: const Icon(Icons.keyboard_arrow_down_rounded),
-                  items:
-                      sortedFormationKeys.map((String value) {
-                        return DropdownMenuItem<String>(
-                          value: value,
-                          child: Text(
-                            'Formation: $value',
-                            style: const TextStyle(fontWeight: FontWeight.bold),
-                          ),
-                        );
-                      }).toList(),
-                  onChanged: (String? newValue) {
-                    if (newValue != null && newValue != _selectedFormationName) {
-                      setState(() {
-                        _selectedFormationName = newValue;
-
-                        // --- RESET LOGIK START ---
-
-                        // 1. Alle echten Spieler vom Feld zurück auf die Bank schieben
-                        for (var player in _fieldPlayers) {
-                          if (player.id > 0) { // Prüfen ob echter Spieler (ID > 0)
-                            _substitutePlayers.add(player);
-                          }
-                        }
-                        _substitutePlayers.sort((a, b) =>
-                            _getPositionOrder(a.position).compareTo(_getPositionOrder(b.position))
-                        );
-                        _generateFieldPlaceholders();
-                      });
-                      _saveLineupToDb();
-                    }
-                  },
+                  items: [
+                    const DropdownMenuItem(value: null, child: Text("Alle Teams")),
+                    ...teams.map((t) => DropdownMenuItem(value: t, child: Text(t, overflow: TextOverflow.ellipsis))),
+                  ],
+                  onChanged: (val) => setState(() => _filterTeam = val),
                 ),
               ),
             ),
           ),
         ),
-
-        // Spielfeld
+        const SizedBox(width: 8),
+        // Position Filter
         Expanded(
-          child: MatchFormationDisplay(
+          child: Card(
+            elevation: 2,
+            shadowColor: Colors.black12,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+            margin: EdgeInsets.zero,
+            child: Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 4.0),
+              child: DropdownButtonHideUnderline(
+                child: DropdownButton<String?>(
+                  value: _filterPosition,
+                  hint: const Text("Pos", style: TextStyle(fontSize: 13)),
+                  isExpanded: true,
+                  icon: const Icon(Icons.keyboard_arrow_down_rounded),
+                  items: [
+                    const DropdownMenuItem(value: null, child: Text("Alle Pos")),
+                    ...positions.map((p) => DropdownMenuItem(value: p, child: Text(p))),
+                  ],
+                  onChanged: (val) => setState(() => _filterPosition = val),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildTeamListView() {
+    final players = _getFilteredPlayers();
+
+    if (players.isEmpty) {
+      return const Center(child: Text("Keine Spieler gefunden"));
+    }
+
+    return ListView.builder(
+      padding: const EdgeInsets.only(top: 8),
+      itemCount: players.length,
+      itemBuilder: (context, index) {
+        final player = players[index];
+        return PlayerListItem(
+          rank: index + 1,
+          profileImageUrl: player.profileImageUrl,
+          playerName: player.name,
+          teamImageUrl: player.teamImageUrl,
+          marketValue: player.marketValue,
+          score: player.rating,
+          maxScore: player.maxRating,
+          onTap: () {
+            Navigator.push(context, MaterialPageRoute(builder: (_) => PlayerScreen(playerId: player.id)));
+          },
+        );
+      },
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    if (_isLoading) return const Center(child: CircularProgressIndicator());
+    final primaryColor = Theme.of(context).primaryColor;
+    final List<String> currentRequiredPositions = _allFormations[_selectedFormationName] ?? [];
+
+    return Column(
+      children: [
+        // --- HEADER ---
+        Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+          child: Row(
+            children: [
+              // Wenn Liste: Zeige Filter (Team, Pos)
+              // Wenn Feld: Zeige Formation Dropdown
+              Expanded(
+                child: _isListView ? _buildFilterBar() : _buildFormationDropdown(),
+              ),
+
+              const SizedBox(width: 8),
+
+              // Toggle Button
+              Card(
+                elevation: 2,
+                shadowColor: Colors.black12,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                margin: EdgeInsets.zero,
+                child: IconButton(
+                  icon: Icon(_isListView ? Icons.sports_soccer : Icons.list_alt),
+                  color: primaryColor,
+                  tooltip: _isListView ? "Spielfeldansicht" : "Listenansicht",
+                  onPressed: () {
+                    setState(() {
+                      _isListView = !_isListView;
+                      // Filter beim Wechseln resetten? Optional:
+                      // _filterTeam = null; _filterPosition = null;
+                    });
+                  },
+                ),
+              ),
+            ],
+          ),
+        ),
+
+        // --- BODY ---
+        Expanded(
+          child: _isListView
+              ? _buildTeamListView()
+              : MatchFormationDisplay(
             homeFormation: _selectedFormationName,
             homePlayers: _fieldPlayers,
             homeColor: primaryColor,
             onPlayerTap: _handlePlayerTap,
             substitutes: _substitutePlayers,
-
-            // --- NEUE PARAMETER ---
             onPlayerDrop: _handlePlayerDrop,
             onMoveToBench: _handleMoveToBench,
             requiredPositions: currentRequiredPositions,
