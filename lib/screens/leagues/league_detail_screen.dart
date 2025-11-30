@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:premier_league/screens/leagues/ranking_screen.dart';
 import 'dart:math'; // Import für die 'max'-Funktion
 import 'package:premier_league/screens/leagues/league_team_screen.dart';
+import 'package:premier_league/screens/leagues/transfer_market_screen.dart';
 
 class LeagueDetailScreen extends StatefulWidget {
   final Map<String, dynamic> league;
@@ -39,7 +40,7 @@ class _LeagueDetailScreenState extends State<LeagueDetailScreen> {
         body: TabBarView(
           children: [
             const Center(child: Text('Hier erscheinen bald die letzten Aktivitäten der Liga.')),
-            const Center(child: Text('Hier wird der Transfermarkt angezeigt.')),
+            TransferMarketScreen(leagueId: widget.league['id']),
             LeagueTeamScreen(leagueId: widget.league['id']), // Statt Text-Placeholder
             RankingScreen(leagueId: widget.league['id']),
           ],

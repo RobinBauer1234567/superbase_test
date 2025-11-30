@@ -1356,5 +1356,82 @@ class SupabaseService {
       // Man könnte hier einzeln updaten, aber RPC ist viel besser.
     }
   }
+  // 2. Gebot abgeben
+  Future<void> placeBid(int transferId, int amount) async {
+    try {
+      await supabase.from('transfer_bids').insert({
+        'transfer_id': transferId,
+        'bidder_id': supabase.auth.currentUser!.id,
+        'amount': amount,
+      });
+    } catch (e) {
+      print("Fehler beim Bieten: $e");
+      throw e; // Weiterwerfen für UI-Handling
+    }
+  }
 
+  // 3. Sofortkauf (RPC Aufruf)
+  Future<void> buyPlayerNow(int transferId) async {
+    try {
+      await supabase.rpc('buy_player_now', params: {'p_transfer_id': transferId});
+    } catch (e) {
+      print("Fehler beim Sofortkauf: $e");
+      throw e;
+    }
+  }
+
+  // 4. Spieler auf den Markt stellen (Verkaufen)
+  Future<void> listPlayerOnMarket(int leagueId, int playerId, int price) async {
+    final user = supabase.auth.currentUser;
+    if (user == null) return;
+
+    // Hole aktuellen Marktwert für min_bid
+    final playerRes = await supabase.from('spieler').select('marktwert').eq('id', playerId).single();
+    final int mw = playerRes['marktwert'];
+
+    await supabase.from('transfer_market').insert({
+      'league_id': leagueId,
+      'player_id': playerId,
+      'seller_id': user.id,
+      'buy_now_price': price, // User Wunschpreis
+      'min_bid_price': mw,    // Startgebot ist immer Marktwert
+      'expires_at': DateTime.now().add(const Duration(hours: 24)).toIso8601String(),
+      'is_active': true,
+    });
+  }
+
+  // 5. TEST-FUNKTION: System-Spieler generieren (ruft deinen RPC auf)
+// lib/data_service.dart
+
+  // 5. TEST-FUNKTION: System-Spieler generieren
+  Future<void> simulateSystemTransfers(int leagueId, int seasonId) async { // <--- seasonId hinzugefügt
+    await supabase.rpc('generate_daily_transfers', params: {
+      'p_league_id': leagueId,
+      'p_season_id': seasonId, // <--- Parameter übergeben
+      'p_amount': 5
+    });
+  }
+  // 1. Transfermarkt laden (Nur aktive Angebote)
+  Future<List<Map<String, dynamic>>> fetchTransferMarket(int leagueId) async {
+    try {
+      final response = await supabase
+          .from('transfer_market')
+          .select('''
+            *,
+            player:spieler(
+              *,
+              season_players(team(image_url)), 
+              gesamtstatistiken
+            )
+          ''')
+          .eq('league_id', leagueId)
+          .eq('is_active', true)
+          .order('expires_at', ascending: true);
+
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      print("Fehler beim Laden des Transfermarkts: $e");
+      return [];
+    }
+  }
 }
