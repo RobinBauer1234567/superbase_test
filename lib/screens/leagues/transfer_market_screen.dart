@@ -4,15 +4,11 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:premier_league/viewmodels/data_viewmodel.dart';
 import 'package:premier_league/screens/screenelements/player_list_item.dart';
-import 'package:premier_league/utils/color_helper.dart'; // Für Formatter
-// lib/screens/leagues/transfer_market_screen.dart
-import 'package:flutter/material.dart';
-import 'package:intl/intl.dart';
-import 'package:provider/provider.dart';
-import 'package:premier_league/viewmodels/data_viewmodel.dart';
-import 'package:premier_league/screens/screenelements/player_list_item.dart'; // WICHTIG
 import 'package:premier_league/utils/color_helper.dart';
-import 'package:premier_league/screens/player_screen.dart'; // Für Navigation
+import 'package:premier_league/screens/player_screen.dart';
+import 'package:premier_league/screens/screenelements/transaction_overlay.dart'; // <--- NEU
+import 'package:premier_league/screens/screenelements/match_screen/formations.dart';
+
 class TransferMarketScreen extends StatefulWidget {
   final int leagueId;
   const TransferMarketScreen({super.key, required this.leagueId});
@@ -43,27 +39,18 @@ class _TransferMarketScreenState extends State<TransferMarketScreen> {
       });
     }
   }
-  // --- ACTIONS ---
-
-  // lib/screens/leagues/transfer_market_screen.dart
 
   Future<void> _generateSystemPlayers() async {
     final dataManagement = Provider.of<DataManagement>(context, listen: false);
-    // Wir holen die seasonId aus dem Provider
-    // (Achtung: seasonId ist in deinem Code oft dynamic/String, für RPC brauchen wir int)
     final int seasonId = int.tryParse(dataManagement.seasonId.toString()) ?? 0;
-
     await dataManagement.supabaseService.simulateSystemTransfers(widget.leagueId, seasonId);
     _loadMarket();
   }
 
   Future<void> _showSellDialog() async {
-    // 1. Eigene Spieler laden, die noch NICHT auf dem Markt sind
-    // Vereinfacht: Wir laden alle und filtern im UI oder lassen DB Fehler werfen
     final service = Provider.of<DataManagement>(context, listen: false).supabaseService;
     final myPlayers = await service.fetchUserLeaguePlayers(widget.leagueId);
 
-    // Aktive Transfer-IDs sammeln, um Dopplung zu vermeiden
     final activeTransferPlayerIds = _offers.map((o) => o['player_id']).toList();
     final sellablePlayers = myPlayers.where((p) => !activeTransferPlayerIds.contains(p['id'])).toList();
 
@@ -90,49 +77,11 @@ class _TransferMarketScreenState extends State<TransferMarketScreen> {
     );
   }
 
-  Future<void> _showPriceInputDialog(Map<String, dynamic> player) async {
-    final controller = TextEditingController(text: (player['marktwert'] * 1.1).toInt().toString());
-
-    await showDialog(
-      context: context,
-      builder: (ctx) => AlertDialog(
-        title: Text("${player['name']} verkaufen"),
-        content: Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            const Text("Lege deinen Sofort-Kaufen Preis fest."),
-            const SizedBox(height: 10),
-            TextField(
-              controller: controller,
-              keyboardType: TextInputType.number,
-              decoration: const InputDecoration(labelText: "Preis (€)", border: OutlineInputBorder()),
-            ),
-            const SizedBox(height: 10),
-            Text("Startgebot: ${_currencyFormat.format(player['marktwert'])} (Automatisch)", style: const TextStyle(fontSize: 12, color: Colors.grey)),
-          ],
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Abbrechen")),
-          ElevatedButton(
-            onPressed: () async {
-              final price = int.tryParse(controller.text) ?? 0;
-              if (price > 0) {
-                await Provider.of<DataManagement>(context, listen: false).supabaseService.listPlayerOnMarket(widget.leagueId, player['id'], price);
-                Navigator.pop(ctx);
-                _loadMarket(); // Refresh
-              }
-            },
-            child: const Text("Anbieten"),
-          ),
-        ],
-      ),
-    );
-  }
 
   Future<void> _buyNow(int transferId, String playerName, int price) async {
     try {
       await Provider.of<DataManagement>(context, listen: false).supabaseService.buyPlayerNow(transferId);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("$playerName für ${_currencyFormat.format(price)} gekauft!")));
+      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("$playerName für ${_currencyFormat.format(price)} gekauft!"), backgroundColor: Colors.green));
       _loadMarket();
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Fehler: $e"), backgroundColor: Colors.red));
@@ -167,14 +116,14 @@ class _TransferMarketScreenState extends State<TransferMarketScreen> {
       ),
     );
   }
+
+  // --- HELPER FÜR DATEN EXTRAKTION ---
   Map<String, dynamic> _extractPlayerData(Map<String, dynamic> playerRaw) {
-    // 1. Team Image
     String? teamImg;
     if (playerRaw['season_players'] != null && (playerRaw['season_players'] as List).isNotEmpty) {
       teamImg = playerRaw['season_players'][0]['team']['image_url'];
     }
 
-    // 2. Score (Punkte)
     int score = 0;
     final seasonId = Provider.of<DataManagement>(context, listen: false).seasonId.toString();
     try {
@@ -192,6 +141,74 @@ class _TransferMarketScreenState extends State<TransferMarketScreen> {
       'teamImageUrl': teamImg,
       'score': score,
     };
+  }
+
+  // Helper für die eigentliche Kauf-Transaktion
+  Future<void> _executeBuy(int transferId, String playerName, int price) async {
+    try {
+      await Provider.of<DataManagement>(context, listen: false).supabaseService.buyPlayerNow(transferId);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("$playerName gekauft!"), backgroundColor: Colors.green));
+        _loadMarket();
+      }
+    } catch (e) {
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Fehler: $e"), backgroundColor: Colors.red));
+    }
+  }
+
+  Future<void> _showPriceInputDialog(Map<String, dynamic> playerMap) async {
+    final player = PlayerInfo(
+      id: playerMap['id'],
+      name: playerMap['name'],
+      position: playerMap['position'] ?? '',
+      profileImageUrl: playerMap['profilbild_url'],
+      rating: 0,
+      goals: 0, assists: 0, ownGoals: 0,
+      teamImageUrl: playerMap['team_image_url'], // WICHTIG: Damit das Wappen angezeigt wird!
+    );
+
+    // HIER ÄNDERUNG: showDialog statt showModalBottomSheet
+    await showDialog(
+      context: context,
+      builder: (ctx) => TransactionOverlay(
+        player: player,
+        type: TransactionType.sell,
+        basePrice: playerMap['marktwert'] ?? 0,
+        onConfirm: (price) async {
+          await Provider.of<DataManagement>(context, listen: false).supabaseService.listPlayerOnMarket(widget.leagueId, player.id, price);
+          _loadMarket();
+        },
+      ),
+    );
+  }
+
+  // 2. Kaufen Overlay
+  void _openBuyOverlay(Map<String, dynamic> offer, PlayerInfo playerInfo) {
+    showDialog(
+      context: context,
+      builder: (ctx) => TransactionOverlay(
+        player: playerInfo,
+        type: TransactionType.buy,
+        basePrice: offer['buy_now_price'],
+        onConfirm: (price) => _executeBuy(offer['id'], playerInfo.name, price),
+      ),
+    );
+  }
+
+  // 3. Bieten Overlay
+  void _openBidOverlay(Map<String, dynamic> offer, PlayerInfo playerInfo) {
+    showDialog(
+      context: context,
+      builder: (ctx) => TransactionOverlay(
+        player: playerInfo,
+        type: TransactionType.bid,
+        basePrice: offer['min_bid_price'],
+        onConfirm: (amount) async {
+          await Provider.of<DataManagement>(context, listen: false).supabaseService.placeBid(offer['id'], amount);
+          if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Gebot abgegeben!")));
+        },
+      ),
+    );
   }
 
   @override
@@ -223,17 +240,15 @@ class _TransferMarketScreenState extends State<TransferMarketScreen> {
         child: _offers.isEmpty
             ? const Center(child: Text("Der Markt ist leer."))
             : ListView.builder(
-          padding: const EdgeInsets.all(8),
+          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
           itemCount: _offers.length,
           itemBuilder: (context, index) {
             final offer = _offers[index];
             final player = offer['player'];
             final isSystem = offer['seller_id'] == null;
 
-            // Extrahiere Teambild und Punkte für die Row
             final extraData = _extractPlayerData(player);
 
-            // Zeitberechnung
             final expires = DateTime.parse(offer['expires_at']);
             final timeLeft = expires.difference(DateTime.now());
             String timeString = timeLeft.inHours > 0
@@ -243,107 +258,138 @@ class _TransferMarketScreenState extends State<TransferMarketScreen> {
 
             return Card(
               margin: const EdgeInsets.only(bottom: 12),
-              elevation: 2,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-              clipBehavior: Clip.antiAlias, // Damit Ripple Effekt nicht übersteht
+              elevation: 1, // Weniger Schatten für cleaneren Look
+              color: Colors.white,
+              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
               child: Column(
                 children: [
-                  // 1. DER SPIELER (PlayerListItem / PlayerRow)
+                  // 1. DER SPIELER
                   PlayerListItem(
-                    rank: index + 1, // Einfache Nummerierung
+                    rank: index + 1,
                     profileImageUrl: player['profilbild_url'],
                     playerName: player['name'],
                     teamImageUrl: extraData['teamImageUrl'],
-                    marketValue: player['marktwert'], // Basis-Marktwert
+                    marketValue: player['marktwert'],
                     score: extraData['score'],
-                    maxScore: 2500, // Skalierung für Farbe
+                    maxScore: 2500,
+                    position: player['position'] ?? 'N/A',
+                    id: player['id'],
+                    goals: 0,
+                    assists: 0,
+                    ownGoals: 0,
+                    teamColor: Colors.blueGrey,
                     onTap: () {
                       Navigator.push(context, MaterialPageRoute(builder: (_) => PlayerScreen(playerId: player['id'])));
                     },
                   ),
 
-                  // Trennlinie zwischen Spieler und Markt-Infos
-                  const Divider(height: 1, thickness: 1),
+                  // Trennlinie (optional, sehr fein)
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                    child: Divider(height: 1, color: Colors.grey.shade100),
+                  ),
 
-                  // 2. DER MARKTMECHANISMUS (Darunter)
-                  Container(
-                    color: Colors.grey.shade50, // Leicht abgesetzter Hintergrund
-                    padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
+                  // 2. MARKT-BEREICH (Neues, dezentes Design)
+                  Padding(
+                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
                     child: Column(
                       children: [
-                        // Zeile A: Infos (Verkäufer & Timer)
+                        // Info-Zeile (Verkäufer & Timer)
                         Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceBetween,
                           children: [
-                            Row(
-                              children: [
-                                Icon(isSystem ? Icons.computer : Icons.person, size: 16, color: Colors.grey),
-                                const SizedBox(width: 4),
-                                Text(
-                                  isSystem ? "Vom System" : "Von Manager",
-                                  style: const TextStyle(fontSize: 12, color: Colors.grey, fontWeight: FontWeight.w500),
-                                ),
-                              ],
+                            Icon(isSystem ? Icons.computer : Icons.person, size: 14, color: Colors.grey.shade400),
+                            const SizedBox(width: 6),
+                            Text(
+                              isSystem ? "System" : "Manager",
+                              style: TextStyle(fontSize: 11, color: Colors.grey.shade600, fontWeight: FontWeight.w500),
                             ),
-                            Row(
-                              children: [
-                                Icon(Icons.timer_outlined, size: 16, color: timeColor),
-                                const SizedBox(width: 4),
-                                Text(
-                                  timeString,
-                                  style: TextStyle(fontSize: 12, color: timeColor, fontWeight: FontWeight.bold),
-                                ),
-                              ],
+                            const Spacer(),
+                            Icon(Icons.timer_outlined, size: 14, color: timeColor),
+                            const SizedBox(width: 4),
+                            Text(
+                              timeString,
+                              style: TextStyle(fontSize: 11, color: timeColor, fontWeight: FontWeight.bold),
                             ),
                           ],
                         ),
+
                         const SizedBox(height: 12),
 
-                        // Zeile B: Aktionen (Bieten & Kaufen)
+                        // Action-Buttons (Side-by-Side)
                         Row(
                           children: [
-                            // Bieten Button
+                            // BIETEN BUTTON (Dezent, Outlined)
                             Expanded(
-                              child: OutlinedButton(
-                                style: OutlinedButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(vertical: 12),
-                                  side: BorderSide(color: Colors.blue.shade200),
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                ),
-                                onPressed: () => _placeBid(offer['id'], offer['min_bid_price']),
-                                child: Column(
-                                  children: [
-                                    Text("GEBOT AB", style: TextStyle(fontSize: 10, color: Colors.blue.shade700, letterSpacing: 1)),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      _currencyFormat.format(offer['min_bid_price']),
-                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: Colors.black87),
-                                    ),
-                                  ],
+                              child: InkWell(
+                                // NEUER AUFRUF:
+                                onTap: () {
+                                  // PlayerInfo für Overlay bauen (aus den vorhandenen Daten)
+                                  final pInfo = PlayerInfo(
+                                    id: player['id'],
+                                    name: player['name'],
+                                    position: player['position'] ?? '',
+                                    profileImageUrl: player['profilbild_url'],
+                                    rating: extraData['score'],
+                                    goals: 0, assists: 0, ownGoals: 0,
+                                  );
+                                  _openBidOverlay(offer, pInfo);
+                                },
+                                borderRadius: BorderRadius.circular(12),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(vertical: 8),
+                                  decoration: BoxDecoration(
+                                    border: Border.all(color: Colors.grey.shade300),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Column(
+                                    children: [
+                                      Text("GEBOT AB", style: TextStyle(fontSize: 9, color: Colors.grey.shade600, letterSpacing: 0.5, fontWeight: FontWeight.bold)),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        _currencyFormat.format(offer['min_bid_price']),
+                                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.black87),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
                             ),
+
                             const SizedBox(width: 12),
-                            // Sofort Kaufen Button
+
+                            // KAUFEN BUTTON (Hervorgehoben, aber leicht)
                             Expanded(
-                              child: ElevatedButton(
-                                style: ElevatedButton.styleFrom(
-                                  padding: const EdgeInsets.symmetric(vertical: 12),
-                                  backgroundColor: Colors.green.shade600,
-                                  foregroundColor: Colors.white,
-                                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
-                                  elevation: 0,
-                                ),
-                                onPressed: () => _buyNow(offer['id'], player['name'], offer['buy_now_price']),
-                                child: Column(
-                                  children: [
-                                    const Text("SOFORT", style: TextStyle(fontSize: 10, color: Colors.white70, letterSpacing: 1)),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      _currencyFormat.format(offer['buy_now_price']),
-                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
-                                    ),
-                                  ],
+                              child: InkWell(
+                                // NEUER AUFRUF:
+                                onTap: () {
+                                  final pInfo = PlayerInfo(
+                                    id: player['id'],
+                                    name: player['name'],
+                                    position: player['position'] ?? '',
+                                    profileImageUrl: player['profilbild_url'],
+                                    rating: extraData['score'],
+                                    goals: 0, assists: 0, ownGoals: 0,
+                                  );
+                                  _openBuyOverlay(offer, pInfo);
+                                },
+                                borderRadius: BorderRadius.circular(12),
+                                child: Container(
+                                  padding: const EdgeInsets.symmetric(vertical: 8),
+                                  decoration: BoxDecoration(
+                                    color: Colors.green.shade50, // Sehr heller Hintergrund
+                                    border: Border.all(color: Colors.green.shade200),
+                                    borderRadius: BorderRadius.circular(12),
+                                  ),
+                                  child: Column(
+                                    children: [
+                                      Text("SOFORT KAUFEN", style: TextStyle(fontSize: 9, color: Colors.green.shade700, letterSpacing: 0.5, fontWeight: FontWeight.bold)),
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        _currencyFormat.format(offer['buy_now_price']),
+                                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.green.shade900),
+                                      ),
+                                    ],
+                                  ),
                                 ),
                               ),
                             ),

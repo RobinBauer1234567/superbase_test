@@ -187,8 +187,10 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
             'name': player['name'],
             'profilbild_url': player['profilbild_url'],
             'team_image_url': team['image_url'],
-            'marktwert': player['marktwert'], // Mapping
-            'total_punkte': totalPunkte,
+            // --- FIX 2: Sicherer Cast für Marktwert ---
+            'marktwert': (player['marktwert'] as num?)?.toInt(),
+            // --- FIX 2: Sicherer Cast für Punkte ---
+            'total_punkte': (totalPunkte as num).toInt(),
             'position': player['position'],
           });
         } catch (e) {
@@ -227,7 +229,6 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
 
       var query = Supabase.instance.client
           .from('matchrating')
-      // 'marktwert' im nested select hinzufügen
           .select('punkte, spieler:spieler!inner(id, name, profilbild_url, position, marktwert), spiel!inner(round, season_id)')
           .eq('spiel.round', spieltag)
           .eq('spiel.season_id', seasonId);
@@ -276,8 +277,10 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
           'name': player['name'],
           'profilbild_url': player['profilbild_url'],
           'team_image_url': team['image_url'],
-          'marktwert': player['marktwert'], // Mapping
-          'total_punkte': rating['punkte'],
+          // --- FIX 2: Sicherer Cast für Marktwert ---
+          'marktwert': (player['marktwert'] as num?)?.toInt(),
+          // --- FIX 2: Sicherer Cast für Punkte ---
+          'total_punkte': (rating['punkte'] as num?)?.toInt() ?? 0,
           'position': player['position'],
         });
       }
@@ -409,196 +412,108 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
     );
   }
 
-  Widget _buildPlayerListView() {
-    return ListView.builder(
-      itemCount: _topPlayers.length,
-      itemBuilder: (context, index) {
-        final player = _topPlayers[index];
-        return PlayerListItem(
-          rank: index + 1,
-          profileImageUrl: player['profilbild_url'],
-          playerName: player['name'],
-          teamImageUrl: player['team_image_url'],
-          marketValue: player['marktwert'], // Übergeben
-          score: player['total_punkte'],
-          maxScore: _showGesamt ? (_spieltage.length * 250 * 0.8).toInt() : 250,
-          onTap: () {
-            Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (context) => PlayerScreen(playerId: player['id']),
-              ),
-            );
-          },
-        );
-      },
-    );
-  }
-
-  Widget _buildFormationView() {
-    if (_isCalculatingFormation) {
-      return const Center(child: CircularProgressIndicator());
-    }
-
-    if (_bestFormation == null || _selectedFormationName == null) {
-      return const Center(
-        child: Text("Keine gültige Formation gefunden."),
-      );
-    }
-
-    final players = (_bestFormation!['players'] as List)
-        .map((p) => PlayerInfo(
-      id: p['id'],
-      name: p['name'],
-      position: p['position'],
-      profileImageUrl: p['profilbild_url'],
-      rating: p['total_punkte'],
-      maxRating: _showGesamt? (_spieltage.length*250*0.8).toInt(): 250,
-      goals: 0,
-      assists: 0,
-      ownGoals: 0,
-    ))
-        .toList();
-
-    return LayoutBuilder(builder: (context, constraints) {
-      // Sort the keys for the dropdown
-      final sortedFormationKeys = _allFormations.keys.toList()..sort();
-
-      return Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
-            child: Column(
-              children: [
-                DropdownButton<String>(
-                  value: _selectedFormationName,
-                  isExpanded: true,
-                  items: sortedFormationKeys.map((String value) {
-                    return DropdownMenuItem<String>(
-                      value: value,
-                      child: Text('Formation: $value'),
-                    );
-                  }).toList(),
-                  onChanged: (String? newValue) {
-                    if (newValue != null && newValue != _selectedFormationName) {
-                      _calculateTeamForSelectedFormation(newValue);
-                    }
-                  },
-                ),
-              ],
-            ),
-          ),
-          Expanded(
-            child: MatchFormationDisplay(
-              homeFormation: _selectedFormationName!,
-              homePlayers: players,
-              homeColor: Colors.blue,
-              onPlayerTap: (playerId, radius) {
-                Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => PlayerScreen(playerId: playerId),
-                  ),
-                );
-              },
-            ),
-          ),
-        ],
-      );
-    });
-  }
-
-
+  // --- FIX 1: Filter Bar mit ScrollView ---
   Widget _buildFilterBar() {
     return Card(
       margin: const EdgeInsets.all(8.0),
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 8.0),
-        child: Row(
-          children: [
-            ToggleButtons(
-              isSelected: [_showGesamt, !_showGesamt],
-              onPressed: (index) {
-                if (index == 0 && !_showGesamt) {
-                  setState(() => _showGesamt = true);
-                  _fetchData();
-                } else if (index == 1 && _showGesamt) {
-                  setState(() => _showGesamt = false);
-                  _fetchData();
-                } else if (index == 1 && !_showGesamt) {
-                  _showSpieltagDropdown(context);
-                }
-              },
-              children: [
-                const Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 8.0),
-                  child: Text('Gesamt'),
-                ),
-                Padding(
-                  padding: const EdgeInsets.symmetric(horizontal: 8.0),
-                  child: Row(
-                    children: [
-                      const Text('Spieltag'),
-                      if (!_showGesamt)
-                        const Icon(Icons.arrow_drop_down, size: 16),
-                    ],
-                  ),
-                ),
-              ],
-            ),
-            const Spacer(),
-            _buildDropdownFilter<int?>(
-              value: _selectedTeamId,
-              hint: 'Team',
-              items: [
-                const DropdownMenuItem<int?>(
-                    value: null, child: Text('Alle Teams')),
-                ..._teams.map((team) => DropdownMenuItem<int?>(
-                  value: team['id'],
-                  child: Text(team['name']),
-                )),
-              ],
-              onChanged: _showFormation ? null : (value) {
-                setState(() => _selectedTeamId = value);
-                _fetchData();
-              },
-            ),
-            const SizedBox(width: 8),
-            _buildDropdownFilter<String?>(
-              value: _selectedPosition,
-              hint: 'Position',
-              items: [
-                const DropdownMenuItem<String?>(
-                    value: null, child: Text('Alle Positionen')),
-                ..._positions.map((pos) => DropdownMenuItem<String?>(
-                  value: pos,
-                  child: Text(pos),
-                )),
-              ],
-              onChanged: _showFormation ? null : (value) {
-                setState(() => _selectedPosition = value);
-                _fetchData();
-              },
-            ),
-            IconButton(
-              icon: Icon(_showFormation ? Icons.list : Icons.sports_soccer),
-              onPressed: () {
-                final newShowFormation = !_showFormation;
-                setState(() {
-                  _showFormation = newShowFormation;
-                  if (newShowFormation) {
-                    if (_selectedTeamId != null || _selectedPosition != null) {
-                      _selectedTeamId = null;
-                      _selectedPosition = null;
-                      _fetchData();
-                    } else {
-                      _calculateInitialBestFormation();
-                    }
+        padding: const EdgeInsets.symmetric(horizontal: 8.0, vertical: 4.0),
+        // SingleChildScrollView verhindert Overflow auf kleinen Screens
+        child: SingleChildScrollView(
+          scrollDirection: Axis.horizontal,
+          child: Row(
+            mainAxisSize: MainAxisSize.min, // Nimmt nur so viel Platz wie nötig
+            children: [
+              ToggleButtons(
+                constraints: const BoxConstraints(minHeight: 36.0, minWidth: 60.0),
+                isSelected: [_showGesamt, !_showGesamt],
+                onPressed: (index) {
+                  if (index == 0 && !_showGesamt) {
+                    setState(() => _showGesamt = true);
+                    _fetchData();
+                  } else if (index == 1 && _showGesamt) {
+                    setState(() => _showGesamt = false);
+                    _fetchData();
+                  } else if (index == 1 && !_showGesamt) {
+                    _showSpieltagDropdown(context);
                   }
-                });
-              },
-            ),
-          ],
+                },
+                children: [
+                  const Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 8.0),
+                    child: Text('Gesamt'),
+                  ),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8.0),
+                    child: Row(
+                      children: [
+                        const Text('Spieltag'),
+                        if (!_showGesamt)
+                          const Icon(Icons.arrow_drop_down, size: 16),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
+
+              // Spacer durch festen Abstand ersetzt, da Spacer in ScrollView nicht geht
+              const SizedBox(width: 16),
+
+              _buildDropdownFilter<int?>(
+                value: _selectedTeamId,
+                hint: 'Team',
+                items: [
+                  const DropdownMenuItem<int?>(
+                      value: null, child: Text('Alle Teams')),
+                  ..._teams.map((team) => DropdownMenuItem<int?>(
+                    value: team['id'],
+                    child: Text(team['name']),
+                  )),
+                ],
+                onChanged: _showFormation ? null : (value) {
+                  setState(() => _selectedTeamId = value);
+                  _fetchData();
+                },
+              ),
+              const SizedBox(width: 8),
+              _buildDropdownFilter<String?>(
+                value: _selectedPosition,
+                hint: 'Position',
+                items: [
+                  const DropdownMenuItem<String?>(
+                      value: null, child: Text('Alle Positionen')),
+                  ..._positions.map((pos) => DropdownMenuItem<String?>(
+                    value: pos,
+                    child: Text(pos),
+                  )),
+                ],
+                onChanged: _showFormation ? null : (value) {
+                  setState(() => _selectedPosition = value);
+                  _fetchData();
+                },
+              ),
+              IconButton(
+                icon: Icon(_showFormation ? Icons.list : Icons.sports_soccer),
+                tooltip: _showFormation ? "Listenansicht" : "Feldansicht",
+                onPressed: () {
+                  final newShowFormation = !_showFormation;
+                  setState(() {
+                    _showFormation = newShowFormation;
+                    if (newShowFormation) {
+                      // Reset Filter für Formation
+                      if (_selectedTeamId != null || _selectedPosition != null) {
+                        _selectedTeamId = null;
+                        _selectedPosition = null;
+                        _fetchData();
+                      } else {
+                        _calculateInitialBestFormation();
+                      }
+                    }
+                  });
+                },
+              ),
+            ],
+          ),
         ),
       ),
     );
@@ -643,5 +558,108 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
         );
       },
     );
+  }
+
+  Widget _buildPlayerListView() {
+    return ListView.builder(
+      itemCount: _topPlayers.length,
+      itemBuilder: (context, index) {
+        final player = _topPlayers[index];
+        return PlayerListItem(
+          rank: index + 1,
+          profileImageUrl: player['profilbild_url'],
+          playerName: player['name'],
+          teamImageUrl: player['team_image_url'],
+          marketValue: player['marktwert'],
+          score: player['total_punkte'],
+          maxScore: _showGesamt ? (_spieltage.length * 250 * 0.8).toInt() : 250,
+
+          // Neue Felder für PlayerListItem (falls benötigt)
+          position: player['position'] ?? '',
+          id: player['id'],
+
+          onTap: () {
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (context) => PlayerScreen(playerId: player['id']),
+              ),
+            );
+          },
+        );
+      },
+    );
+  }
+
+  Widget _buildFormationView() {
+    if (_isCalculatingFormation) {
+      return const Center(child: CircularProgressIndicator());
+    }
+
+    if (_bestFormation == null || _selectedFormationName == null) {
+      return const Center(
+        child: Text("Keine gültige Formation gefunden."),
+      );
+    }
+
+    final players = (_bestFormation!['players'] as List)
+        .map((p) => PlayerInfo(
+      id: p['id'],
+      name: p['name'],
+      position: p['position'],
+      profileImageUrl: p['profilbild_url'],
+      rating: p['total_punkte'],
+      maxRating: _showGesamt? (_spieltage.length*250*0.8).toInt(): 250,
+      goals: 0,
+      assists: 0,
+      ownGoals: 0,
+    ))
+        .toList();
+
+    return LayoutBuilder(builder: (context, constraints) {
+      final sortedFormationKeys = _allFormations.keys.toList()..sort();
+
+      return Column(
+        children: [
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+            child: Column(
+              children: [
+                DropdownButton<String>(
+                  value: _selectedFormationName,
+                  isExpanded: true,
+                  items: sortedFormationKeys.map((String value) {
+                    return DropdownMenuItem<String>(
+                      value: value,
+                      child: Text('Formation: $value'),
+                    );
+                  }).toList(),
+                  onChanged: (String? newValue) {
+                    if (newValue != null && newValue != _selectedFormationName) {
+                      _calculateTeamForSelectedFormation(newValue);
+                    }
+                  },
+                ),
+              ],
+            ),
+          ),
+          Expanded(
+            child: MatchFormationDisplay(
+              homeFormation: _selectedFormationName!,
+              homePlayers: players,
+              homeColor: Colors.blue,
+              onPlayerTap: (playerId, radius) {
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => PlayerScreen(playerId: playerId),
+                  ),
+                );
+              },
+            ),
+          ),
+        ],
+      );
+    });
   }
 }

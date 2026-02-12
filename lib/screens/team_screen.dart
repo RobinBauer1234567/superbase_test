@@ -243,6 +243,13 @@ class _TeamScreenState extends State<TeamScreen> with SingleTickerProviderStateM
                       marketValue: player['marktwert'], // Marktwert übergeben
                       score: player['total_punkte'],
                       maxScore: (anzahlMatches * 250*0.8).toInt(),
+
+                      position: player['position'] ?? 'N/A',
+                      id: player['id'],
+                      goals: 0, // Stats müssten erst aufwendig geparst werden, 0 reicht für die Optik
+                      assists: 0,
+                      ownGoals: 0,
+                      teamColor: Colors.blue,
                       onTap: () {
                         Navigator.push(
                           context,

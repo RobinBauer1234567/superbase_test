@@ -736,6 +736,7 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
 
   Widget _buildTeamListView() {
     final players = _getFilteredPlayers();
+    final primaryColor = Theme.of(context).primaryColor; // Farbe holen
 
     if (players.isEmpty) {
       return const Center(child: Text("Keine Spieler gefunden"));
@@ -754,6 +755,15 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
           marketValue: player.marketValue,
           score: player.rating,
           maxScore: player.maxRating,
+
+          // NEUE FELDER ÜBERGEBEN
+          position: player.position,
+          id: player.id,
+          goals: player.goals,
+          assists: player.assists,
+          ownGoals: player.ownGoals,
+          teamColor: primaryColor, // Teamfarbe für den Avatar-Rand
+
           onTap: () {
             Navigator.push(context, MaterialPageRoute(builder: (_) => PlayerScreen(playerId: player.id)));
           },
@@ -761,7 +771,6 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
       },
     );
   }
-
   @override
   Widget build(BuildContext context) {
     if (_isLoading) return const Center(child: CircularProgressIndicator());

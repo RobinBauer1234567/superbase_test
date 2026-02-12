@@ -46,6 +46,9 @@ class PlayerAvatar extends StatelessWidget {
   final bool showHoverEffect;
   final bool showValidTargetEffect;
 
+  // NEU: Steuert, ob Details (Name, Rating, Events) angezeigt werden
+  final bool showDetails;
+
   const PlayerAvatar({
     super.key,
     required this.player,
@@ -53,6 +56,7 @@ class PlayerAvatar extends StatelessWidget {
     this.radius = 18,
     this.showHoverEffect = false,
     this.showValidTargetEffect = false,
+    this.showDetails = true, // Standardmäßig AN (für das Spielfeld)
   });
 
   Widget _buildEventIcon(IconData icon, Color color, int count, double size) {
@@ -80,24 +84,18 @@ class PlayerAvatar extends StatelessWidget {
 
     // --- Größen-Berechnung ---
     final double imageRadius = radius;
-
-    // 1. RAHMEN VERKLEINERT
-    final double whiteRingWidth = radius * 0.02; // Vorher 1.5
-    final double colorRingWidth = radius * 0.1; // Vorher 1.5 / 2.5
-
+    final double whiteRingWidth = 1.0;
+    final double colorRingWidth = isPlaceholder ? 1.0 : 1.8;
     final double totalRadius = imageRadius + whiteRingWidth + colorRingWidth;
 
-    // Font Sizes
     final double ratingFontSize = radius * 0.55;
-    final double posFontSize = radius * 0.7; // Kleiner für die kleineren Badges
+    final double posFontSize = radius * 0.35;
     final double nameFontSize = radius * 0.42;
     final double eventIconSize = radius * 0.45;
 
-    // Farben
     Color outerColor = isGoalkeeper ? Colors.orange.shade700 : teamColor;
     if (isPlaceholder) outerColor = Colors.grey.shade400;
 
-    // Drag & Drop Skalierung
     double scale = 1.0;
     if (showHoverEffect) {
       scale = 1.2;
@@ -115,9 +113,10 @@ class PlayerAvatar extends StatelessWidget {
     return Transform.scale(
       scale: scale,
       child: SizedBox(
-        width: totalRadius * 2.8,
+        // WICHTIG: Wenn keine Details, brauchen wir weniger Platz in der Breite
+        width: totalRadius * (showDetails ? 2.8 : 2.2),
         child: Column(
-          mainAxisSize: MainAxisSize.min,
+          mainAxisSize: MainAxisSize.min, // WICHTIG gegen Overflow
           children: [
             Stack(
               clipBehavior: Clip.none,
@@ -149,22 +148,18 @@ class PlayerAvatar extends StatelessWidget {
                       : null,
                 ),
 
-                // 3. Positions-Badges (Verteilt am linken Radius)
+                // 3. Positions-Badges (IMMER ANZEIGEN, auch in Liste)
                 if (!isPlaceholder && positions.isNotEmpty)
                   ...List.generate(positions.length, (index) {
-
-                    const double startAngle = 225 * (pi / 180); // Oben Links
-                    // 2. WINKEL VERKLEINERT (Näher zusammen)
-                    const double stepAngle = 22 * (pi / 180); // Vorher 30
+                    // Positionierung am Kreisbogen
+                    const double startAngle = 225 * (pi / 180);
+                    const double stepAngle = 22 * (pi / 180);
                     final double angle = startAngle - (index * stepAngle);
-
-                    final double dist = totalRadius*1.2;
-
-                    // 3. BADGE GRÖSSE VERKLEINERT
-                    final double badgeSize = radius * 0.7; // Vorher 0.9
+                    final double dist = totalRadius;
+                    final double badgeSize = radius * 0.75;
 
                     final double left = totalRadius + (dist * cos(angle)) - (badgeSize / 2);
-                    final double top = totalRadius + (dist * sin(angle)) - (badgeSize / 2);
+                    final double top = totalRadius + (dist * sin(angle) * -1 * -1) - (badgeSize / 2);
 
                     return Positioned(
                       left: left,
@@ -176,8 +171,7 @@ class PlayerAvatar extends StatelessWidget {
                         decoration: BoxDecoration(
                           color: teamColor,
                           shape: BoxShape.circle,
-                          // 4. BADGE RAHMEN VERKLEINERT
-                          border: Border.all(color: Colors.white, width: radius*0.025), // Vorher 1.2
+                          border: Border.all(color: Colors.white, width: 1.0),
                           boxShadow: [
                             BoxShadow(color: Colors.black38, blurRadius: 1, offset: const Offset(1, 1))
                           ],
@@ -187,11 +181,7 @@ class PlayerAvatar extends StatelessWidget {
                             padding: const EdgeInsets.all(1.0),
                             child: Text(
                               positions[index],
-                              style: TextStyle(
-                                color: Colors.white,
-                                fontSize: posFontSize,
-                                fontWeight: FontWeight.bold,
-                              ),
+                              style: TextStyle(color: Colors.white, fontSize: posFontSize, fontWeight: FontWeight.bold),
                             ),
                           ),
                         ),
@@ -199,8 +189,8 @@ class PlayerAvatar extends StatelessWidget {
                     );
                   }),
 
-                // 4. Event Icons (Rechts)
-                if (!isPlaceholder)
+                // 4. Event Icons (Nur wenn showDetails = true)
+                if (!isPlaceholder && showDetails)
                   Positioned(
                     top: 0,
                     right: -radius * 0.5,
@@ -213,8 +203,8 @@ class PlayerAvatar extends StatelessWidget {
                     ),
                   ),
 
-                // 5. Rating Pill (Unten)
-                if (!isPlaceholder)
+                // 5. Rating Pill (Nur wenn showDetails = true)
+                if (!isPlaceholder && showDetails)
                   Positioned(
                     bottom: -radius * 0.45,
                     child: Container(
@@ -236,40 +226,39 @@ class PlayerAvatar extends StatelessWidget {
               ],
             ),
 
-            SizedBox(height: radius * 0.35),
-
-            // 6. Name
-            Container(
-              padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-              decoration: BoxDecoration(
-                color: Colors.white.withOpacity(isPlaceholder ? 0.8 : 0.95),
-                borderRadius: BorderRadius.circular(4),
-                boxShadow: isPlaceholder ? [] : [
-                  BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 2, offset: const Offset(0, 1))
-                ],
-              ),
-              child: FittedBox(
-                fit: BoxFit.scaleDown,
-                child: Text(
-                  player.name.split(' ').last.toUpperCase(),
-                  style: TextStyle(
-                      color: Colors.grey.shade800,
-                      fontSize: nameFontSize,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 0.3
+            // 6. Name (Nur wenn showDetails = true)
+            if (showDetails) ...[
+              SizedBox(height: radius * 0.35),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                decoration: BoxDecoration(
+                  color: Colors.white.withOpacity(isPlaceholder ? 0.8 : 0.95),
+                  borderRadius: BorderRadius.circular(4),
+                  boxShadow: isPlaceholder ? [] : [
+                    BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 2, offset: const Offset(0, 1))
+                  ],
+                ),
+                child: FittedBox(
+                  fit: BoxFit.scaleDown,
+                  child: Text(
+                    player.name.split(' ').last.toUpperCase(),
+                    style: TextStyle(
+                        color: Colors.grey.shade800,
+                        fontSize: nameFontSize,
+                        fontWeight: FontWeight.bold,
+                        letterSpacing: 0.3
+                    ),
+                    textAlign: TextAlign.center,
                   ),
-                  textAlign: TextAlign.center,
                 ),
               ),
-            ),
+            ]
           ],
         ),
       ),
     );
   }
-}
-
-class MatchFormationDisplay extends StatefulWidget {
+}class MatchFormationDisplay extends StatefulWidget {
   final String homeFormation;
   final List<PlayerInfo> homePlayers;
   final Color homeColor;

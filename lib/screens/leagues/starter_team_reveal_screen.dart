@@ -261,16 +261,23 @@ class _StarterTeamRevealScreenState extends State<StarterTeamRevealScreen> {
                 rank: index + 1,
                 profileImageUrl: player['profilbild_url'],
                 playerName: player['name'],
-                // teamImageUrl null setzen, damit Marktwert angezeigt wird (Logik aus deinem vorherigen Request)
-                teamImageUrl: null,
+                teamImageUrl: player['team_image_url'],
                 marketValue: player['marktwert'],
-                score: 0, // Startpunkte sind 0
-                maxScore: 100, // Dummy MaxScore
+                score: player['total_punkte'],
+                maxScore:  2500,
+
+                // NEUE FELDER
+                position: player['position'] ?? 'N/A',
+                id: player['id'],
+                goals: 0, // Stats müssten erst aufwendig geparst werden, 0 reicht für die Optik
+                assists: 0,
+                ownGoals: 0,
+                teamColor: Colors.blue, // Oder eine Farbe passend zur Liga
+
                 onTap: () {
-                  // Hier könnte man zum PlayerDetailScreen navigieren, aber im Reveal vielleicht noch nicht nötig
+
                 },
-              );
-            },
+              );        },
           ),
         ),
 

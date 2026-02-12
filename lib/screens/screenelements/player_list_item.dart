@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:premier_league/utils/color_helper.dart';
+import 'package:premier_league/screens/screenelements/match_screen/formations.dart';
 
 class PlayerListItem extends StatelessWidget {
   final int rank;
@@ -13,6 +14,13 @@ class PlayerListItem extends StatelessWidget {
   final int? marketValue;
   final VoidCallback onTap;
 
+  final String position;
+  final int id;
+  final int goals;
+  final int assists;
+  final int ownGoals;
+  final Color? teamColor;
+
   const PlayerListItem({
     super.key,
     required this.rank,
@@ -23,6 +31,12 @@ class PlayerListItem extends StatelessWidget {
     required this.maxScore,
     this.marketValue,
     required this.onTap,
+    required this.position,
+    this.id = 0,
+    this.goals = 0,
+    this.assists = 0,
+    this.ownGoals = 0,
+    this.teamColor,
   });
 
   String _formatMarketValue(int? value) {
@@ -33,27 +47,42 @@ class PlayerListItem extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final playerInfo = PlayerInfo(
+      id: id,
+      name: playerName,
+      position: position,
+      profileImageUrl: profileImageUrl,
+      rating: score,
+      goals: goals,
+      assists: assists,
+      ownGoals: ownGoals,
+      maxRating: maxScore,
+    );
+
     return ListTile(
       onTap: onTap,
       contentPadding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
-      // FEHLERBEHEBUNG: Breite von 60 auf 80 erhöht
       leading: SizedBox(
-        width: 80,
+        // KORREKTUR: Mehr Platz, damit nichts abschneidet
+        width: 90,
         child: Row(
+          mainAxisSize: MainAxisSize.min, // WICHTIG
           children: [
-            Text(
-              '$rank.',
-              style: const TextStyle(
-                  fontSize: 16,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.grey),
+            SizedBox(
+              width: 25,
+              child: Text(
+                '$rank.',
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.grey),
+              ),
             ),
-            const SizedBox(width: 8),
-            CircleAvatar(
-              radius: 18,
-              backgroundImage:
-              profileImageUrl != null ? NetworkImage(profileImageUrl!) : null,
-              child: profileImageUrl == null ? const Icon(Icons.person, size: 20) : null,
+            const SizedBox(width: 4),
+
+            // KORREKTUR: Kompakter Avatar ohne Name/Rating
+            PlayerAvatar(
+              player: playerInfo,
+              teamColor: teamColor ?? Colors.blueGrey,
+              radius: 20,
+              showDetails: false, // <--- Das verhindert den Overflow nach unten!
             ),
           ],
         ),
@@ -91,10 +120,7 @@ class PlayerListItem extends StatelessWidget {
             child: Text(
               score.toString(),
               textAlign: TextAlign.center,
-              style: const TextStyle(
-                color: Colors.white,
-                fontWeight: FontWeight.bold,
-              ),
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
             ),
           ),
         ],
