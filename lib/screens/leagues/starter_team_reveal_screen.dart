@@ -37,6 +37,14 @@ class _StarterTeamRevealScreenState extends State<StarterTeamRevealScreen> {
     _loadTeam();
   }
 
+  int _toInt(dynamic value, {int fallback = 0}) {
+    if (value == null) return fallback;
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    if (value is String) return int.tryParse(value) ?? fallback;
+    return fallback;
+  }
+
   Future<void> _loadTeam() async {
     final dataManagement = Provider.of<DataManagement>(context, listen: false);
 
@@ -47,7 +55,7 @@ class _StarterTeamRevealScreenState extends State<StarterTeamRevealScreen> {
 
     int totalVal = 0;
     for(var p in players) {
-      totalVal += (p['marktwert'] as int?) ?? 0;
+      totalVal += _toInt(p['marktwert']);
     }
 
     if (mounted) {
@@ -135,7 +143,7 @@ class _StarterTeamRevealScreenState extends State<StarterTeamRevealScreen> {
                         return ScaleTransition(scale: animation, child: child);
                       },
                       child: Container(
-                        key: ValueKey<int>(player['id']), // Wichtig für Animation
+                        key: ValueKey<int>(_toInt(player['id'])), // Wichtig für Animation
                         padding: const EdgeInsets.all(24),
                         decoration: BoxDecoration(
                           color: Colors.white,
@@ -188,7 +196,7 @@ class _StarterTeamRevealScreenState extends State<StarterTeamRevealScreen> {
                                 borderRadius: BorderRadius.circular(20),
                               ),
                               child: Text(
-                                player['position'] ?? 'N/A',
+                                player['position']?.toString() ?? 'N/A',
                                 style: TextStyle(
                                   color: Theme.of(context).primaryColor,
                                   fontWeight: FontWeight.bold,
@@ -200,7 +208,7 @@ class _StarterTeamRevealScreenState extends State<StarterTeamRevealScreen> {
                             // Marktwert
                             const Text("Marktwert", style: TextStyle(color: Colors.grey)),
                             Text(
-                              _formatMoney(player['marktwert'] ?? 0),
+                              _formatMoney(_toInt(player['marktwert'])),
                               style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
                             ),
                           ],
@@ -260,15 +268,15 @@ class _StarterTeamRevealScreenState extends State<StarterTeamRevealScreen> {
               return PlayerListItem(
                 rank: index + 1,
                 profileImageUrl: player['profilbild_url'],
-                playerName: player['name'],
+                playerName: player['name']?.toString() ?? 'Unbekannt',
                 teamImageUrl: player['team_image_url'],
-                marketValue: player['marktwert'],
-                score: player['total_punkte'],
+                marketValue: _toInt(player['marktwert']),
+                score: _toInt(player['total_punkte']),
                 maxScore:  2500,
 
                 // NEUE FELDER
-                position: player['position'] ?? 'N/A',
-                id: player['id'],
+                position: player['position']?.toString() ?? 'N/A',
+                id: _toInt(player['id']),
                 goals: 0, // Stats müssten erst aufwendig geparst werden, 0 reicht für die Optik
                 assists: 0,
                 ownGoals: 0,
