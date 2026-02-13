@@ -27,6 +27,14 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
   List<PlayerInfo> _substitutePlayers = [];
   String? _filterTeam;
   String? _filterPosition;
+
+  int _toInt(dynamic value, {int fallback = 0}) {
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    if (value is String) return int.tryParse(value) ?? fallback;
+    return fallback;
+  }
+
   @override
   void initState() {
     super.initState();
@@ -84,8 +92,8 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
       }
 
       final playerInfo = PlayerInfo(
-        id: p['id'],
-        name: p['name'],
+        id: _toInt(p['id'], fallback: -9999),
+        name: (p['name'] ?? 'Unbekannt').toString(),
         position: p['position'] ?? 'N/A',
         profileImageUrl: p['profilbild_url'],
         rating: rating,
@@ -94,12 +102,12 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
         ownGoals: 0,
         maxRating: 2500,
         teamImageUrl: p['team_image_url'],
-        marketValue: p['marktwert'],
+        marketValue: _toInt(p['marktwert']),
         teamName: p['team_name'],
       );
 
       // WICHTIG: Prüfen, wo der Spieler hin soll
-      final int fIndex = p['formation_index'] ?? 99;
+      final int fIndex = _toInt(p['formation_index'], fallback: 99);
 
       if (fIndex >= 0 && fIndex <= 10) {
         // Spieler gehört auf das Feld an Position fIndex
