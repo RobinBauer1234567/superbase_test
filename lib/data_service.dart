@@ -1145,6 +1145,14 @@ class SupabaseService {
       });
       return response as int;
     } catch (error) {
+      final errorText = error.toString();
+      if (errorText.contains('purchase_price') && errorText.contains('league_players')) {
+        throw Exception(
+          'Liga konnte nicht erstellt werden: In Supabase fehlt die Spalte "league_players.purchase_price". '
+              'Führe das SQL aus docs/sql/fix_league_players_purchase_price.sql aus und versuche es erneut.'
+        );
+      }
+
       print('Fehler beim Erstellen der Liga: $error');
       throw Exception('Liga konnte nicht erstellt werden: $error');
     }
