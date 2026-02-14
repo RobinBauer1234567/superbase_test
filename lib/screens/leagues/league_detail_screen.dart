@@ -4,6 +4,9 @@ import 'package:premier_league/screens/leagues/ranking_screen.dart';
 import 'dart:math'; // Import für die 'max'-Funktion
 import 'package:premier_league/screens/leagues/league_team_screen.dart';
 import 'package:premier_league/screens/leagues/transfer_market_screen.dart';
+import 'package:provider/provider.dart';
+import 'package:premier_league/viewmodels/data_viewmodel.dart';
+
 
 class LeagueDetailScreen extends StatefulWidget {
   final Map<String, dynamic> league;
@@ -14,6 +17,19 @@ class LeagueDetailScreen extends StatefulWidget {
 }
 
 class _LeagueDetailScreenState extends State<LeagueDetailScreen> {
+  @override
+  void initState() {
+    super.initState();
+
+    // Die ID einfach aus dem übergebenen Liga-Objekt auslesen
+    final int leagueId = widget.league['id'];
+
+    // Nach dem ersten Frame den Ping an die Datenbank schicken
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      final service = Provider.of<DataManagement>(context, listen: false).supabaseService;
+      service.updateLeagueActivity(leagueId);
+    });
+  }
   @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;

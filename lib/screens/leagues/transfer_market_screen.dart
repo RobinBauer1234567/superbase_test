@@ -4,10 +4,12 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:premier_league/viewmodels/data_viewmodel.dart';
 import 'package:premier_league/screens/screenelements/player_list_item.dart';
-import 'package:premier_league/utils/color_helper.dart';
 import 'package:premier_league/screens/player_screen.dart';
-import 'package:premier_league/screens/screenelements/transaction_overlay.dart'; // <--- NEU
+import 'package:premier_league/screens/screenelements/transaction_overlay.dart';
 import 'package:premier_league/screens/screenelements/match_screen/formations.dart';
+
+// NEU: Enum für die drei Listen-Zustände
+enum MarketMode { all, ownBids, ownOffers }
 
 class TransferMarketScreen extends StatefulWidget {
   final int leagueId;
@@ -20,6 +22,9 @@ class TransferMarketScreen extends StatefulWidget {
 class _TransferMarketScreenState extends State<TransferMarketScreen> {
   bool _isLoading = true;
   List<Map<String, dynamic>> _offers = [];
+  int _budget = 0; // NEU: Speichert das Budget
+  MarketMode _currentMode = MarketMode.all; // NEU: Startet mit "Alle Spieler"
+
   final NumberFormat _currencyFormat = NumberFormat.currency(locale: 'de_DE', symbol: '€', decimalDigits: 0);
 
   @override
@@ -31,22 +36,72 @@ class _TransferMarketScreenState extends State<TransferMarketScreen> {
   Future<void> _loadMarket() async {
     setState(() => _isLoading = true);
     final service = Provider.of<DataManagement>(context, listen: false).supabaseService;
+
+    // Wir laden gleichzeitig den Markt und das Budget
     final data = await service.fetchTransferMarket(widget.leagueId);
+    final budget = await service.fetchUserBudget(widget.leagueId);
+
     if (mounted) {
       setState(() {
         _offers = data;
+        _budget = budget;
         _isLoading = false;
       });
     }
   }
 
-  Future<void> _generateSystemPlayers() async {
-    final dataManagement = Provider.of<DataManagement>(context, listen: false);
-    final int seasonId = int.tryParse(dataManagement.seasonId.toString()) ?? 0;
-    await dataManagement.supabaseService.simulateSystemTransfers(widget.leagueId, seasonId);
-    _loadMarket();
+// --- LOGIK ZUM FILTERN DER LISTEN ---
+  List<Map<String, dynamic>> get _displayedOffers {
+    final currentUserId = Provider.of<DataManagement>(context, listen: false).supabaseService.supabase.auth.currentUser?.id;
+    if (currentUserId == null) return _offers;
+
+    switch (_currentMode) {
+      case MarketMode.all:
+      // Zeigt alle Spieler, AUSSER die, die man gerade selbst verkauft
+        return _offers.where((o) => o['seller_id'] != currentUserId).toList();
+
+      case MarketMode.ownOffers:
+      // Zeigt NUR die selbst angebotenen Spieler
+        return _offers.where((o) => o['seller_id'] == currentUserId).toList();
+
+      case MarketMode.ownBids:
+      // Zeigt NUR die Spieler, auf die man bereits geboten hat
+        return _offers.where((o) {
+          final bids = o['transfer_bids'] as List<dynamic>? ?? [];
+          return bids.any((b) => b['bidder_id'] == currentUserId);
+        }).toList();
+    }
+  }
+  // --- NEU: Helfer für das Umschalten des Modus ---
+  void _toggleMode() {
+    setState(() {
+      if (_currentMode == MarketMode.all) {
+        _currentMode = MarketMode.ownBids;
+      } else if (_currentMode == MarketMode.ownBids) {
+        _currentMode = MarketMode.ownOffers;
+      } else {
+        _currentMode = MarketMode.all;
+      }
+    });
   }
 
+  IconData _getModeIcon() {
+    switch (_currentMode) {
+      case MarketMode.all: return Icons.language; // Weltkugel für "Alle"
+      case MarketMode.ownBids: return Icons.gavel; // Hammer für "Eigene Gebote"
+      case MarketMode.ownOffers: return Icons.outbox; // Outbox für "Eigene Verkäufe"
+    }
+  }
+
+  String _getModeTitle() {
+    switch (_currentMode) {
+      case MarketMode.all: return "Alle Spieler";
+      case MarketMode.ownBids: return "Meine Gebote";
+      case MarketMode.ownOffers: return "Meine Verkäufe";
+    }
+  }
+
+  // --- BESTEHENDE LOGIK (leicht angepasst) ---
   Future<void> _showSellDialog() async {
     final service = Provider.of<DataManagement>(context, listen: false).supabaseService;
     final myPlayers = await service.fetchUserLeaguePlayers(widget.leagueId);
@@ -77,53 +132,150 @@ class _TransferMarketScreenState extends State<TransferMarketScreen> {
     );
   }
 
-
-  Future<void> _buyNow(int transferId, String playerName, int price) async {
+  Future<void> _executeBuy(int transferId, String playerName, int price) async {
     try {
       await Provider.of<DataManagement>(context, listen: false).supabaseService.buyPlayerNow(transferId);
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("$playerName für ${_currencyFormat.format(price)} gekauft!"), backgroundColor: Colors.green));
-      _loadMarket();
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("$playerName gekauft!"), backgroundColor: Colors.green));
+        _loadMarket();
+      }
     } catch (e) {
-      ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Fehler: $e"), backgroundColor: Colors.red));
+      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Fehler: $e"), backgroundColor: Colors.red));
     }
   }
 
-  Future<void> _placeBid(int transferId, int minBid) async {
-    final controller = TextEditingController(text: (minBid + 100000).toString());
+// --- 1. REPARATUR: FEHLERANZEIGE BEIM VERKAUFEN ---
+  Future<void> _showPriceInputDialog(Map<String, dynamic> playerMap) async {
+    // NEU: Wir nutzen deine existierende Helper-Funktion, um Punkte & Team-Bild zu holen!
+    // Da _extractPlayerData normalerweise das komplette Offer-Objekt erwartet,
+    // aber hier nur der "rohe" Spieler reinkommt, funktioniert es trotzdem,
+    // da die Struktur von playerMap dank Schritt 1 jetzt passend ist.
+    final extraData = _extractPlayerData(playerMap);
+
+    final player = PlayerInfo(
+      id: playerMap['id'],
+      name: playerMap['name'],
+      position: playerMap['position'] ?? '',
+      profileImageUrl: playerMap['profilbild_url'],
+
+      // HIER IST DER FIX: Statt 0 nehmen wir den echten Score!
+      rating: extraData['score'],
+
+      goals: 0, assists: 0, ownGoals: 0,
+
+      // Auch das Team-Wappen wird jetzt korrekt angezeigt (falls im Overlay gewünscht)
+      teamImageUrl: extraData['teamImageUrl'],
+    );
+
     await showDialog(
       context: context,
-      builder: (ctx) => AlertDialog(
-        title: const Text("Gebot abgeben"),
-        content: TextField(
-          controller: controller,
-          keyboardType: TextInputType.number,
-          decoration: InputDecoration(labelText: "Dein Gebot (Min: ${_currencyFormat.format(minBid)})"),
-        ),
-        actions: [
-          TextButton(onPressed: () => Navigator.pop(ctx), child: const Text("Abbrechen")),
-          ElevatedButton(
-            onPressed: () async {
-              final amount = int.tryParse(controller.text) ?? 0;
-              if (amount >= minBid) {
-                await Provider.of<DataManagement>(context, listen: false).supabaseService.placeBid(transferId, amount);
-                Navigator.pop(ctx);
-                ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Gebot abgegeben!")));
-              }
-            },
-            child: const Text("Bieten"),
-          )
-        ],
+      builder: (ctx) => TransactionOverlay(
+        player: player,
+        type: TransactionType.sell,
+        basePrice: playerMap['marktwert'] ?? 0,
+        onConfirm: (price) async {
+          try {
+            await Provider.of<DataManagement>(context, listen: false)
+                .supabaseService.listPlayerOnMarket(widget.leagueId, player.id, price);
+
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text("Spieler erfolgreich auf den Markt gesetzt!"), backgroundColor: Colors.green)
+              );
+              Navigator.pop(context); // Schließt das BottomSheet (Spieler-Liste)
+              _loadMarket(); // Lädt den Markt neu
+            }
+          } catch (e) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text("Fehler: $e"), backgroundColor: Colors.red)
+              );
+            }
+          }
+        },
+      ),
+    );
+  }
+  void _openBuyOverlay(Map<String, dynamic> offer, PlayerInfo playerInfo) {
+    showDialog(
+      context: context,
+      builder: (ctx) => TransactionOverlay(
+        player: playerInfo,
+        type: TransactionType.buy,
+        basePrice: offer['buy_now_price'],
+        onConfirm: (price) => _executeBuy(offer['id'], playerInfo.name, price),
       ),
     );
   }
 
-  // --- HELPER FÜR DATEN EXTRAKTION ---
-  Map<String, dynamic> _extractPlayerData(Map<String, dynamic> playerRaw) {
+  void _openBidOverlay(Map<String, dynamic> offer, PlayerInfo playerInfo) async {
+    final currentUserId = Provider.of<DataManagement>(context, listen: false).supabaseService.supabase.auth.currentUser?.id;
+    final bids = offer['transfer_bids'] as List<dynamic>? ?? [];
+
+    final myBid = bids.firstWhere(
+            (b) => b['bidder_id'] == currentUserId,
+        orElse: () => null
+    );
+
+    final int? currentBidAmount = myBid != null ? (myBid['amount'] as int) : null;
+
+    // Wir warten hier, bis das Dialog-Fenster komplett geschlossen wurde
+    await showDialog(
+      context: context,
+      barrierDismissible: false, // User muss explizit Abbrechen drücken
+      builder: (ctx) => TransactionOverlay(
+        player: playerInfo,
+        type: TransactionType.bid,
+        basePrice: offer['min_bid_price'],
+        currentBid: currentBidAmount,
+
+        // CALLBACK: Gebot zurückziehen
+        onWithdraw: () async {
+          // Hier KEIN Navigator.pop()! Das Overlay bleibt offen.
+          // Wir führen nur die Datenbank-Operation aus.
+          await Provider.of<DataManagement>(context, listen: false)
+              .supabaseService
+              .withdrawBid(offer['id']);
+
+          if (mounted) {
+            ScaffoldMessenger.of(context).showSnackBar(
+                const SnackBar(content: Text("Gebot zurückgezogen. Du kannst nun ein neues abgeben."), duration: Duration(seconds: 1))
+            );
+          }
+        },
+
+        // CALLBACK: Gebot bestätigen
+        onConfirm: (amount) async {
+          try {
+            await Provider.of<DataManagement>(context, listen: false)
+                .supabaseService
+                .placeBid(offer['id'], amount);
+
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text("Gebot erfolgreich abgegeben!"), backgroundColor: Colors.green)
+              );
+            }
+          } catch (e) {
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text("Fehler: $e"), backgroundColor: Colors.red)
+              );
+            }
+          }
+        },
+      ),
+    );
+
+    // ERST WENN DER DIALOG ZU IST (await showDialog fertig), laden wir den Markt im Hintergrund neu
+    if (mounted) {
+      _loadMarket();
+    }
+  }  Map<String, dynamic> _extractPlayerData(Map<String, dynamic> playerRaw) {
     String? teamImg;
     if (playerRaw['season_players'] != null && (playerRaw['season_players'] as List).isNotEmpty) {
       teamImg = playerRaw['season_players'][0]['team']['image_url'];
     }
-
     int score = 0;
     final seasonId = Provider.of<DataManagement>(context, listen: false).seasonId.toString();
     try {
@@ -137,272 +289,246 @@ class _TransferMarketScreenState extends State<TransferMarketScreen> {
       if (seasonStats != null) score = seasonStats['gesamtpunkte'] ?? 0;
     } catch (_) {}
 
-    return {
-      'teamImageUrl': teamImg,
-      'score': score,
-    };
-  }
-
-  // Helper für die eigentliche Kauf-Transaktion
-  Future<void> _executeBuy(int transferId, String playerName, int price) async {
-    try {
-      await Provider.of<DataManagement>(context, listen: false).supabaseService.buyPlayerNow(transferId);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("$playerName gekauft!"), backgroundColor: Colors.green));
-        _loadMarket();
-      }
-    } catch (e) {
-      if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Fehler: $e"), backgroundColor: Colors.red));
-    }
-  }
-
-  Future<void> _showPriceInputDialog(Map<String, dynamic> playerMap) async {
-    final player = PlayerInfo(
-      id: playerMap['id'],
-      name: playerMap['name'],
-      position: playerMap['position'] ?? '',
-      profileImageUrl: playerMap['profilbild_url'],
-      rating: 0,
-      goals: 0, assists: 0, ownGoals: 0,
-      teamImageUrl: playerMap['team_image_url'], // WICHTIG: Damit das Wappen angezeigt wird!
-    );
-
-    // HIER ÄNDERUNG: showDialog statt showModalBottomSheet
-    await showDialog(
-      context: context,
-      builder: (ctx) => TransactionOverlay(
-        player: player,
-        type: TransactionType.sell,
-        basePrice: playerMap['marktwert'] ?? 0,
-        onConfirm: (price) async {
-          await Provider.of<DataManagement>(context, listen: false).supabaseService.listPlayerOnMarket(widget.leagueId, player.id, price);
-          _loadMarket();
-        },
-      ),
-    );
-  }
-
-  // 2. Kaufen Overlay
-  void _openBuyOverlay(Map<String, dynamic> offer, PlayerInfo playerInfo) {
-    showDialog(
-      context: context,
-      builder: (ctx) => TransactionOverlay(
-        player: playerInfo,
-        type: TransactionType.buy,
-        basePrice: offer['buy_now_price'],
-        onConfirm: (price) => _executeBuy(offer['id'], playerInfo.name, price),
-      ),
-    );
-  }
-
-  // 3. Bieten Overlay
-  void _openBidOverlay(Map<String, dynamic> offer, PlayerInfo playerInfo) {
-    showDialog(
-      context: context,
-      builder: (ctx) => TransactionOverlay(
-        player: playerInfo,
-        type: TransactionType.bid,
-        basePrice: offer['min_bid_price'],
-        onConfirm: (amount) async {
-          await Provider.of<DataManagement>(context, listen: false).supabaseService.placeBid(offer['id'], amount);
-          if (mounted) ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Gebot abgegeben!")));
-        },
-      ),
-    );
+    return {'teamImageUrl': teamImg, 'score': score};
   }
 
   @override
   Widget build(BuildContext context) {
+    final currentUserId = Provider.of<DataManagement>(context, listen: false).supabaseService.supabase.auth.currentUser?.id;
+    final displayedList = _displayedOffers;
+
     return Scaffold(
       backgroundColor: Colors.grey.shade100,
-      floatingActionButton: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          FloatingActionButton.small(
-            heroTag: "sys_gen",
-            backgroundColor: Colors.blueGrey,
-            onPressed: _generateSystemPlayers,
-            child: const Icon(Icons.refresh),
+
+      // --- NEU: DIE LEISTE IST JETZT UNTEN (bottomNavigationBar) ---
+      bottomNavigationBar: SafeArea(
+        child: Container(
+          padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+          decoration: BoxDecoration(
+            color: Colors.white,
+            boxShadow: [
+              // Der Schatten zeigt jetzt nach OBEN (Offset y = -2)
+              BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 4, offset: const Offset(0, -2))
+            ],
           ),
-          const SizedBox(height: 10),
-          FloatingActionButton.extended(
-            heroTag: "sell_btn",
-            onPressed: _showSellDialog,
-            label: const Text("Spieler verkaufen"),
-            icon: const Icon(Icons.add),
-          ),
-        ],
-      ),
-      body: _isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-        onRefresh: _loadMarket,
-        child: _offers.isEmpty
-            ? const Center(child: Text("Der Markt ist leer."))
-            : ListView.builder(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-          itemCount: _offers.length,
-          itemBuilder: (context, index) {
-            final offer = _offers[index];
-            final player = offer['player'];
-            final isSystem = offer['seller_id'] == null;
+          child: Row(
+            mainAxisAlignment: MainAxisAlignment.spaceBetween,
+            children: [
+              // Links: Toggle Button für Ansicht
+              Tooltip(
+                message: _getModeTitle(),
+                child: IconButton(
+                  icon: Icon(_getModeIcon(), color: Theme.of(context).primaryColor, size: 28),
+                  onPressed: _toggleMode,
+                ),
+              ),
 
-            final extraData = _extractPlayerData(player);
-
-            final expires = DateTime.parse(offer['expires_at']);
-            final timeLeft = expires.difference(DateTime.now());
-            String timeString = timeLeft.inHours > 0
-                ? "${timeLeft.inHours} Std"
-                : "${timeLeft.inMinutes} Min";
-            Color timeColor = timeLeft.inHours < 2 ? Colors.red : Colors.orange.shade800;
-
-            return Card(
-              margin: const EdgeInsets.only(bottom: 12),
-              elevation: 1, // Weniger Schatten für cleaneren Look
-              color: Colors.white,
-              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-              child: Column(
+              // Mitte: Budget Anzeige
+              Column(
+                mainAxisSize: MainAxisSize.min,
                 children: [
-                  // 1. DER SPIELER
-                  PlayerListItem(
-                    rank: index + 1,
-                    profileImageUrl: player['profilbild_url'],
-                    playerName: player['name'],
-                    teamImageUrl: extraData['teamImageUrl'],
-                    marketValue: player['marktwert'],
-                    score: extraData['score'],
-                    maxScore: 2500,
-                    position: player['position'] ?? 'N/A',
-                    id: player['id'],
-                    goals: 0,
-                    assists: 0,
-                    ownGoals: 0,
-                    teamColor: Colors.blueGrey,
-                    onTap: () {
-                      Navigator.push(context, MaterialPageRoute(builder: (_) => PlayerScreen(playerId: player['id'])));
-                    },
-                  ),
-
-                  // Trennlinie (optional, sehr fein)
-                  Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 16.0),
-                    child: Divider(height: 1, color: Colors.grey.shade100),
-                  ),
-
-                  // 2. MARKT-BEREICH (Neues, dezentes Design)
-                  Padding(
-                    padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-                    child: Column(
-                      children: [
-                        // Info-Zeile (Verkäufer & Timer)
-                        Row(
-                          children: [
-                            Icon(isSystem ? Icons.computer : Icons.person, size: 14, color: Colors.grey.shade400),
-                            const SizedBox(width: 6),
-                            Text(
-                              isSystem ? "System" : "Manager",
-                              style: TextStyle(fontSize: 11, color: Colors.grey.shade600, fontWeight: FontWeight.w500),
-                            ),
-                            const Spacer(),
-                            Icon(Icons.timer_outlined, size: 14, color: timeColor),
-                            const SizedBox(width: 4),
-                            Text(
-                              timeString,
-                              style: TextStyle(fontSize: 11, color: timeColor, fontWeight: FontWeight.bold),
-                            ),
-                          ],
-                        ),
-
-                        const SizedBox(height: 12),
-
-                        // Action-Buttons (Side-by-Side)
-                        Row(
-                          children: [
-                            // BIETEN BUTTON (Dezent, Outlined)
-                            Expanded(
-                              child: InkWell(
-                                // NEUER AUFRUF:
-                                onTap: () {
-                                  // PlayerInfo für Overlay bauen (aus den vorhandenen Daten)
-                                  final pInfo = PlayerInfo(
-                                    id: player['id'],
-                                    name: player['name'],
-                                    position: player['position'] ?? '',
-                                    profileImageUrl: player['profilbild_url'],
-                                    rating: extraData['score'],
-                                    goals: 0, assists: 0, ownGoals: 0,
-                                  );
-                                  _openBidOverlay(offer, pInfo);
-                                },
-                                borderRadius: BorderRadius.circular(12),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(vertical: 8),
-                                  decoration: BoxDecoration(
-                                    border: Border.all(color: Colors.grey.shade300),
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: Column(
-                                    children: [
-                                      Text("GEBOT AB", style: TextStyle(fontSize: 9, color: Colors.grey.shade600, letterSpacing: 0.5, fontWeight: FontWeight.bold)),
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        _currencyFormat.format(offer['min_bid_price']),
-                                        style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.black87),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ),
-
-                            const SizedBox(width: 12),
-
-                            // KAUFEN BUTTON (Hervorgehoben, aber leicht)
-                            Expanded(
-                              child: InkWell(
-                                // NEUER AUFRUF:
-                                onTap: () {
-                                  final pInfo = PlayerInfo(
-                                    id: player['id'],
-                                    name: player['name'],
-                                    position: player['position'] ?? '',
-                                    profileImageUrl: player['profilbild_url'],
-                                    rating: extraData['score'],
-                                    goals: 0, assists: 0, ownGoals: 0,
-                                  );
-                                  _openBuyOverlay(offer, pInfo);
-                                },
-                                borderRadius: BorderRadius.circular(12),
-                                child: Container(
-                                  padding: const EdgeInsets.symmetric(vertical: 8),
-                                  decoration: BoxDecoration(
-                                    color: Colors.green.shade50, // Sehr heller Hintergrund
-                                    border: Border.all(color: Colors.green.shade200),
-                                    borderRadius: BorderRadius.circular(12),
-                                  ),
-                                  child: Column(
-                                    children: [
-                                      Text("SOFORT KAUFEN", style: TextStyle(fontSize: 9, color: Colors.green.shade700, letterSpacing: 0.5, fontWeight: FontWeight.bold)),
-                                      const SizedBox(height: 2),
-                                      Text(
-                                        _currencyFormat.format(offer['buy_now_price']),
-                                        style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.green.shade900),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                              ),
-                            ),
-                          ],
-                        ),
-                      ],
-                    ),
+                  Text("Dein Budget", style: TextStyle(fontSize: 10, color: Colors.grey.shade600, letterSpacing: 0.5)),
+                  Text(
+                    _currencyFormat.format(_budget),
+                    style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold, color: Colors.black87),
                   ),
                 ],
               ),
-            );
-          },
+
+              // Rechts: Spieler Verkaufen (Dezentes Plus/Kreuz)
+              Tooltip(
+                message: "Spieler verkaufen",
+                child: IconButton(
+                  icon: const Icon(Icons.add_circle_outline, size: 28),
+                  color: Colors.green.shade700,
+                  onPressed: _showSellDialog,
+                ),
+              ),
+            ],
+          ),
         ),
+      ),
+
+      // --- DER RESTLICHE BILDSCHIRM (body) ---
+      body: Column(
+        children: [
+          // Info-Zeile für den aktuellen Modus jetzt oben über der Liste
+          Padding(
+            padding: const EdgeInsets.only(top: 16.0, bottom: 8.0),
+            child: Text(
+              _getModeTitle().toUpperCase(),
+              style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey.shade500, letterSpacing: 1.0),
+            ),
+          ),
+
+          // --- DIE LISTE ---
+          Expanded(
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : RefreshIndicator(
+              onRefresh: _loadMarket,
+              child: displayedList.isEmpty
+                  ? Center(child: Text("Hier ist aktuell nichts los.", style: TextStyle(color: Colors.grey.shade600)))
+                  : ListView.builder(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                itemCount: displayedList.length,
+                itemBuilder: (context, index) {
+                  final offer = displayedList[index];
+                  final player = offer['player'];
+                  final isSystem = offer['seller_id'] == null;
+                  final isOwnOffer = offer['seller_id'] == currentUserId;
+                  final extraData = _extractPlayerData(player);
+
+                  // NEU: Prüfen, ob wir ein Gebot haben und wie hoch es ist
+                  final bids = offer['transfer_bids'] as List<dynamic>? ?? [];
+                  final myBid = bids.firstWhere((b) => b['bidder_id'] == currentUserId, orElse: () => null);
+                  final bool hasBid = myBid != null;
+                  final int? myBidAmount = hasBid ? myBid['amount'] as int : null;
+
+                  final expires = DateTime.parse(offer['expires_at']);
+                  final timeLeft = expires.difference(DateTime.now());
+                  String timeString = timeLeft.inHours > 0 ? "${timeLeft.inHours} Std" : "${timeLeft.inMinutes} Min";
+                  Color timeColor = timeLeft.inHours < 2 ? Colors.red : Colors.orange.shade800;
+
+                  return Card(
+                    margin: const EdgeInsets.only(bottom: 12),
+                    elevation: 1,
+                    color: Colors.white,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    child: Column(
+                      children: [
+                        // 1. DER SPIELER
+                        PlayerListItem(
+                          rank: index + 1,
+                          profileImageUrl: player['profilbild_url'],
+                          playerName: player['name'],
+                          teamImageUrl: extraData['teamImageUrl'],
+                          marketValue: player['marktwert'],
+                          score: extraData['score'],
+                          maxScore: 2500,
+                          position: player['position'] ?? 'N/A',
+                          id: player['id'],
+                          goals: 0, assists: 0, ownGoals: 0,
+                          teamColor: Colors.blueGrey,
+                          onTap: () {
+                            Navigator.push(context, MaterialPageRoute(builder: (_) => PlayerScreen(playerId: player['id'])));
+                          },
+                        ),
+
+                        Padding(
+                          padding: const EdgeInsets.symmetric(horizontal: 16.0),
+                          child: Divider(height: 1, color: Colors.grey.shade100),
+                        ),
+
+                        // 2. MARKT-BEREICH
+                        Padding(
+                          padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
+                          child: Column(
+                            children: [
+                              Row(
+                                children: [
+                                  Icon(isSystem ? Icons.computer : Icons.person, size: 14, color: Colors.grey.shade400),
+                                  const SizedBox(width: 6),
+                                  Text(
+                                    isSystem ? "System" : (isOwnOffer ? "Du (Verkäufer)" : "Manager"),
+                                    style: TextStyle(fontSize: 11, color: Colors.grey.shade600, fontWeight: FontWeight.w500),
+                                  ),
+                                  const Spacer(),
+                                  Icon(Icons.timer_outlined, size: 14, color: timeColor),
+                                  const SizedBox(width: 4),
+                                  Text(timeString, style: TextStyle(fontSize: 11, color: timeColor, fontWeight: FontWeight.bold)),
+                                ],
+                              ),
+
+                              const SizedBox(height: 12),
+
+                              // WENN ES DAS EIGENE ANGEBOT IST: Keine Buttons anzeigen
+                              if (isOwnOffer)
+                                Container(
+                                  width: double.infinity,
+                                  padding: const EdgeInsets.symmetric(vertical: 10),
+                                  decoration: BoxDecoration(color: Colors.grey.shade100, borderRadius: BorderRadius.circular(12)),
+                                  child: const Center(
+                                    child: Text("Dein Spieler ist auf dem Markt", style: TextStyle(color: Colors.black54, fontWeight: FontWeight.bold, fontSize: 13)),
+                                  ),
+                                )
+                              // ANSONSTEN: Kaufen & Bieten Buttons anzeigen
+                              else
+                                Row(
+                                  children: [
+                                    Expanded(
+                                      child: InkWell(
+                                        onTap: () {
+                                          final pInfo = PlayerInfo(
+                                            id: player['id'], name: player['name'], position: player['position'] ?? '',
+                                            profileImageUrl: player['profilbild_url'], rating: extraData['score'],
+                                            goals: 0, assists: 0, ownGoals: 0,
+                                          );
+                                          _openBidOverlay(offer, pInfo);
+                                        },
+                                        borderRadius: BorderRadius.circular(12),
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(vertical: 8),
+                                          decoration: BoxDecoration(
+                                            // NEU: Dezenter blauer Hintergrund, falls geboten!
+                                              color: hasBid ? Colors.blue.shade50 : Colors.transparent,
+                                              border: Border.all(color: hasBid ? Colors.blue.shade300 : Colors.grey.shade300),
+                                              borderRadius: BorderRadius.circular(12)
+                                          ),
+                                          child: Column(
+                                            children: [
+                                              // NEU: Text ändert sich zu "DEIN GEBOT"
+                                              Text(hasBid ? "DEIN GEBOT" : "GEBOT AB",
+                                                  style: TextStyle(fontSize: 9, color: hasBid ? Colors.blue.shade700 : Colors.grey.shade600, letterSpacing: 0.5, fontWeight: FontWeight.bold)
+                                              ),
+                                              const SizedBox(height: 2),
+                                              // NEU: Zeigt den eigenen Gebotsbetrag an, falls vorhanden
+                                              Text(_currencyFormat.format(hasBid ? myBidAmount : offer['min_bid_price']),
+                                                  style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: hasBid ? Colors.blue.shade900 : Colors.black87)
+                                              ),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(width: 12),
+                                    Expanded(
+                                      child: InkWell(
+                                        onTap: () {
+                                          final pInfo = PlayerInfo(
+                                            id: player['id'], name: player['name'], position: player['position'] ?? '',
+                                            profileImageUrl: player['profilbild_url'], rating: extraData['score'],
+                                            goals: 0, assists: 0, ownGoals: 0,
+                                          );
+                                          _openBuyOverlay(offer, pInfo);
+                                        },
+                                        borderRadius: BorderRadius.circular(12),
+                                        child: Container(
+                                          padding: const EdgeInsets.symmetric(vertical: 8),
+                                          decoration: BoxDecoration(color: Colors.green.shade50, border: Border.all(color: Colors.green.shade200), borderRadius: BorderRadius.circular(12)),
+                                          child: Column(
+                                            children: [
+                                              Text("SOFORT KAUFEN", style: TextStyle(fontSize: 9, color: Colors.green.shade700, letterSpacing: 0.5, fontWeight: FontWeight.bold)),
+                                              const SizedBox(height: 2),
+                                              Text(_currencyFormat.format(offer['buy_now_price']), style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: Colors.green.shade900)),
+                                            ],
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                            ],
+                          ),
+                        ),
+                      ],
+                    ),
+                  );
+                },
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }

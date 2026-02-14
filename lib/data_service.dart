@@ -113,7 +113,6 @@ class ApiService {
 
   Future<void> updateSpielData(int seasonId, int spielId, status) async {
     final url = '$baseUrl/event/$spielId';
-    print (url);
     final response = await http.get(Uri.parse(url));
 
     if (response.statusCode == 200) {
@@ -189,6 +188,7 @@ class ApiService {
       }
     } else {
       print(">>> FEHLER bei Spiel $spielId: Konnte Aufstellung nicht von API laden (Statuscode: ${response.statusCode})");
+      print("https://www.sofascore.com/api/v1/event/$spielId/lineups");
     }
   }
 
@@ -340,6 +340,7 @@ class ApiService {
     }
     return positionsList;
   }
+
   Future<void> ensureFormationExists(String formation) async {
     if (formation == 'N/A' || formation.isEmpty) return; // 'N/A' nicht speichern
 
@@ -355,6 +356,7 @@ class ApiService {
       await _createFormationEntry(formation);
     }
   }
+
   String _computePositionFromFormation(String formation, int index) {
     if (index == 0) return 'TW'; // Torwart
 
@@ -870,6 +872,36 @@ class ApiService {
 
 class SupabaseService {
   final SupabaseClient supabase = Supabase.instance.client;
+  final Map<int, DateTime> _lastActivityPings = {};
+
+  Future<void> updateLeagueActivity(int leagueId) async {
+    final now = DateTime.now();
+
+    // 1. SPERRE PRÜFEN: Haben wir für diese Liga in der letzten Stunde schon gefunkt?
+    if (_lastActivityPings.containsKey(leagueId)) {
+      final lastPing = _lastActivityPings[leagueId]!;
+      // Wenn die Differenz kleiner als 1 Stunde ist, brechen wir hier sofort ab!
+      if (now.difference(lastPing).inHours < 1) {
+        return; // Spart uns den Datenbankaufruf
+      }
+    }
+
+    try {
+      // 2. DATENBANK UPDATE: Wir senden den neuen Zeitstempel
+      await supabase.from('leagues').update({
+        'last_activity_at': now.toIso8601String(),
+        // SEHR WICHTIG: Wir setzen is_active immer auf true!
+        // Falls die Liga auf false war, wecken wir sie hiermit automatisch wieder auf.
+        'is_active': true,
+      }).eq('id', leagueId);
+
+      // 3. SPERRE SETZEN: Aktuelle Uhrzeit für diese Liga merken
+      _lastActivityPings[leagueId] = now;
+      print('Aktivität für Liga $leagueId aktualisiert.');
+    } catch (error) {
+      print('Fehler beim Aktualisieren der Liga-Aktivität: $error');
+    }
+  }
 
   Future<void> saveSpieltag(int round, String status, int seasonId) async {
     try {
@@ -1277,8 +1309,6 @@ class SupabaseService {
       return [];
     }
   }
-// Füge das zu deiner SupabaseService Klasse hinzu
-
 
   Future<List<Map<String, dynamic>>> fetchUserLeaguePlayers(int leagueId) async {
     final user = supabase.auth.currentUser;
@@ -1288,32 +1318,24 @@ class SupabaseService {
       final response = await supabase
           .from('league_players')
           .select('''
-          formation_index, 
-          player:spieler(
-            *, 
-            gesamtstatistiken,
-            season_players!inner(team:team(*))
-          )
-        ''')
+            player:spieler (
+              *,
+              season_players(team(image_url)),
+              gesamtstatistiken
+            )
+          ''')
           .eq('league_id', leagueId)
           .eq('user_id', user.id);
 
-      // Wir flachen die Struktur etwas ab, damit der Rest der App wie gewohnt funktioniert
-      return List<Map<String, dynamic>>.from(response.map((e) {
-        final player = e['player'] as Map<String, dynamic>;
-        final team = (player['season_players'] as List).isNotEmpty
-            ? player['season_players'][0]['team']
-            : null;
+      // Wir "packen" das Ergebnis aus, damit wir direkt eine Liste von Spielern haben
+      // (Die Datenbank gibt uns eine Liste von { "player": { ... } } Objekten)
+      final List<Map<String, dynamic>> players = List<Map<String, dynamic>>.from(
+          response.map((e) => e['player'])
+      );
 
-        return {
-          ...player,
-          'formation_index': e['formation_index'], // <--- WICHTIG: Der Index aus der DB
-          'team_image_url': team?['image_url'],
-          'team_name': team?['name'],
-        };
-      }));
+      return players;
     } catch (e) {
-      print('Fehler beim Laden des Kaders: $e');
+      print("Fehler beim Laden der eigenen Spieler: $e");
       return [];
     }
   }
@@ -1364,7 +1386,7 @@ class SupabaseService {
       // Man könnte hier einzeln updaten, aber RPC ist viel besser.
     }
   }
-  // 2. Gebot abgeben
+
   Future<void> placeBid(int transferId, int amount) async {
     try {
       await supabase.from('transfer_bids').insert({
@@ -1378,7 +1400,17 @@ class SupabaseService {
     }
   }
 
-  // 3. Sofortkauf (RPC Aufruf)
+  Future<void> withdrawBid(int transferId) async {
+    final user = supabase.auth.currentUser;
+    if (user == null) throw Exception("Nicht eingeloggt");
+
+    await supabase
+        .from('transfer_bids')
+        .delete()
+        .eq('transfer_id', transferId)
+        .eq('bidder_id', user.id);
+  }
+
   Future<void> buyPlayerNow(int transferId) async {
     try {
       await supabase.rpc('buy_player_now', params: {'p_transfer_id': transferId});
@@ -1388,30 +1420,21 @@ class SupabaseService {
     }
   }
 
-  // 4. Spieler auf den Markt stellen (Verkaufen)
-  Future<void> listPlayerOnMarket(int leagueId, int playerId, int price) async {
+  Future<void> listPlayerOnMarket(int leagueId, int playerId, int buyNowPrice) async {
     final user = supabase.auth.currentUser;
-    if (user == null) return;
+    if (user == null) throw Exception("Nicht eingeloggt");
 
-    // Hole aktuellen Marktwert für min_bid
-    final playerRes = await supabase.from('spieler').select('marktwert').eq('id', playerId).single();
-    final int mw = playerRes['marktwert'];
-
-    await supabase.from('transfer_market').insert({
-      'league_id': leagueId,
-      'player_id': playerId,
-      'seller_id': user.id,
-      'buy_now_price': price, // User Wunschpreis
-      'min_bid_price': mw,    // Startgebot ist immer Marktwert
-      'expires_at': DateTime.now().add(const Duration(hours: 24)).toIso8601String(),
-      'is_active': true,
+    // Wir rufen jetzt die SQL Funktion auf, die:
+    // 1. Den Marktwert ermittelt
+    // 2. Den Spieler in den Transfermarkt einträgt
+    // 3. Den Spieler SOFORT aus deinem Team löscht
+    await supabase.rpc('list_player_for_sale', params: {
+      'p_league_id': leagueId,
+      'p_player_id': playerId,
+      'p_buy_now_price': buyNowPrice,
     });
   }
 
-  // 5. TEST-FUNKTION: System-Spieler generieren (ruft deinen RPC auf)
-// lib/data_service.dart
-
-  // 5. TEST-FUNKTION: System-Spieler generieren
   Future<void> simulateSystemTransfers(int leagueId, int seasonId) async { // <--- seasonId hinzugefügt
     await supabase.rpc('generate_daily_transfers', params: {
       'p_league_id': leagueId,
@@ -1419,9 +1442,30 @@ class SupabaseService {
       'p_amount': 5
     });
   }
-  // 1. Transfermarkt laden (Nur aktive Angebote)
+
+  Future<int> fetchUserBudget(int leagueId) async {
+    final user = supabase.auth.currentUser;
+    if (user == null) return 0;
+
+    try {
+      final res = await supabase
+          .from('league_members')
+          .select('budget')
+          .eq('league_id', leagueId)
+          .eq('user_id', user.id)
+          .single();
+      return (res['budget'] as num).toInt();
+    } catch (e) {
+      print("Fehler beim Budget laden: $e");
+      return 0;
+    }
+  }
+
   Future<List<Map<String, dynamic>>> fetchTransferMarket(int leagueId) async {
     try {
+      // Wenn du die Aufräum-Funktion noch drin hast:
+      await supabase.rpc('process_expired_transfers');
+
       final response = await supabase
           .from('transfer_market')
           .select('''
@@ -1430,6 +1474,10 @@ class SupabaseService {
               *,
               season_players(team(image_url)), 
               gesamtstatistiken
+            ),
+            transfer_bids (
+              bidder_id,
+              amount
             )
           ''')
           .eq('league_id', leagueId)
@@ -1441,5 +1489,4 @@ class SupabaseService {
       print("Fehler beim Laden des Transfermarkts: $e");
       return [];
     }
-  }
-}
+  }}

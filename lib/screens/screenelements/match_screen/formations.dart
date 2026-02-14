@@ -46,8 +46,9 @@ class PlayerAvatar extends StatelessWidget {
   final bool showHoverEffect;
   final bool showValidTargetEffect;
 
-  // NEU: Steuert, ob Details (Name, Rating, Events) angezeigt werden
   final bool showDetails;
+  final bool showPositions;
+
 
   const PlayerAvatar({
     super.key,
@@ -56,7 +57,8 @@ class PlayerAvatar extends StatelessWidget {
     this.radius = 18,
     this.showHoverEffect = false,
     this.showValidTargetEffect = false,
-    this.showDetails = true, // Standardmäßig AN (für das Spielfeld)
+    this.showDetails = true,
+    this.showPositions = true
   });
 
   Widget _buildEventIcon(IconData icon, Color color, int count, double size) {
@@ -149,7 +151,7 @@ class PlayerAvatar extends StatelessWidget {
                 ),
 
                 // 3. Positions-Badges (IMMER ANZEIGEN, auch in Liste)
-                if (!isPlaceholder && positions.isNotEmpty)
+                if (!isPlaceholder && positions.isNotEmpty && showPositions)
                   ...List.generate(positions.length, (index) {
                     // Positionierung am Kreisbogen
                     const double startAngle = 225 * (pi / 180);
@@ -269,7 +271,6 @@ class PlayerAvatar extends StatelessWidget {
   final List<PlayerInfo>? substitutes;
   final void Function(PlayerInfo fieldSlot, PlayerInfo benchPlayer)? onPlayerDrop;
   final void Function(PlayerInfo player)? onMoveToBench;
-  // NEU: Die Liste der Rollen für die Slots (z.B. ["TW", "RV", ...])
   final List<String> requiredPositions;
 
   const MatchFormationDisplay({
