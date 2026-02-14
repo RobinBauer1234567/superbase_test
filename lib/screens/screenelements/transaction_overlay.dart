@@ -14,8 +14,7 @@ class TransactionOverlay extends StatefulWidget {
 
   // NEU: Optionale Parameter für bestehende Gebote
   final int? currentBid;
-  final VoidCallback? onWithdraw;
-
+  final Future<void> Function()? onWithdraw;
   const TransactionOverlay({
     super.key,
     required this.player,
@@ -38,38 +37,67 @@ class _TransactionOverlayState extends State<TransactionOverlay> {
   int? _activeBid;
 
   @override
+// lib/screens/screenelements/transaction_overlay.dart
+
+  @override
   void initState() {
     super.initState();
-    _activeBid = widget.currentBid; // Das Gebot vom Widget übernehmen
+    _activeBid = widget.currentBid;
 
     int initValue = 0;
+
+    // Sicherheit: Falls basePrice negativ sein sollte
+    int safeBase = widget.basePrice > 0 ? widget.basePrice : 0;
+
     if (widget.type == TransactionType.bid) {
-      initValue = widget.basePrice + 1;
+      // Wenn schon ein Gebot da ist, nimm das, sonst Mindestgebot + 1
+      if (_activeBid != null) {
+        initValue = _activeBid!;
+      } else {
+        initValue = safeBase + 1;
+      }
     } else if (widget.type == TransactionType.sell) {
-      initValue = widget.basePrice + 3000000;
+      // Beim Verkaufen: Marktwert + 3 Mio als Vorschlag
+      initValue = safeBase + 3000000;
     }
 
-    _controller = TextEditingController(text: initValue > 0 ? _currency.format(initValue).trim() : '');
+    // Formatierung in try-catch, damit das Widget auch bei Locale-Fehlern aufgeht
+    try {
+      String text = initValue > 0 ? _currency.format(initValue).trim() : '';
+      _controller = TextEditingController(text: text);
+    } catch (e) {
+      // Fallback: Leeres Feld, aber kein Absturz
+      _controller = TextEditingController(text: '');
+    }
   }
-
   @override
   void dispose() {
     _controller.dispose();
     super.dispose();
   }
 
-  void _handleWithdraw() {
+  Future<void> _handleWithdraw() async {
     if (widget.onWithdraw != null) {
-      widget.onWithdraw!(); // Datenbank-Logik im Parent aufrufen
-      setState(() {
-        _activeBid = null; // UI auf Eingabe-Modus umschalten
-        // Optional: Controller zurücksetzen auf Mindestgebot
-        int resetValue = widget.basePrice + 1;
-        _controller.text = _currency.format(resetValue).trim();
-      });
+      try {
+        // WARTEN, bis die Datenbank fertig ist
+        await widget.onWithdraw!();
+
+        // Erst wenn kein Fehler kam, aktualisieren wir die UI
+        if (mounted) {
+          setState(() {
+            _activeBid = null; // UI wechselt zurück zum Eingabefeld
+            // Controller zurücksetzen (optional)
+            int resetValue = widget.basePrice + 1;
+            _controller.text = _currency.format(resetValue).trim();
+          });
+        }
+      } catch (e) {
+        // Falls ein Fehler passiert (z.B. Internet weg), bleiben wir im "Gebot"-Modus
+        // und zeigen den Fehler an (das macht meistens schon der Parent-Screen)
+        debugPrint("Fehler beim Zurückziehen: $e");
+      }
     }
   }
-
   void _handleConfirm() {
     if (widget.type == TransactionType.buy) {
       widget.onConfirm(widget.basePrice);

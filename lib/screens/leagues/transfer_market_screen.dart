@@ -144,26 +144,20 @@ class _TransferMarketScreenState extends State<TransferMarketScreen> {
     }
   }
 
-// --- 1. REPARATUR: FEHLERANZEIGE BEIM VERKAUFEN ---
+
   Future<void> _showPriceInputDialog(Map<String, dynamic> playerMap) async {
-    // NEU: Wir nutzen deine existierende Helper-Funktion, um Punkte & Team-Bild zu holen!
-    // Da _extractPlayerData normalerweise das komplette Offer-Objekt erwartet,
-    // aber hier nur der "rohe" Spieler reinkommt, funktioniert es trotzdem,
-    // da die Struktur von playerMap dank Schritt 1 jetzt passend ist.
+    // 1. SICHERHEIT: Marktwert sauber in int umwandeln (fängt Doubles & Nulls ab)
+    final int safeMarktwert = (playerMap['marktwert'] as num?)?.toInt() ?? 0;
+
     final extraData = _extractPlayerData(playerMap);
 
     final player = PlayerInfo(
       id: playerMap['id'],
-      name: playerMap['name'],
+      name: playerMap['name'] ?? 'Unbekannt', // Fallback für Namen
       position: playerMap['position'] ?? '',
       profileImageUrl: playerMap['profilbild_url'],
-
-      // HIER IST DER FIX: Statt 0 nehmen wir den echten Score!
-      rating: extraData['score'],
-
+      rating: extraData['score'] ?? 0,
       goals: 0, assists: 0, ownGoals: 0,
-
-      // Auch das Team-Wappen wird jetzt korrekt angezeigt (falls im Overlay gewünscht)
       teamImageUrl: extraData['teamImageUrl'],
     );
 
@@ -172,7 +166,7 @@ class _TransferMarketScreenState extends State<TransferMarketScreen> {
       builder: (ctx) => TransactionOverlay(
         player: player,
         type: TransactionType.sell,
-        basePrice: playerMap['marktwert'] ?? 0,
+        basePrice: safeMarktwert, // Hier nutzen wir den sicheren Wert
         onConfirm: (price) async {
           try {
             await Provider.of<DataManagement>(context, listen: false)
@@ -182,7 +176,7 @@ class _TransferMarketScreenState extends State<TransferMarketScreen> {
               ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text("Spieler erfolgreich auf den Markt gesetzt!"), backgroundColor: Colors.green)
               );
-              Navigator.pop(context); // Schließt das BottomSheet (Spieler-Liste)
+              Navigator.pop(context); // Schließt das BottomSheet
               _loadMarket(); // Lädt den Markt neu
             }
           } catch (e) {
@@ -195,8 +189,7 @@ class _TransferMarketScreenState extends State<TransferMarketScreen> {
         },
       ),
     );
-  }
-  void _openBuyOverlay(Map<String, dynamic> offer, PlayerInfo playerInfo) {
+  }  void _openBuyOverlay(Map<String, dynamic> offer, PlayerInfo playerInfo) {
     showDialog(
       context: context,
       builder: (ctx) => TransactionOverlay(
@@ -231,16 +224,25 @@ class _TransferMarketScreenState extends State<TransferMarketScreen> {
 
         // CALLBACK: Gebot zurückziehen
         onWithdraw: () async {
-          // Hier KEIN Navigator.pop()! Das Overlay bleibt offen.
-          // Wir führen nur die Datenbank-Operation aus.
-          await Provider.of<DataManagement>(context, listen: false)
-              .supabaseService
-              .withdrawBid(offer['id']);
+          try {
+            // Wir warten hier auf die Datenbank
+            await Provider.of<DataManagement>(context, listen: false)
+                .supabaseService
+                .withdrawBid(offer['id']);
 
-          if (mounted) {
-            ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(content: Text("Gebot zurückgezogen. Du kannst nun ein neues abgeben."), duration: Duration(seconds: 1))
-            );
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text("Gebot zurückgezogen."), duration: Duration(seconds: 1))
+              );
+            }
+          } catch (e) {
+            // WICHTIG: Fehler anzeigen UND weiterwerfen, damit das Overlay nicht "umschaltet"
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text("Fehler: $e"), backgroundColor: Colors.red)
+              );
+            }
+            rethrow; // <--- Das sorgt dafür, dass das Overlay weiß: "Achtung, Fehler!"
           }
         },
 
