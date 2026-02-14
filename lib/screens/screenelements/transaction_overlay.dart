@@ -178,105 +178,111 @@ class _TransactionOverlayState extends State<TransactionOverlay> {
               ),
             ),
 
-            // --- UNTERER BEREICH ---
             Padding(
               padding: const EdgeInsets.fromLTRB(24, 24, 24, 32),
               child: Column(
                 children: [
+                  // Dynamischer Titel
                   Text(
                     widget.type == TransactionType.buy ? "SOFORTKAUF" :
-                    (showActiveBid ? "AKTUELLES GEBOT" : (widget.type == TransactionType.bid ? "GEBOT ABGEBEN" : "VERKAUFEN")),
+                    (showActiveBid ? "GEBOT BEARBEITEN" : (widget.type == TransactionType.bid ? "GEBOT ABGEBEN" : "VERKAUFEN")),
                     style: TextStyle(fontSize: 13, fontWeight: FontWeight.bold, color: Colors.grey.shade500, letterSpacing: 1.2),
                   ),
                   const SizedBox(height: 8),
 
-                  if (widget.type == TransactionType.buy)
-                    Text(
+                  // Info Text
+                  Text(
+                    widget.type == TransactionType.buy
+                        ? "Kaufen für ${displayFormat.format(widget.basePrice)}?"
+                        : widget.type == TransactionType.bid
+                        ? "Mindestgebot: ${displayFormat.format(widget.basePrice)}"
+                        : "Lege einen Preis fest.",
+                    style: const TextStyle(fontSize: 15, color: Colors.black87),
+                    textAlign: TextAlign.center,
+                  ),
 
-                          "Kaufen für ${displayFormat.format(widget.basePrice)}?",
-                      style: const TextStyle(fontSize: 15, color: Colors.black87),
+                  const SizedBox(height: 24),
+
+                  // --- EINGABEFELD ---
+                  // Wir zeigen das Feld jetzt IMMER an (außer bei Sofortkauf)
+                  // Aber wir stylen es unterschiedlich, je nachdem ob 'showActiveBid' true ist.
+                  if (widget.type != TransactionType.buy) ...[
+                    TextField(
+                      controller: _controller,
+                      keyboardType: TextInputType.number,
                       textAlign: TextAlign.center,
-                    ),
-
-                  const SizedBox(height: 10),
-
-                  // --- ENTWEDER: ANZEIGE DES AKTUELLEN GEBOTS ---
-                  if (showActiveBid)
-                    Container(
-                      padding: const EdgeInsets.symmetric(vertical: 16, horizontal: 20),
-                      decoration: BoxDecoration(
-                        color: Colors.blue.shade50, // Farbig hinterlegt (Blau)
-                        borderRadius: BorderRadius.circular(16),
-                        border: Border.all(color: Colors.blue.shade100),
+                      style: TextStyle(
+                          fontSize: 28,
+                          fontWeight: FontWeight.bold,
+                          // Wenn aktives Gebot: Text Blau, sonst Schwarz
+                          color: showActiveBid ? Colors.blue.shade900 : Colors.black87
                       ),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                        children: [
-                          Column(
-                            crossAxisAlignment: CrossAxisAlignment.start,
-                            children: [
-                              Text(
-                                displayFormat.format(_activeBid),
-                                style: TextStyle(fontSize: 24, fontWeight: FontWeight.bold, color: Colors.blue.shade900),
-                              ),
-                            ],
-                          ),
-                          // Der Button zum Entfernen
-                          IconButton(
+                      inputFormatters: [
+                        FilteringTextInputFormatter.digitsOnly,
+                        ThousandsSeparatorInputFormatter(),
+                      ],
+                      decoration: InputDecoration(
+                        prefixText: "€ ",
+                        filled: true,
+                        // HIER: Hintergrundfarbe ändern (Blau vs Grau)
+                        fillColor: showActiveBid ? Colors.blue.shade50 : Colors.grey.shade50,
+
+                        // HIER: Blauer Rand bei aktivem Gebot
+                        enabledBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: showActiveBid ? BorderSide(color: Colors.blue.shade200) : BorderSide.none
+                        ),
+                        focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            borderSide: showActiveBid ? BorderSide(color: Colors.blue.shade400, width: 2) : BorderSide.none // Beim Fokus etwas dicker
+                        ),
+                        border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
+
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+
+                        // HIER: Der "Zurückziehen"-Button IM Feld
+                        suffixIcon: showActiveBid
+                            ? Padding(
+                          padding: const EdgeInsets.only(right: 8.0),
+                          child: IconButton(
                             onPressed: _handleWithdraw,
-                            icon: const Icon(Icons.delete_outline, size: 28),
+                            icon: const Icon(Icons.delete_outline),
                             color: Colors.red.shade400,
+                            tooltip: "Gebot zurückziehen",
                           ),
-                        ],
+                        )
+                            : null,
                       ),
-                    )
-
-                  // --- ODER: DAS EINGABEFELD & BUTTONS ---
-                  else ...[
-                    if (widget.type != TransactionType.buy) ...[
-                      TextField(
-                        controller: _controller,
-                        keyboardType: TextInputType.number,
-                        textAlign: TextAlign.center,
-                        style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold, color: Colors.black87),
-                        inputFormatters: [
-                          FilteringTextInputFormatter.digitsOnly,
-                          ThousandsSeparatorInputFormatter(),
-                        ],
-                        decoration: InputDecoration(
-                          prefixText: "€ ",
-                          filled: true,
-                          fillColor: Colors.grey.shade50,
-                          border: OutlineInputBorder(borderRadius: BorderRadius.circular(16), borderSide: BorderSide.none),
-                          contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-                        ),
-                      ),
-                      const SizedBox(height: 24),
-                    ],
-                    if (widget.type == TransactionType.buy)
-                      _SwipeToConfirm(
-                        onConfirmed: _handleConfirm,
-                        label: "Ziehen zum Kaufen",
-                      )
-                    else
-                      SizedBox(
-                        width: double.infinity,
-                        height: 52,
-                        child: ElevatedButton(
-                          onPressed: _handleConfirm,
-                          style: ElevatedButton.styleFrom(
-                            backgroundColor: widget.type == TransactionType.sell ? Colors.blue.shade700 : Colors.green.shade700,
-                            foregroundColor: Colors.white,
-                            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                            elevation: 0,
-                          ),
-                          child: Text(
-                            widget.type == TransactionType.sell ? "ANBIETEN" : "GEBOT BESTÄTIGEN",
-                            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, letterSpacing: 0.5),
-                          ),
-                        ),
-                      ),
+                    ),
+                    const SizedBox(height: 24),
                   ],
+
+                  // --- BUTTONS ---
+                  if (widget.type == TransactionType.buy)
+                    _SwipeToConfirm(
+                      onConfirmed: _handleConfirm,
+                      label: "Ziehen zum Kaufen",
+                    )
+                  else
+                    SizedBox(
+                      width: double.infinity,
+                      height: 52,
+                      child: ElevatedButton(
+                        onPressed: _handleConfirm,
+                        style: ElevatedButton.styleFrom(
+                          // Button Farbe: Blau beim Verkaufen, sonst Grün (oder Orange für Gebot)
+                          backgroundColor: widget.type == TransactionType.sell ? Colors.blue.shade700 : Colors.green.shade700,
+                          foregroundColor: Colors.white,
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                          elevation: 0,
+                        ),
+                        child: Text(
+                          widget.type == TransactionType.sell ? "ANBIETEN" :
+                          (showActiveBid ? "GEBOT ÄNDERN" : "GEBOT BESTÄTIGEN"), // Text ändert sich!
+                          style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, letterSpacing: 0.5),
+                        ),
+                      ),
+                    ),
                 ],
               ),
             ),
