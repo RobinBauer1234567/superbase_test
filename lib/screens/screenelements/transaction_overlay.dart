@@ -12,7 +12,7 @@ class TransactionOverlay extends StatefulWidget {
   final int basePrice;
   final Function(int finalPrice) onConfirm;
 
-  // NEU: Optionale Parameter für bestehende Gebote
+  final VoidCallback? onQuickSell;
   final int? currentBid;
   final Future<void> Function()? onWithdraw;
   const TransactionOverlay({
@@ -23,6 +23,7 @@ class TransactionOverlay extends StatefulWidget {
     required this.onConfirm,
     this.currentBid,
     this.onWithdraw,
+    this.onQuickSell, // <-- NEU
   });
 
   @override
@@ -75,6 +76,12 @@ class _TransactionOverlayState extends State<TransactionOverlay> {
     _controller.dispose();
     super.dispose();
   }
+  Future<void> _handleQuickSell() async {
+    if (widget.onQuickSell != null) {
+      widget.onQuickSell!();
+      // Wir schließen hier NICHT selbst, das macht der Parent (wie beim Bieten)
+    }
+  }
 
   Future<void> _handleWithdraw() async {
     if (widget.onWithdraw != null) {
@@ -98,25 +105,26 @@ class _TransactionOverlayState extends State<TransactionOverlay> {
       }
     }
   }
+// lib/screens/screenelements/transaction_overlay.dart
+
   void _handleConfirm() {
     if (widget.type == TransactionType.buy) {
       widget.onConfirm(widget.basePrice);
-      Navigator.pop(context);
+      // Navigator.pop(context); // ENTFERNEN
     } else {
       String cleanText = _controller.text.replaceAll('.', '');
       final price = int.tryParse(cleanText) ?? 0;
 
       if (price > 0) {
         widget.onConfirm(price);
-        Navigator.pop(context);
+        // Navigator.pop(context); // ENTFERNEN
       }
     }
   }
-
   @override
   Widget build(BuildContext context) {
     final displayFormat = NumberFormat.currency(locale: 'de_DE', symbol: '€', decimalDigits: 0);
-
+    final int quickSellPrice = (widget.basePrice * 0.95).floor();
     // Prüfen, ob wir die "Aktuelles Gebot"-Ansicht zeigen sollen
     final bool showActiveBid = widget.type == TransactionType.bid && _activeBid != null;
 
@@ -311,6 +319,31 @@ class _TransactionOverlayState extends State<TransactionOverlay> {
                         ),
                       ),
                     ),
+                  if (widget.type == TransactionType.sell && widget.onQuickSell != null) ...[
+                    const SizedBox(height: 12),
+                    SizedBox(
+                      width: double.infinity,
+                      child: OutlinedButton.icon(
+                        onPressed: _handleQuickSell,
+                        icon: const Icon(Icons.flash_on, size: 18, color: Colors.orange),
+                        label: Text(
+                          "Sofortverkauf: ${displayFormat.format(quickSellPrice)}",
+                          style: TextStyle(color: Colors.orange.shade900, fontWeight: FontWeight.bold),
+                        ),
+                        style: OutlinedButton.styleFrom(
+                          side: BorderSide(color: Colors.orange.shade200),
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                          backgroundColor: Colors.orange.shade50.withOpacity(0.5),
+                        ),
+                      ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      "Verkauf an System (95% MW)",
+                      style: TextStyle(fontSize: 10, color: Colors.grey.shade500),
+                    )
+                  ]
                 ],
               ),
             ),

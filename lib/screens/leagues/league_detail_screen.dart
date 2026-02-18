@@ -6,6 +6,7 @@ import 'package:premier_league/screens/leagues/league_team_screen.dart';
 import 'package:premier_league/screens/leagues/transfer_market_screen.dart';
 import 'package:provider/provider.dart';
 import 'package:premier_league/viewmodels/data_viewmodel.dart';
+import 'package:premier_league/screens/leagues/activity_feed_tab.dart';
 
 
 class LeagueDetailScreen extends StatefulWidget {
@@ -55,7 +56,7 @@ class _LeagueDetailScreenState extends State<LeagueDetailScreen> {
         ),
         body: TabBarView(
           children: [
-            const Center(child: Text('Hier erscheinen bald die letzten Aktivitäten der Liga.')),
+            ActivityFeedTab(leagueId: widget.league['id']),
             TransferMarketScreen(leagueId: widget.league['id']),
             LeagueTeamScreen(leagueId: widget.league['id']), // Statt Text-Placeholder
             RankingScreen(leagueId: widget.league['id']),

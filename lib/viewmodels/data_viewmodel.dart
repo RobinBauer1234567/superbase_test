@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:pool/pool.dart';
 import 'package:premier_league/data_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 class DataManagement {
   final SupabaseClient _supabase = Supabase.instance.client;
@@ -33,86 +34,99 @@ class DataManagement {
     print('finish');
   }
 
-
   Future<void> updateData() async {
-    // Spieltage abrufen und chronologisch sortieren
-    List<int> spieltage = await supabaseService.fetchAllSpieltagIds(seasonId);
-    spieltage.sort();
-    print('Update für Saison $seasonId gestartet');
+    print('🔍 Update-Check gestartet...');
 
-    // Der Pool bleibt nützlich, um die Spiele *innerhalb* eines Spieltags parallel zu verarbeiten
-    final pool = Pool(5);
+    // 1. LOKALE SPERRE PRÜFEN (Das Gedächtnis des Handys)
+    // Bevor wir überhaupt das Internet nutzen, schauen wir, ob wir noch "Strafzeit" haben.
+    if (await _isDeviceBanned()) {
+      print('📵 LOKALE SPERRE: Dieses Gerät pausiert API-Anfragen wegen vorheriger Limits.');
+      return; // Hier brechen wir ab, ohne Server-Last zu erzeugen.
+    }
 
-    // Sequenzielle Schleife über die sortierten Spieltage
-    for (final spieltagId in spieltage) {
-      final response = await _supabase
-          .from('spieltag')
-          .select('status')
-          .eq('round', spieltagId)
-          .eq('season_id', seasonId)
-          .maybeSingle();
+    // 2. LOCK PRÜFEN (Die Datenbank-Ampel)
+    bool permissionGranted = await supabaseService.requestSyncPermission();
+    if (!permissionGranted) {
+      print('⏳ Kein Sync-Token erhalten (Globaler Lock).');
+      return;
+    }
 
-      // Überspringe bereits als 'final' markierte Spieltage
-      if (response == null || response['status'] == 'final') {
-        continue;
+    print('🚀 Sync-Token erhalten! Frage Datenbank nach Arbeit...');
+
+    try {
+      // Vorarbeiter fragen...
+      final response = await _supabase.rpc('get_pending_updates', params: {
+        'p_season_id': seasonId
+      });
+
+      final List<dynamic> pendingMatches = response as List<dynamic>;
+
+      if (pendingMatches.isEmpty) {
+        print('✅ Alles aktuell.');
+        return;
       }
 
-      final spieleResponse = await _supabase
-          .from('spiel')
-          .select('id, status, heimteam_id, auswärtsteam_id')
-          .eq('round', spieltagId)
-          .eq('season_id', seasonId);
+      print('📋 Auftrag: ${pendingMatches.length} Spiele.');
 
-      List<String> spielStatusSpieltag = [];
-      List<Future> gameUpdateFutures = [];
+      // Pool auf 1 setzen (Wichtig für Sicherheit!)
+      final pool = Pool(1);
+      List<Future> updateFutures = [];
 
-      for (final spielData in spieleResponse) {
-        final future = pool.withResource(() async {
-          int spielId = spielData['id'];
-          String status = spielData['status'] ?? 'unbekannt';
-          int hometeamId = spielData['heimteam_id'] ?? -1;
-          int awayteamId = spielData['auswärtsteam_id'] ?? -1;
+      for (var match in pendingMatches) {
+        updateFutures.add(pool.withResource(() async {
+          int spielId = match['id'];
+          int homeId = match['heimteam_id'];
+          int awayId = match['auswärtsteam_id'];
 
-          if (status != 'final') {
-            String neuerStatus = await getSpielStatus(spielId);
-            if (status != neuerStatus) {
-              await apiService.updateSpielData(seasonId, spielId, neuerStatus);
-              status = neuerStatus;
-            }
-            if (neuerStatus != 'nicht gestartet') {
-              await apiService.fetchAndStoreSpielerundMatchratings(
-                  spielId, hometeamId, awayteamId, seasonId);
-            }
+          String neuerStatus = await getSpielStatus(spielId);
+          await apiService.updateSpielData(seasonId, spielId, neuerStatus);
+
+          if (neuerStatus != 'nicht gestartet') {
+            await apiService.fetchAndStoreSpielerundMatchratings(
+                spielId, homeId, awayId, seasonId);
           }
-          spielStatusSpieltag.add(status);
-        });
-        gameUpdateFutures.add(future);
+        }));
       }
 
-      await Future.wait(gameUpdateFutures);
+      await Future.wait(updateFutures);
+      print('🏁 Update abgeschlossen.');
 
-      // Bestimme den neuen Gesamtstatus des Spieltags
-      String neuerSpieltagStatus;
-      if (spielStatusSpieltag.every((s) => s == 'final')) {
-        neuerSpieltagStatus = 'final';
-      } else if (spielStatusSpieltag.every((s) => s == 'nicht gestartet')) {
-        neuerSpieltagStatus = 'nicht gestartet';
-      } else if (spielStatusSpieltag.any((s) => s == 'nicht gestartet') ||
-          spielStatusSpieltag.any((s) => s == 'läuft')) {
-        neuerSpieltagStatus = 'läuft';
+    } catch (e) {
+      // 3. SPERRE SETZEN BEI FEHLER
+      // Wenn wir hier den spezifischen API-Fehler fangen, aktivieren wir die lokale Sperre.
+      if (e.toString().contains('API_LIMIT_REACHED')) {
+        print('🛑 API-Limit erkannt! Aktiviere lokale Sperre für 30 Minuten.');
+        await _setLocalApiBan(Duration(days: 1));
       } else {
-        neuerSpieltagStatus = 'beendet';
-      }
-
-      await supabaseService.updateSpieltagStatus(spieltagId, neuerSpieltagStatus, seasonId);
-      print('Spieltag $spieltagId wurde geupdated auf Status: $neuerSpieltagStatus');
-
-      if (neuerSpieltagStatus == 'nicht gestartet') {
-        print('Spieltag $spieltagId ist noch nicht gestartet. Update-Prozess wird beendet.');
-        break; // Stoppt die weitere Ausführung der for-Schleife
+        print('❌ Fehler beim Smart Update: $e');
       }
     }
-    print('Update für Saison $seasonId beendet.');
+  }
+
+  Future<bool> _isDeviceBanned() async {
+    final prefs = await SharedPreferences.getInstance();
+    final banTimestamp = prefs.getInt('api_ban_until');
+
+    if (banTimestamp == null) return false;
+
+    final banUntil = DateTime.fromMillisecondsSinceEpoch(banTimestamp);
+    final now = DateTime.now();
+
+    if (now.isBefore(banUntil)) {
+      final remaining = banUntil.difference(now);
+      print('   -> Sperre aktiv für noch ${remaining.inMinutes} Minuten.');
+      return true;
+    } else {
+      // Sperre ist abgelaufen, wir löschen sie
+      await prefs.remove('api_ban_until');
+      return false;
+    }
+  }
+
+  Future<void> _setLocalApiBan(Duration duration) async {
+    final prefs = await SharedPreferences.getInstance();
+    final banUntil = DateTime.now().add(duration).millisecondsSinceEpoch;
+    await prefs.setInt('api_ban_until', banUntil);
   }
 
   Future<String> getSpielStatus(spielId) async {
@@ -134,10 +148,26 @@ class DataManagement {
     return spielstatus;
   }
 
-  Future<void> updateRatingsForSingleGame(int spielId) async {
-    // Diese Funktion bleibt gleich, da sie sich nur auf ein spezifisches Spiel bezieht.
-    print('Starte Update für Spiel-ID: $spielId');
+  Future<void> updateRatingsForSingleGame(int spielId, {String? currentStatus}) async {
+    print('👆 Anforderung: Update für Spiel $spielId (Status: $currentStatus)');
+
+    // 1. LOKALE SPERRE PRÜFEN
+    if (await _isDeviceBanned()) {
+      print('📵 Update blockiert: Gerät hat API-Sperre.');
+      return;
+    }
+
+    if (currentStatus != null) {
+      bool isFinished = currentStatus == 'FT' || currentStatus == 'AET' || currentStatus == 'Ended';
+
+      if (isFinished) {
+        print('🛑 Spiel ist bereits beendet (FT). Sparre API-Call und breche ab.');
+        return; // Hier springen wir sofort raus!
+      }
+    }
+
     try {
+      // Wir holen kurz die Team-IDs aus der lokalen DB (um API-Calls zu sparen)
       final spielResponse = await _supabase
           .from('spiel')
           .select('heimteam_id, auswärtsteam_id')
@@ -148,15 +178,31 @@ class DataManagement {
       final awayteamId = spielResponse['auswärtsteam_id'];
 
       if (hometeamId == null || awayteamId == null) {
-        print('Fehler: Team-IDs für Spiel $spielId konnten nicht gefunden werden.');
+        print('Fehler: Team-IDs nicht gefunden.');
         return;
       }
 
-      await apiService.fetchAndStoreSpielerundMatchratings(spielId, hometeamId, awayteamId, seasonId);
+      // 2. Status Update (Ist das Spiel schon vorbei?)
+      String neuerStatus = await getSpielStatus(spielId);
+      await apiService.updateSpielData(seasonId, spielId, neuerStatus);
 
-      print('Update für Spiel-ID: $spielId erfolgreich abgeschlossen.');
-    } catch (error) {
-      print('Fehler beim Aktualisieren der Ratings für Spiel $spielId: $error');
+      // 3. Lineups & Ratings laden (Der wichtige Teil)
+      if (neuerStatus != 'nicht gestartet') {
+        await apiService.fetchAndStoreSpielerundMatchratings(
+            spielId, hometeamId, awayteamId, seasonId
+        );
+      }
+
+      print('✅ Manuelles Update für Spiel $spielId fertig.');
+
+    } catch (e) {
+      // 4. FEHLER ABFANGEN & SPERREN
+      if (e.toString().contains('API_LIMIT_REACHED')) {
+        print('🛑 API-Limit beim manuellen Update! Aktiviere Sperre.');
+        await _setLocalApiBan(const Duration(minutes: 30));
+      } else {
+        print('❌ Fehler beim manuellen Update: $e');
+      }
     }
   }
 }

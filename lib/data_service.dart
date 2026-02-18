@@ -3,6 +3,7 @@ import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:math';
+import 'package:premier_league/models/league_activity.dart';
 
 class ApiService {
   final String baseUrl = 'https://www.sofascore.com/api/v1';
@@ -136,59 +137,35 @@ class ApiService {
 
   Future<void> fetchAndStoreSpielerundMatchratings(int spielId, int hometeamId, int awayteamId, int seasonId) async {
     final url = 'https://www.sofascore.com/api/v1/event/$spielId/lineups';
-    final response = await http.get(Uri.parse(url));
 
-    // --- KORREKTUR FÜR 404 ---
-    // Wenn die API eine 404 (Not Found) zurückgibt, gibt es (noch) keine Aufstellung.
+    // 1. Abruf mit Bremse (gegen API-Limit)
+    final response = await _throttledGet(url);
+
     if (response.statusCode == 404) {
-      print(">>> INFO bei Spiel $spielId: Keine Aufstellung von API verfügbar (Statuscode: 404). Spiel wird übersprungen.");
-      return; // Beende die Funktion hier, es gibt nichts zu verarbeiten.
+      print(">>> INFO bei Spiel $spielId: Keine Aufstellung verfügbar (404).");
+      return;
     }
-    // --- ENDE KORREKTUR 404 ---
 
     if (response.statusCode == 200) {
       try {
         final parsedJson = json.decode(response.body);
 
         if (parsedJson['home'] == null || parsedJson['away'] == null) {
-          print(">>> FEHLER bei Spiel $spielId: 'home' oder 'away' Sektion in API-Antwort nicht gefunden.");
+          print(">>> FEHLER bei Spiel $spielId: JSON unvollständig.");
           return;
         }
 
-        final String homeFormation = parsedJson['home']?['formation'] ?? 'N/A';
-        final String awayFormation = parsedJson['away']?['formation'] ?? 'N/A';
+        // 2. WICHTIG: Wir nutzen die SQL-Funktion (RPC) statt Dart-Schleifen!
+        // Das repariert auch automatisch die team_id.
+        await supabaseService.uploadMatchLineupRPC(spielId, seasonId, parsedJson);
 
-        // --- KORREKTUR DER REIHENFOLGE ---
-        // 1. Stelle sicher, dass die Formationen in der DB existieren, BEVOR du sie verwendest.
-        await ensureFormationExists(homeFormation);
-        await ensureFormationExists(awayFormation);
-
-        // 2. Jetzt, da die Formationen garantiert existieren, aktualisiere das Spiel.
-        // Der Foreign Key-Fehler wird nicht mehr auftreten.
-        await supabaseService.updateSpielFormation(spielId, homeFormation, awayFormation);
-        // --- ENDE KORREKTUR ---
-
-        List<dynamic> homePlayers = parsedJson['home']['players'] ?? [];
-        List<dynamic> awayPlayers = parsedJson['away']['players'] ?? [];
-
-        if (homePlayers.isEmpty || awayPlayers.isEmpty) {
-          print(">>> WARNUNG bei Spiel $spielId: Eine der Spielerlisten ist leer.");
-        }
-
-        for (int i = 0; i < homePlayers.length; i++) {
-          await processPlayerData(homePlayers[i], hometeamId, spielId, homeFormation, i, seasonId);
-        }
-        for (int i = 0; i < awayPlayers.length; i++) {
-          await processPlayerData(awayPlayers[i], awayteamId, spielId, awayFormation, i, seasonId);
-        }
-        print("--- ERFOLGREICH gespeichert für Spiel-ID: $spielId ---");
+        print("--- Update erfolgreich für Spiel $spielId (via RPC) ---");
 
       } catch (e) {
-        print("!!! KRITISCHER FEHLER bei der Verarbeitung von Spiel $spielId: $e");
+        // Fehler weitergeben für die lokale Sperre (API Limit)
+        if (e.toString().contains('API_LIMIT_REACHED')) rethrow;
+        print("!!! KRITISCHER FEHLER bei Spiel $spielId: $e");
       }
-    } else {
-      print(">>> FEHLER bei Spiel $spielId: Konnte Aufstellung nicht von API laden (Statuscode: ${response.statusCode})");
-      print("https://www.sofascore.com/api/v1/event/$spielId/lineups");
     }
   }
 
@@ -785,7 +762,7 @@ class ApiService {
   }
 
   Future<http.Response> _throttledGet(String url) async {
-    // 1. Pause vor JEDER Anfrage (z.B. 300ms), um die API nicht zu fluten
+    // Kurze Pause, um "nett" zur API zu sein
     await Future.delayed(const Duration(milliseconds: 300));
 
     int retryCount = 0;
@@ -793,20 +770,22 @@ class ApiService {
       try {
         final response = await http.get(Uri.parse(url));
 
-        // Wenn erfolgreich, zurückgeben
         if (response.statusCode == 200) {
           return response;
         }
-        // Wenn wir zu schnell waren (429) oder geblockt wurden (403), länger warten
+        // WICHTIG: Sofortiger Abbruch bei Limit-Fehlern
         else if (response.statusCode == 429 || response.statusCode == 403) {
-          print('⚠️ API-Limit erreicht ($url). Warte 5 Sekunden...');
-          await Future.delayed(const Duration(seconds: 5));
-          retryCount++;
-        } else {
-          // Anderer Fehler -> Abbruch
-          return response;
+          print('🛑 API-Limit erreicht ($url). Breche Update-Prozess sofort ab!');
+          // Wir werfen einen spezifischen Fehler, den wir oben abfangen können
+          throw Exception('API_LIMIT_REACHED');
+        }
+        else {
+          return response; // Andere Fehler (z.B. 404) normal behandeln
         }
       } catch (e) {
+        // Wenn es unser eigener Abbruch-Fehler ist, werfen wir ihn direkt weiter
+        if (e.toString().contains('API_LIMIT_REACHED')) rethrow;
+
         print('Netzwerkfehler: $e. Retry...');
         await Future.delayed(const Duration(seconds: 2));
         retryCount++;
@@ -814,7 +793,6 @@ class ApiService {
     }
     throw Exception('Failed to fetch $url after retries');
   }
-
   Future<int?> _calculateInitialMarketValue(int playerId) async {
     try {
       final response = await _throttledGet('https://www.sofascore.com/api/v1/player/$playerId/events/last/0');
@@ -873,7 +851,6 @@ class ApiService {
 class SupabaseService {
   final SupabaseClient supabase = Supabase.instance.client;
   final Map<int, DateTime> _lastActivityPings = {};
-
   Future<void> updateLeagueActivity(int leagueId) async {
     final now = DateTime.now();
 
@@ -987,8 +964,13 @@ class SupabaseService {
 
   Future<void> saveSpieler(int id, String name, String position, int teamId, String? profilbildUrl, int? marktwert) async {
     try {
-      final updateData = {'id': id, 'name': name, 'position': position};
-      if (profilbildUrl != null) {
+// In lib/data_service.dart -> saveSpieler
+      final updateData = {
+        'id': id,
+        'name': name,
+        'position': position,
+        'team_id': teamId // <--- DAS HAT GEFEHLT!
+      };      if (profilbildUrl != null) {
         updateData['profilbild_url'] = profilbildUrl;
       }
       if (marktwert != null) {
@@ -1489,4 +1471,54 @@ class SupabaseService {
       print("Fehler beim Laden des Transfermarkts: $e");
       return [];
     }
-  }}
+  }
+
+  Stream<List<LeagueActivity>> getLeagueActivities(int leagueId) {
+    return supabase
+        .from('league_activities')
+        .stream(primaryKey: ['id'])
+        .eq('league_id', leagueId)
+        .order('created_at', ascending: false)
+        .limit(50) // Die letzten 50 Aktivitäten
+        .map((data) => data.map((json) => LeagueActivity.fromJson(json)).toList());
+  }
+
+  Future<void> sellPlayerToSystem(int leagueId, int playerId) async {
+    try {
+      await supabase.rpc('quick_sell_player', params: {
+        'p_league_id': leagueId,
+        'p_player_id': playerId,
+      });
+    } catch (e) {
+      print("Fehler beim Schnellverkauf: $e");
+      throw e; // Weiterwerfen für die UI
+    }
+  }
+
+  Future<bool> requestSyncPermission() async {
+    try {
+      // Ruft die SQL-Funktion auf, die wir gerade erstellt haben
+      final bool isAllowed = await supabase.rpc('request_sync_permission');
+      print('Sync Permission Status: $isAllowed');
+      return isAllowed;
+    } catch (e) {
+      print('Fehler beim Abfragen der Sync-Erlaubnis: $e');
+      // Bei Fehler lieber blockieren, um API-Limits zu schützen
+      return false;
+    }
+  }
+
+  Future<void> uploadMatchLineupRPC(int spielId, int seasonId, Map<String, dynamic> rawJson) async {
+    try {
+      await supabase.rpc('process_match_lineups', params: {
+        'p_spiel_id': spielId,
+        'p_season_id': seasonId,
+        'p_raw_json': rawJson,
+      });
+      print('RPC process_match_lineups erfolgreich für Spiel $spielId');
+    } catch (error) {
+      print('!!! FEHLER beim Ausführen des RPC für Spiel $spielId: $error');
+      rethrow; // Fehler weitergeben, damit UI oder Logik reagieren kann
+    }
+  }
+}

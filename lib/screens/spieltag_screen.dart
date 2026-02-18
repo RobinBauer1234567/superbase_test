@@ -112,97 +112,111 @@ class _GameScreenState extends State<GameScreen> {
 
   Future<void> fetchSpieler() async {
     if (!mounted) return;
-    final dataManagement = Provider.of<DataManagement>(context, listen: false);
-    final seasonId = dataManagement.seasonId;
+
+    // Listen initialisieren
+    List<PlayerInfo> finalHomePlayers = [];
+    List<PlayerInfo> finalHomeSubstitutes = [];
+    List<PlayerInfo> finalAwayPlayers = [];
+    List<PlayerInfo> finalAwaySubstitutes = [];
 
     try {
       final heimTeamId = widget.spiel['heimteam_id'];
-      final auswaertsTeamId = widget.spiel['auswärtsteam_id'];
       final spielId = widget.spiel['id'];
 
-      print("--- DEBUG: Starte fetchSpieler für Spiel-ID $spielId in Saison $seasonId ---");
+      print("--- DEBUG: Starte fetchSpieler für Spiel-ID $spielId ---");
 
-      // **FINALE KORRIGIERTE ABFRAGE**
-      final data = await Supabase.instance.client
-          .from('spieler')
-          .select('*, profilbild_url, season_players!inner(team_id), matchrating!inner(formationsindex, match_position, punkte, statistics)')
-          .eq('season_players.season_id', seasonId)
-          .eq('matchrating.spiel_id', spielId)
-          .filter('season_players.team_id', 'in', '($heimTeamId, $auswaertsTeamId)');
+      int versuch = 0;
+      const maxVersuche = 3;
+      bool datenVollstaendig = false;
 
-      print("--- DEBUG: Rohdaten von Supabase erhalten (${data.length} Spieler) ---");
+      while (versuch < maxVersuche) {
+        versuch++;
 
-      List<Map<String, dynamic>> tempHomePlayersData = [];
-      List<Map<String, dynamic>> tempAwayPlayersData = [];
+        // 1. ABFRAGE: Wir holen Matchratings (das ist die Wahrheit für dieses Spiel)
+        final response = await Supabase.instance.client
+            .from('matchrating')
+            .select('*, spieler!inner(*)') // Hole Spieler-Details via Foreign Key
+            .eq('spiel_id', spielId);
 
-      // **ANGEPASSTE DATENVERARBEITUNG**
-      for (var spieler in data) {
-        if (spieler['season_players'] == null || spieler['season_players'].isEmpty) continue;
+        final List<dynamic> ratingsData = response as List<dynamic>;
 
-        final teamId = spieler['season_players'][0]['team_id'];
-        if (teamId == heimTeamId) {
-          tempHomePlayersData.add(spieler);
-        } else {
-          tempAwayPlayersData.add(spieler);
+        // 2. LISTEN LEEREN & FÜLLEN
+        List<Map<String, dynamic>> homeRatings = [];
+        List<Map<String, dynamic>> awayRatings = [];
+
+        for (var entry in ratingsData) {
+          final spieler = entry['spieler'];
+          if (spieler == null) continue;
+
+          // WICHTIG: Wir nutzen die team_id direkt aus dem Spieler-Objekt
+          // (Das haben wir im RPC ja extra gespeichert)
+          final int playerTeamId = spieler['team_id'];
+
+          // Wir bauen uns ein flaches Objekt für die Verarbeitung
+          final processedPlayer = {
+            'id': spieler['id'],
+            'name': spieler['name'],
+            'profilbild_url': spieler['profilbild_url'],
+            'team_id': playerTeamId,
+            'matchrating': entry // Das Rating-Objekt direkt hier speichern
+          };
+
+          if (playerTeamId == heimTeamId) {
+            homeRatings.add(processedPlayer);
+          } else {
+            awayRatings.add(processedPlayer);
+          }
+        }
+
+        // 3. SORTIEREN nach formationsindex
+        int sortByIndex(Map<String, dynamic> a, Map<String, dynamic> b) {
+          final idxA = a['matchrating']['formationsindex'] ?? 99;
+          final idxB = b['matchrating']['formationsindex'] ?? 99;
+          return idxA.compareTo(idxB);
+        }
+        homeRatings.sort(sortByIndex);
+        awayRatings.sort(sortByIndex);
+
+        // 4. CHECK: Startelf vollständig?
+        int homeStarters = homeRatings.where((p) => (p['matchrating']['formationsindex'] ?? 99) < 11).length;
+        int awayStarters = awayRatings.where((p) => (p['matchrating']['formationsindex'] ?? 99) < 11).length;
+
+        print("   📊 Versuch $versuch: Heim ($homeStarters), Gast ($awayStarters)");
+
+        if (homeStarters >= 10 && awayStarters >= 10) {
+          datenVollstaendig = true;
+
+          // 5. MAPPING
+          PlayerInfo mapToInfo(Map<String, dynamic> p) {
+            final mr = p['matchrating'];
+            final stats = mr['statistics'] ?? {};
+            return PlayerInfo(
+              id: p['id'],
+              name: p['name'],
+              position: mr['match_position'] ?? 'N/A',
+              rating: mr['punkte'],
+              profileImageUrl: p['profilbild_url'],
+              goals: (stats['goals'] as int?) ?? 0,
+              assists: (stats['assists'] as int?) ?? 0,
+              ownGoals: (stats['ownGoals'] as int?) ?? 0,
+            );
+          }
+
+          finalHomePlayers = homeRatings.where((p) => p['matchrating']['formationsindex'] < 11).map(mapToInfo).toList();
+          finalHomeSubstitutes = homeRatings.where((p) => p['matchrating']['formationsindex'] >= 11).map(mapToInfo).toList();
+          finalAwayPlayers = awayRatings.where((p) => p['matchrating']['formationsindex'] < 11).map(mapToInfo).toList();
+          finalAwaySubstitutes = awayRatings.where((p) => p['matchrating']['formationsindex'] >= 11).map(mapToInfo).toList();
+
+          break; // Erfolg!
+        }
+
+        // Warten vor Retry
+        if (versuch < maxVersuche) {
+          await Future.delayed(Duration(milliseconds: 500 * versuch));
         }
       }
 
-
-tempHomePlayersData.sort((a, b) {
-        final indexA = a['matchrating']?[0]?['formationsindex'] ?? 99;
-        final indexB = b['matchrating']?[0]?['formationsindex'] ?? 99;
-        return indexA.compareTo(indexB);
-      });
-
-      tempAwayPlayersData.sort((a, b) {
-        final indexA = a['matchrating']?[0]?['formationsindex'] ?? 99;
-        final indexB = b['matchrating']?[0]?['formationsindex'] ?? 99;
-        return indexA.compareTo(indexB);
-      });
-
-      print("\n--- DEBUG: Sortierte Heim-Mannschaft ---");
-      tempHomePlayersData.forEach((p) => print("Index: ${p['matchrating'][0]['formationsindex']}, Name: ${p['name']}"));
-      print("----------------------------------------\n");
-
-      print("\n--- DEBUG: Sortierte Auswärts-Mannschaft ---");
-      tempAwayPlayersData.forEach((p) => print("Index: ${p['matchrating'][0]['formationsindex']}, Name: ${p['name']}"));
-      print("----------------------------------------\n");
-
-      PlayerInfo _mapToPlayerInfo(Map<String, dynamic> spieler) {
-        final ratingData = spieler['matchrating'][0];
-        final stats = ratingData['statistics'] as Map<String, dynamic>? ?? {};
-
-        return PlayerInfo(
-          id: spieler['id'],
-          name: spieler['name'],
-          position: ratingData['match_position'],
-          rating: ratingData['punkte'],
-          profileImageUrl: spieler['profilbild_url'],
-          goals: (stats['goals'] as int?) ?? 0,
-          assists: (stats['assists'] as int?) ?? 0,
-          ownGoals: (stats['ownGoals'] as int?) ?? 0,
-        );
-      }
-
-
-
-      final List<PlayerInfo> finalHomePlayers = tempHomePlayersData
-          .where((s) => s['matchrating'][0]['formationsindex'] < 11)
-          .map(_mapToPlayerInfo)
-          .toList();
-      final List<PlayerInfo> finalHomeSubstitutes = tempHomePlayersData
-          .where((s) => s['matchrating'][0]['formationsindex'] >= 11)
-          .map(_mapToPlayerInfo)
-          .toList();
-      final List<PlayerInfo> finalAwayPlayers = tempAwayPlayersData
-          .where((s) => s['matchrating'][0]['formationsindex'] < 11)
-          .map(_mapToPlayerInfo)
-          .toList();
-      final List<PlayerInfo> finalAwaySubstitutes = tempAwayPlayersData
-          .where((s) => s['matchrating'][0]['formationsindex'] >= 11)
-          .map(_mapToPlayerInfo)
-          .toList();
-
+      if (!mounted) return;
       setState(() {
         homePlayers = finalHomePlayers;
         homeSubstitutes = finalHomeSubstitutes;
@@ -210,16 +224,12 @@ tempHomePlayersData.sort((a, b) {
         awaySubstitutes = finalAwaySubstitutes;
         isLoading = false;
       });
-    } catch (error) {
-      print("Fehler beim Abruf der Spieler: $error");
-      if(mounted) {
-        setState(() {
-          isLoading = false;
-        });
-      }
+
+    } catch (e) {
+      print("❌ Fehler: $e");
+      if (mounted) setState(() => isLoading = false);
     }
   }
-
   Widget _buildSubstitutesContent(List<PlayerInfo> substitutes, Color teamColor) {
     return Card(
       margin: EdgeInsets.zero,

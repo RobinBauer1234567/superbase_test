@@ -176,9 +176,7 @@ class _RadialSegmentChartState extends State<RadialSegmentChart> {
   }
 }
 
-// =================================================================
-// LAYOUT-KLASSE (unverändert)
-// =================================================================
+
 class _ChartLayout {
   final double baseRadius;
   final double maxSegmentRadius;
@@ -199,9 +197,6 @@ class _ChartLayout {
   });
 }
 
-// =================================================================
-// PAINTER-KLASSE (komplett überarbeitet)
-// =================================================================
 class _RadialSegmentPainter extends CustomPainter {
   final List<GroupData> groups;
   final double maxAbsValue;

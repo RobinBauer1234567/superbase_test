@@ -227,7 +227,7 @@ class _TeamScreenState extends State<TeamScreen> with SingleTickerProviderStateM
                   itemPositionsListener: _itemPositionsListener,
                   itemBuilder: (context, index) {
                     final match = _teamMatches[index];
-                    return MatchCard(spiel: match);
+                    return MatchCard(spiel: match, onRefresh: _fetchTeamData);
                   },
                 ),
                 ListView.builder(

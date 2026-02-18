@@ -42,7 +42,9 @@ class _MatchesScreenState extends State<MatchesScreen> {
 
   Future<void> _fetchSpiele() async {
     if (!mounted) return;
-    setState(() => _isLoading = true);
+    if (_spieleProSpieltag.isEmpty) {
+      setState(() => _isLoading = true);
+    }
 
     final dataManagement = Provider.of<DataManagement>(context, listen: false);
     final supabase = Supabase.instance.client;
@@ -181,7 +183,7 @@ class _MatchesScreenState extends State<MatchesScreen> {
               ),
             ),
             ...spieleDesSpieltags
-                .map((spiel) => MatchCard(spiel: spiel))
+                .map((spiel) => MatchCard(spiel: spiel, onRefresh: _fetchSpiele,))
                 .toList(),
             const Divider(height: 20, thickness: 1),
           ],
@@ -193,7 +195,8 @@ class _MatchesScreenState extends State<MatchesScreen> {
 
 class MatchCard extends StatelessWidget {
   final dynamic spiel;
-  const MatchCard({super.key, required this.spiel});
+  final Future<void> Function() onRefresh;
+  const MatchCard({super.key, required this.spiel, required this.onRefresh});
 
   Widget _buildTeamColumn(BuildContext context, dynamic teamData) {
     if (teamData == null || teamData['id'] == null) {
@@ -211,7 +214,7 @@ class MatchCard extends StatelessWidget {
 
     return Expanded(
       child: InkWell(
-        onTap: () {
+        onTap: ()  {
           Navigator.push(
             context,
             MaterialPageRoute(
@@ -293,11 +296,26 @@ class MatchCard extends StatelessWidget {
                 _buildTeamColumn(context, heimTeam),
                 // Score-Block: schmaler und kleinere Schrift als vorher
                 InkWell(
-                  onTap: () {
-                    Navigator.push(
-                      context,
-                      MaterialPageRoute(builder: (context) => GameScreen(spiel: spiel)),
-                    );
+                  onTap: () async {
+                    //ScaffoldMessenger.of(context).showSnackBar(
+                    //  const SnackBar(content: Text('Aktualisiere Spiel...'), duration: Duration(seconds: 1)),
+                    //);
+
+                    // 1. Update in der DB (wartet auf Fertigstellung)
+                    await context.read<DataManagement>().updateRatingsForSingleGame(spiel['id']);
+
+                    // 2. Navigation ZUERST (sofortiges Feedback für den User)
+                    if (context.mounted) {
+                      // Wir warten hier auf die Rückkehr vom GameScreen (await Navigator...)
+                      await Navigator.push(
+                        context,
+                        MaterialPageRoute(builder: (context) => GameScreen(spiel: spiel)),
+                      );
+                    }
+
+                    // 3. Liste aktualisieren (Wenn der User zurückkommt, sind die Daten frisch)
+                    // Das passiert jetzt sicher, da der Context wieder aktiv ist.
+                    await onRefresh();
                   },
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 10.0),
