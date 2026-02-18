@@ -296,26 +296,13 @@ class MatchCard extends StatelessWidget {
                 _buildTeamColumn(context, heimTeam),
                 // Score-Block: schmaler und kleinere Schrift als vorher
                 InkWell(
-                  onTap: () async {
-                    //ScaffoldMessenger.of(context).showSnackBar(
-                    //  const SnackBar(content: Text('Aktualisiere Spiel...'), duration: Duration(seconds: 1)),
-                    //);
-
-                    // 1. Update in der DB (wartet auf Fertigstellung)
-                    await context.read<DataManagement>().updateRatingsForSingleGame(spiel['id']);
-
-                    // 2. Navigation ZUERST (sofortiges Feedback für den User)
-                    if (context.mounted) {
-                      // Wir warten hier auf die Rückkehr vom GameScreen (await Navigator...)
-                      await Navigator.push(
-                        context,
-                        MaterialPageRoute(builder: (context) => GameScreen(spiel: spiel)),
-                      );
-                    }
-
-                    // 3. Liste aktualisieren (Wenn der User zurückkommt, sind die Daten frisch)
-                    // Das passiert jetzt sicher, da der Context wieder aktiv ist.
-                    await onRefresh();
+                  onTap: () {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => GameScreen(spiel: spiel),
+                      ),
+                    );
                   },
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 10.0),

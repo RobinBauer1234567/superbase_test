@@ -84,9 +84,6 @@ class _HomeScreenState extends State<HomeScreen> {
   }
 }
 
-
-// --- START DER KORREKTUREN FÜR GameScreen ---
-
 class GameScreen extends StatefulWidget {
   final dynamic spiel;
   const GameScreen({super.key, required this.spiel});
@@ -100,47 +97,82 @@ class _GameScreenState extends State<GameScreen> {
   List<PlayerInfo> awayPlayers = [];
   List<PlayerInfo> awaySubstitutes = [];
   bool isLoading = true;
-
+  bool _isInit = true;
   String? _expandedBench;
   double playerAvatarRadiusOnField = 20.0;
-
+  late Map<String, dynamic> currentSpielData; // NEU: Eine lokale Kopie des Spiels
+  @override
+  void initState() {
+    super.initState();
+    currentSpielData = Map<String, dynamic>.from(widget.spiel);
+  }
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    fetchSpieler();
+    // Wir rufen die Lade-Logik nur beim allerersten Aufbau des Screens auf
+    if (_isInit) {
+      _loadMatchData();
+      _isInit = false;
+    }
+  }
+  Future<void> _loadMatchData() async {
+    if (!mounted) return;
+    setState(() => isLoading = true);
+
+    try {
+      final dataManagement = Provider.of<DataManagement>(context, listen: false);
+      final spielId = currentSpielData['id'];
+      final status = currentSpielData['status'];
+
+      await dataManagement.updateRatingsForSingleGame(spielId, status);
+
+      final updatedSpiel = await Supabase.instance.client
+          .from('spiel')
+          .select('hometeam_formation, awayteam_formation')
+          .eq('id', spielId)
+          .single();
+
+      if (mounted) {
+        setState(() {
+          currentSpielData['hometeam_formation'] = updatedSpiel['hometeam_formation'];
+          currentSpielData['awayteam_formation'] = updatedSpiel['awayteam_formation'];
+        });
+      }
+
+      await fetchSpieler();
+
+    } catch (e) {
+      print("❌ Fehler in _loadMatchData: $e");
+      if (mounted) setState(() => isLoading = false);
+    }
   }
 
   Future<void> fetchSpieler() async {
     if (!mounted) return;
 
-    // Listen initialisieren
     List<PlayerInfo> finalHomePlayers = [];
     List<PlayerInfo> finalHomeSubstitutes = [];
     List<PlayerInfo> finalAwayPlayers = [];
     List<PlayerInfo> finalAwaySubstitutes = [];
 
     try {
-      final heimTeamId = widget.spiel['heimteam_id'];
-      final spielId = widget.spiel['id'];
+      final heimTeamId = currentSpielData['heimteam_id'];
+      final spielId = currentSpielData['id'];
 
-      print("--- DEBUG: Starte fetchSpieler für Spiel-ID $spielId ---");
 
       int versuch = 0;
       const maxVersuche = 3;
-      bool datenVollstaendig = false;
 
       while (versuch < maxVersuche) {
         versuch++;
 
-        // 1. ABFRAGE: Wir holen Matchratings (das ist die Wahrheit für dieses Spiel)
         final response = await Supabase.instance.client
             .from('matchrating')
-            .select('*, spieler!inner(*)') // Hole Spieler-Details via Foreign Key
+            .select('*, spieler!inner(*)')
             .eq('spiel_id', spielId);
 
         final List<dynamic> ratingsData = response as List<dynamic>;
 
-        // 2. LISTEN LEEREN & FÜLLEN
         List<Map<String, dynamic>> homeRatings = [];
         List<Map<String, dynamic>> awayRatings = [];
 
@@ -148,17 +180,14 @@ class _GameScreenState extends State<GameScreen> {
           final spieler = entry['spieler'];
           if (spieler == null) continue;
 
-          // WICHTIG: Wir nutzen die team_id direkt aus dem Spieler-Objekt
-          // (Das haben wir im RPC ja extra gespeichert)
           final int playerTeamId = spieler['team_id'];
 
-          // Wir bauen uns ein flaches Objekt für die Verarbeitung
           final processedPlayer = {
             'id': spieler['id'],
             'name': spieler['name'],
             'profilbild_url': spieler['profilbild_url'],
             'team_id': playerTeamId,
-            'matchrating': entry // Das Rating-Objekt direkt hier speichern
+            'matchrating': entry
           };
 
           if (playerTeamId == heimTeamId) {
@@ -168,7 +197,6 @@ class _GameScreenState extends State<GameScreen> {
           }
         }
 
-        // 3. SORTIEREN nach formationsindex
         int sortByIndex(Map<String, dynamic> a, Map<String, dynamic> b) {
           final idxA = a['matchrating']['formationsindex'] ?? 99;
           final idxB = b['matchrating']['formationsindex'] ?? 99;
@@ -177,16 +205,11 @@ class _GameScreenState extends State<GameScreen> {
         homeRatings.sort(sortByIndex);
         awayRatings.sort(sortByIndex);
 
-        // 4. CHECK: Startelf vollständig?
+
         int homeStarters = homeRatings.where((p) => (p['matchrating']['formationsindex'] ?? 99) < 11).length;
         int awayStarters = awayRatings.where((p) => (p['matchrating']['formationsindex'] ?? 99) < 11).length;
 
-        print("   📊 Versuch $versuch: Heim ($homeStarters), Gast ($awayStarters)");
-
         if (homeStarters >= 10 && awayStarters >= 10) {
-          datenVollstaendig = true;
-
-          // 5. MAPPING
           PlayerInfo mapToInfo(Map<String, dynamic> p) {
             final mr = p['matchrating'];
             final stats = mr['statistics'] ?? {};
@@ -207,10 +230,9 @@ class _GameScreenState extends State<GameScreen> {
           finalAwayPlayers = awayRatings.where((p) => p['matchrating']['formationsindex'] < 11).map(mapToInfo).toList();
           finalAwaySubstitutes = awayRatings.where((p) => p['matchrating']['formationsindex'] >= 11).map(mapToInfo).toList();
 
-          break; // Erfolg!
+          break;
         }
 
-        // Warten vor Retry
         if (versuch < maxVersuche) {
           await Future.delayed(Duration(milliseconds: 500 * versuch));
         }
@@ -230,6 +252,7 @@ class _GameScreenState extends State<GameScreen> {
       if (mounted) setState(() => isLoading = false);
     }
   }
+
   Widget _buildSubstitutesContent(List<PlayerInfo> substitutes, Color teamColor) {
     return Card(
       margin: EdgeInsets.zero,
@@ -255,13 +278,13 @@ class _GameScreenState extends State<GameScreen> {
 
   @override
   Widget build(BuildContext context) {
-    final dataManagement = Provider.of<DataManagement>(context, listen: false);
-    final heimTeamName = widget.spiel['heimteam']?['name'] ?? 'Team A';
-    final auswaertsTeamName = widget.spiel['auswaertsteam']?['name'] ?? 'Team B';
-    final homeFormation = widget.spiel['hometeam_formation'] ?? 'N/A';
-    final awayFormation = widget.spiel['awayteam_formation'] ?? 'N/A';
-    final homeColor = Colors.blue.shade700; // Heimteam-Farbe
-    final awayColor = Colors.red.shade700;   // Auswärtsteam-Farbe
+    final heimTeamName = currentSpielData['heimteam']?['name'] ?? 'Team A';
+    final auswaertsTeamName = currentSpielData['auswaertsteam']?['name'] ?? 'Team B';
+    final homeFormation = currentSpielData['hometeam_formation'] ?? 'N/A';
+    final awayFormation = currentSpielData['awayteam_formation'] ?? 'N/A';
+    final homeColor = Colors.blue.shade700;
+    final awayColor = Colors.red.shade700;
+
 
     return Scaffold(
       appBar: AppBar(
@@ -270,15 +293,7 @@ class _GameScreenState extends State<GameScreen> {
           IconButton(
             icon: const Icon(Icons.refresh),
             onPressed: () async {
-              setState(() => isLoading = true);
-              await dataManagement.updateRatingsForSingleGame(widget.spiel['id']);
-              await fetchSpieler();
-              if(mounted) {
-                setState(() => isLoading = false);
-                ScaffoldMessenger.of(context).showSnackBar(
-                  const SnackBar(content: Text('Daten wurden aktualisiert!')),
-                );
-              }
+              await _loadMatchData();
             },
           ),
         ],
@@ -428,7 +443,6 @@ class SubstitutePlayerRow extends StatelessWidget {
 
   Widget _buildEventIcon(IconData icon, Color color, int count) {
     if (count == 0) return const SizedBox.shrink();
-    // Die Größe der Icons wird jetzt proportional zum avatarRadius berechnet
     return Padding(
       padding: const EdgeInsets.symmetric(horizontal: 2.0),
       child: Icon(icon, color: color, size: avatarRadius * 0.8),
