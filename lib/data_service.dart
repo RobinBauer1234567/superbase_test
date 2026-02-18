@@ -793,6 +793,7 @@ class ApiService {
     }
     throw Exception('Failed to fetch $url after retries');
   }
+
   Future<int?> _calculateInitialMarketValue(int playerId) async {
     try {
       final response = await _throttledGet('https://www.sofascore.com/api/v1/player/$playerId/events/last/0');
@@ -846,6 +847,93 @@ class ApiService {
       return null;
     }
   }
+
+  Future<void> fixIncompletePlayers() async {
+    print('🧹 Starte Reparatur-Job für unvollständige Spieler...');
+
+    try {
+      // 1. Suche nach Spielern, die 'SUB' sind UND keinen Marktwert haben
+      // Wir begrenzen es auf 10 Spieler pro Durchlauf, um das API-Limit zu schonen.
+      final response = await supabaseService.supabase
+          .from('spieler')
+          .select('id, name')
+          .eq('position', 'SUB')
+          .isFilter('marktwert', null)
+          .limit(10);
+
+      final List<dynamic> incompletePlayers = response as List<dynamic>;
+
+      if (incompletePlayers.isEmpty) {
+        print('✅ Alles sauber! Keine unvollständigen Spieler gefunden.');
+        return;
+      }
+
+      print('🔧 Repariere ${incompletePlayers.length} unvollständige Spieler...');
+
+      for (var p in incompletePlayers) {
+        int playerId = p['id'];
+        String playerName = p['name'];
+        print('   -> Bearbeite $playerName ($playerId)');
+
+        // a) Echte Position von Sofascore holen
+        String finalPosition = await getPlayerPosition(playerId);
+        // Falls Sofascore absolut nichts weiß, belassen wir es bei SUB oder N/V
+        if (finalPosition == 'NOT_FOUND' || finalPosition == 'N/V') {
+          finalPosition = 'SUB';
+        }
+
+        // b) Marktwert berechnen
+        int? marktwert = await _calculateInitialMarketValue(playerId);
+
+        // c) Profilbild herunterladen und in Storage laden
+        String? imageUrl;
+        try {
+          final imageResponse = await _throttledGet('https://www.sofascore.com/api/v1/player/$playerId/image');
+          if (imageResponse.statusCode == 200) {
+            final imagePath = 'spielerbilder/$playerId.jpg';
+
+            await supabaseService.supabase.storage
+                .from('spielerbilder')
+                .uploadBinary(
+              imagePath,
+              imageResponse.bodyBytes,
+              fileOptions: const FileOptions(cacheControl: '3600', upsert: true),
+            );
+
+            imageUrl = supabaseService.supabase.storage
+                .from('spielerbilder')
+                .getPublicUrl(imagePath);
+          }
+        } catch (e) {
+          print('      ⚠️ Fehler beim Bild-Download für $playerId: $e');
+        }
+
+        // d) Datenbank-Update für diesen Spieler durchführen
+        final updateData = <String, dynamic>{};
+        if (finalPosition != 'SUB') updateData['position'] = finalPosition;
+        if (marktwert != null) updateData['marktwert'] = marktwert;
+        if (imageUrl != null) updateData['profilbild_url'] = imageUrl;
+
+        if (updateData.isNotEmpty) {
+          await supabaseService.supabase
+              .from('spieler')
+              .update(updateData)
+              .eq('id', playerId);
+          print('      ✅ $playerName erfolgreich aktualisiert!');
+        }
+
+        // e) Sehr wichtig: Eine kurze Pause für die API einlegen
+        await Future.delayed(const Duration(milliseconds: 500));
+      }
+    } catch (e) {
+      if (e.toString().contains('API_LIMIT_REACHED')) {
+        print('🛑 API-Limit während der Spieler-Reparatur erreicht. Breche ab.');
+        rethrow; // Werfen wir weiter, damit die Sperre greift
+      } else {
+        print('❌ Fehler im Reparatur-Job: $e');
+      }
+    }
+  }
 }
 
 class SupabaseService {
@@ -893,6 +981,17 @@ class SupabaseService {
     } catch (error) {
       print('Fehler beim Speichern des Spieltags: $error');
     }
+  }
+
+  Future<List<int>> fetchUnfinishedSpieltage(int seasonId) async {
+    final response = await supabase
+        .from('spieltag')
+        .select('round')
+        .eq('season_id', seasonId)
+        .neq('status', 'final'); // Hier ist die Magie! Alles außer 'final'
+
+    final data = response as List<dynamic>;
+    return data.map((e) => e['round'] as int).toList();
   }
 
   Future<List<int>> fetchAllSpieltagIds(int seasonId) async {

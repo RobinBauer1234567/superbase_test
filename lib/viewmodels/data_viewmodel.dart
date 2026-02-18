@@ -58,7 +58,27 @@ class DataManagement {
     print('🚀 Sync-Token erhalten! Frage Datenbank nach Arbeit...');
 
     try {
-      // Vorarbeiter fragen...
+      final bool needsScheduleUpdate = await _supabase.rpc(
+          'check_schedule_update_needed',
+          params: {'p_season_id': seasonId}
+      );
+
+      if (needsScheduleUpdate) {
+        print('📅 Spielplan ist älter als 2 Tage. Starte Routine-Update...');
+        // NEU: Wir holen NUR die Spieltage, die noch NICHT final sind!
+        List<int> aktiveSpieltage = await supabaseService.fetchUnfinishedSpieltage(seasonId);
+
+        print('🔍 Überprüfe ${aktiveSpieltage.length} offene Spieltage...');
+
+        for (var spieltag in aktiveSpieltage) {
+          await apiService.fetchAndStoreSpiele(spieltag, seasonId.toString());
+          await Future.delayed(const Duration(milliseconds: 500));
+        }
+
+        await _supabase.rpc('mark_schedule_updated', params: {'p_season_id': seasonId});
+        print('✅ Spielplan erfolgreich aktualisiert!');
+      }
+
       final response = await _supabase.rpc(
         'get_pending_updates',
         params: {'p_season_id': seasonId},
@@ -101,6 +121,8 @@ class DataManagement {
 
       await Future.wait(updateFutures);
       print('🏁 Update abgeschlossen.');
+
+      await apiService.fixIncompletePlayers();
     } catch (e) {
       if (e.toString().contains('API_LIMIT_REACHED')) {
         print('🛑 API-Limit erkannt! Aktiviere lokale Sperre für 30 Minuten.');

@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:premier_league/screens/screenelements/radial_chart.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 
-// Ein einfaches Datenmodell, um die Berechnungsergebnisse zu bündeln.
 class RadarChartResult {
   final List<GroupData> radarChartData;
   final double averagePlayerRatingPercentile;
@@ -19,8 +18,8 @@ class RadarChartViewModel {
 
   Future<RadarChartResult> calculateRadarChartData({
     required String comparisonPosition,
-    required List<Map<String, dynamic>> matchRatings, // Alle Spiele eines Spielers
-    required double averagePlayerRating, // Durchschnittliches Rating des Spielers
+    required List<Map<String, dynamic>> matchRatings,
+    required double averagePlayerRating,
   }) async {
 
     // --- Schritt 1: Durchschnittliche Stats des aktuellen Spielers berechnen ---
@@ -44,13 +43,11 @@ class RadarChartViewModel {
           playerTotalStats.map((key, value) => MapEntry(key, value / matchCount));
     }
 
-
-    // --- Schritt 2: Vergleichsdaten aller Spieler auf dieser Position holen ---
+    // --- Schritt 2: Vergleichsdaten holen (FEHLER BEHOBEN: Ohne extra Quotes!) ---
     final allRatingsForPositionResponse = await supabase
         .from('matchrating')
         .select('spieler_id, statistics, punkte')
-        .eq('match_position', '"$comparisonPosition"');
-
+        .eq('match_position', comparisonPosition);
 
     // --- Schritt 3: Perzentil für die Gesamtbewertung berechnen ---
     final Map<int, List<double>> allPlayerPoints = {};
@@ -74,10 +71,40 @@ class RadarChartViewModel {
           (1 - (playersBetter / averagePointsPerPlayer.length)) * 100.0;
     }
 
+    // --- NEU: OPTIMIERUNG - Vergleichsdaten nur EINMAL vorberechnen ---
+    final Map<int, Map<String, dynamic>> playerAggregates = {};
+    for (var rating in allRatingsForPositionResponse) {
+      final playerId = rating['spieler_id'] as int;
+      final stats = rating['statistics'] as Map<String, dynamic>? ?? {};
+
+      playerAggregates.putIfAbsent(playerId, () => {'total_stats': <String, double>{}, 'game_count': 0});
+      final currentAggregates = playerAggregates[playerId]!;
+      final currentTotalStats = currentAggregates['total_stats'] as Map<String, double>;
+
+      stats.forEach((key, value) {
+        double statValue = 0;
+        if (value is num) {
+          statValue = value.toDouble();
+        } else if (value is Map && value.containsKey('total')) {
+          statValue = (value['total'] as num? ?? 0).toDouble();
+        }
+        currentTotalStats[key] = (currentTotalStats[key] ?? 0.0) + statValue;
+      });
+      currentAggregates['game_count'] = (currentAggregates['game_count'] as int) + 1;
+    }
+
+    final comparisonPlayerAverages = <int, Map<String, double>>{};
+    playerAggregates.forEach((playerId, data) {
+      final totalStats = data['total_stats'] as Map<String, double>;
+      final gameCount = data['game_count'] as int;
+      if (gameCount > 0) {
+        comparisonPlayerAverages[playerId] =
+            totalStats.map((key, value) => MapEntry(key, value / gameCount));
+      }
+    });
+
     // --- Schritt 4: Perzentil-Berechnung für einzelne Kategorien ---
-    double calculatePercentileRankForCategory(
-        Map<String, double> weightedStatKeys,
-        {bool higherIsBetter = true}) {
+    double calculatePercentileRankForCategory(Map<String, double> weightedStatKeys, {bool higherIsBetter = true}) {
       double getCategoryScore(Map<String, double> stats) {
         double score = 0;
         weightedStatKeys.forEach((key, weight) {
@@ -87,41 +114,6 @@ class RadarChartViewModel {
       }
 
       final currentPlayerCategoryScore = getCategoryScore(playerAverageStats);
-
-      final Map<int, Map<String, dynamic>> playerAggregates = {};
-      for (var rating in allRatingsForPositionResponse) {
-        final playerId = rating['spieler_id'] as int;
-        final stats = rating['statistics'] as Map<String, dynamic>? ?? {};
-        playerAggregates.putIfAbsent(
-            playerId,
-                () =>
-            {'total_stats': <String, double>{}, 'game_count': 0});
-        final currentAggregates = playerAggregates[playerId]!;
-        final currentTotalStats =
-        currentAggregates['total_stats'] as Map<String, double>;
-        stats.forEach((key, value) {
-          double statValue = 0;
-          if (value is num)
-            statValue = value.toDouble();
-          else if (value is Map && value.containsKey('total'))
-            statValue = (value['total'] as num? ?? 0).toDouble();
-          currentTotalStats[key] =
-              (currentTotalStats[key] ?? 0.0) + statValue;
-        });
-        currentAggregates['game_count'] =
-            (currentAggregates['game_count'] as int) + 1;
-      }
-
-      final comparisonPlayerAverages = <int, Map<String, double>>{};
-      playerAggregates.forEach((playerId, data) {
-        final totalStats = data['total_stats'] as Map<String, double>;
-        final gameCount = data['game_count'] as int;
-        if (gameCount > 0) {
-          comparisonPlayerAverages[playerId] =
-              totalStats.map((key, value) => MapEntry(key, value / gameCount));
-        }
-      });
-
 
       if (comparisonPlayerAverages.isEmpty) return 50.0;
 
@@ -134,8 +126,8 @@ class RadarChartViewModel {
           ? score > currentPlayerCategoryScore
           : score < currentPlayerCategoryScore)
           .length;
-      double percentile =
-          (playersBetter / allCategoryScores.length) * 100.0;
+
+      double percentile = (playersBetter / allCategoryScores.length) * 100.0;
       return 100.0 - percentile;
     }
 
@@ -150,7 +142,7 @@ class RadarChartViewModel {
           segments: [
             SegmentData(name: 'Abgewehrte Schüsse', value: calculatePercentileRankForCategory({'saves': 1.0, 'punches' : 1.0})),
             SegmentData(name: 'Paraden', value: calculatePercentileRankForCategory({'savedShotsFromInsideTheBox': 1.0, 'goalsPrevented': 3.0, 'penaltySave' : 2.0})),
-            SegmentData(name: 'Fehlerressistenz', value: calculatePercentileRankForCategory({'errorLeadToAShot': 1.0, 'errorLeadToAGoal' : 5.0, 'penaltyConceded' : 3.0}, higherIsBetter: false)),
+            SegmentData(name: 'Fehlerresistenz', value: calculatePercentileRankForCategory({'errorLeadToAShot': 1.0, 'errorLeadToAGoal' : 5.0, 'penaltyConceded' : 3.0}, higherIsBetter: false)),
           ],
         ),
         GroupData(
@@ -237,7 +229,6 @@ class RadarChartViewModel {
               'duelLost': -1.0,
               'aerialWon': 1.0,
               'aerialLost': -1.0
-
             })),
             SegmentData(name: 'Foulstatistik', value: calculatePercentileRankForCategory({
               'fouls': -1.0,
