@@ -9,7 +9,19 @@ class ApiService {
   final String baseUrl = 'https://www.sofascore.com/api/v1';
   final SupabaseService supabaseService = SupabaseService();
   final String tournamentId = '17';
-
+  final Map<String, String> _headers = {
+    // Ein sehr gängiger iPhone-User-Agent (damit das Handy nicht behauptet, ein Windows-PC zu sein)
+    'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
+    'Accept': 'application/json, text/plain, */*',
+    'Accept-Language': 'de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7',
+    'Accept-Encoding': 'gzip, deflate, br',
+    'Origin': 'https://www.sofascore.com',
+    'Referer': 'https://www.sofascore.com/',
+    'Connection': 'keep-alive',
+    'Sec-Fetch-Dest': 'empty',
+    'Sec-Fetch-Mode': 'cors',
+    'Sec-Fetch-Site': 'same-origin',
+  };
   Future<void> fetchAndStoreTeams(String seasonId) async {
     final url = '$baseUrl/unique-tournament/$tournamentId/season/$seasonId/teams';
     final response = await http.get(Uri.parse(url));
@@ -762,28 +774,29 @@ class ApiService {
   }
 
   Future<http.Response> _throttledGet(String url) async {
-    // Kurze Pause, um "nett" zur API zu sein
     await Future.delayed(const Duration(milliseconds: 300));
 
     int retryCount = 0;
     while (retryCount < 3) {
       try {
-        final response = await http.get(Uri.parse(url));
+        // NEU: Wir übergeben unsere Tarn-Headers!
+        final response = await http.get(
+          Uri.parse(url),
+          headers: _headers,
+        );
 
         if (response.statusCode == 200) {
           return response;
         }
         // WICHTIG: Sofortiger Abbruch bei Limit-Fehlern
         else if (response.statusCode == 429 || response.statusCode == 403) {
-          print('🛑 API-Limit erreicht ($url). Breche Update-Prozess sofort ab!');
-          // Wir werfen einen spezifischen Fehler, den wir oben abfangen können
+          print('🛑 API-Limit erreicht ($url). Code: ${response.statusCode}. Breche Update-Prozess sofort ab!');
           throw Exception('API_LIMIT_REACHED');
         }
         else {
-          return response; // Andere Fehler (z.B. 404) normal behandeln
+          return response;
         }
       } catch (e) {
-        // Wenn es unser eigener Abbruch-Fehler ist, werfen wir ihn direkt weiter
         if (e.toString().contains('API_LIMIT_REACHED')) rethrow;
 
         print('Netzwerkfehler: $e. Retry...');
@@ -828,7 +841,7 @@ class ApiService {
           );
 
           if (playerStats != null) {
-            double rating = playerStats['statistics']?['rating'] ?? 6.0;
+            double rating = (playerStats['statistics']?['rating'] as num).toDouble() ?? 6.0;
             // Deine Punkteformel
             punkte.add(((rating - 6) * 100).round());
           }

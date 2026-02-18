@@ -6,15 +6,37 @@ import 'package:premier_league/screens/main_screen.dart';
 import 'package:premier_league/viewmodels/data_viewmodel.dart';
 import 'package:premier_league/auth_service.dart';
 import 'package:premier_league/screens/auth_screen.dart';
+import 'dart:io';
+import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:http/http.dart' as http;
+import 'package:premier_league/main.dart';
+import 'http/http_factory.dart'
+if (dart.library.html) 'http/http_factory_web.dart'
+if (dart.library.io) 'http/http_factory_io.dart';
 
 void main() async {
-  WidgetsFlutterBinding.ensureInitialized();
-  await Supabase.initialize(
-      url: 'https://rcfetlzldccwjnuabfgj.supabase.co',
-      anonKey:
-      'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJjZmV0bHpsZGNjd2pudWFiZmdqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTM5OTkwNDQsImV4cCI6MjA2OTU3NTA0NH0.Fe4Aa3b7vxn9gnye1Cl0VvhxyT7UREJYDCRvICkGNsM'
+  // 1. Die Motor-Vorbereitung (Läuft auf Web leer durch, auf Mobile startet Cronet)
+  await initPlatformClient();
+
+  // 2. Wir starten sofort die "sichere Netzwerk-Zone"
+  http.runWithClient(
+        () async {
+      // 3. ALLES, was Flutter braucht, passiert JETZT innerhalb dieser Zone!
+      WidgetsFlutterBinding.ensureInitialized();
+
+      // 4. Supabase innerhalb der Zone starten
+      await Supabase.initialize(
+          url: 'https://rcfetlzldccwjnuabfgj.supabase.co',
+          anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJjZmV0bHpsZGNjd2pudWFiZmdqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTM5OTkwNDQsImV4cCI6MjA2OTU3NTA0NH0.Fe4Aa3b7vxn9gnye1Cl0VvhxyT7UREJYDCRvICkGNsM'
+      );
+
+      // 5. App starten
+      runApp(const AppRoot());
+    },
+    // 6. Die Client-Fabrik (Holt automatisch den richtigen Client für Web, iOS oder Android)
+        () => getPlatformClient(),
   );
-  runApp(const AppRoot());
 }
 
 class AppRoot extends StatelessWidget {

@@ -27,6 +27,8 @@ dependencies:
 
   # UI
   cupertino_icons: ^1.0.6
+  cupertino_http: ^2.3.0
+  cronet_http: ^1.6.0
 
 dev_dependencies:
   flutter_test:
