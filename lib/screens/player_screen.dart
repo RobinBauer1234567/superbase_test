@@ -123,11 +123,10 @@ class _PlayerScreenState extends State<PlayerScreen>
       final playerResponse = await supabase
           .from('season_players')
           .select(
-          'team:team(id, name, image_url), spieler:spieler(name, position, profilbild_url, marktwert)')
+          'team:team(id, name, image_url), spieler:spieler(name, position, profilbild_url, spieler_analytics(marktwert))')
           .eq('season_id', seasonId)
           .eq('player_id', widget.playerId)
           .single();
-
       final spielerData = playerResponse['spieler'];
       teamData = playerResponse['team'];
       final playerTeamId = teamData!['id'];
@@ -189,8 +188,7 @@ class _PlayerScreenState extends State<PlayerScreen>
 
       setState(() {
         playerName = spielerData['name'];
-        marketValue = spielerData['marktwert'];
-        teamName = teamData!['name'];
+        marketValue = spielerData['spieler_analytics']?['marktwert'];        teamName = teamData!['name'];
         teamImageUrl = teamData!['image_url'];
         profileImageUrl = spielerData['profilbild_url'] ??
             'https://rcfetlzldccwjnuabfgj.supabase.co/storage/v1/object/public/spielerbilder//Photo-Missing.png';

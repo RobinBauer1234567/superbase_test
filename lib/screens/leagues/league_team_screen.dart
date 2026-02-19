@@ -65,7 +65,7 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
     for (var p in playersRaw) {
       int rating = 0;
       try {
-        final dynamic stats = p['gesamtstatistiken'];
+        final dynamic stats = p['spieler_analytics']?['gesamtstatistiken'];
         dynamic seasonStats;
 
         if (stats is Map) {
@@ -102,7 +102,7 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
         ownGoals: 0,
         maxRating: 2500,
         teamImageUrl: p['team_image_url'],
-        marketValue: _toInt(p['marktwert']),
+        marketValue: _toInt(p['spieler_analytics']?['marktwert']),
         teamName: p['team_name'],
       );
 

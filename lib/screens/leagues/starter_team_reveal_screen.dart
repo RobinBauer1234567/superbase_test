@@ -9,7 +9,7 @@ import 'package:premier_league/viewmodels/data_viewmodel.dart';
 class StarterTeamRevealScreen extends StatefulWidget {
   final int leagueId;
   final double startingBudget;
-  final String leagueName; // Optional, für den Titel
+  final String leagueName;
 
   const StarterTeamRevealScreen({
     super.key,
@@ -45,6 +45,54 @@ class _StarterTeamRevealScreenState extends State<StarterTeamRevealScreen> {
     return fallback;
   }
 
+  // --- HILFSFUNKTIONEN ZUM SICHEREN EXTRAHIEREN DER DATEN ---
+  int _getMarktwert(Map<String, dynamic> player) {
+    final analytics = player['spieler_analytics'];
+    if (analytics is Map) {
+      return _toInt(analytics['marktwert']);
+    } else if (analytics is List && analytics.isNotEmpty) {
+      return _toInt(analytics[0]['marktwert']);
+    }
+    return 0;
+  }
+
+  int _getPunkte(Map<String, dynamic> player, String seasonIdStr) {
+    final analytics = player['spieler_analytics'];
+    dynamic stats;
+
+    if (analytics is Map) {
+      stats = analytics['gesamtstatistiken'];
+    } else if (analytics is List && analytics.isNotEmpty) {
+      stats = analytics[0]['gesamtstatistiken'];
+    }
+
+    if (stats is Map && stats.containsKey(seasonIdStr)) {
+      return _toInt(stats[seasonIdStr]['gesamtpunkte']);
+    } else if (stats is List) {
+      final seasonStats = stats.firstWhere(
+            (e) => e is Map && e['season_id']?.toString() == seasonIdStr,
+        orElse: () => null,
+      );
+      if (seasonStats != null) {
+        return _toInt(seasonStats['gesamtpunkte']);
+      }
+    }
+    return 0;
+  }
+
+  String? _getTeamImageUrl(Map<String, dynamic> player) {
+    final sp = player['season_players'];
+    if (sp is List && sp.isNotEmpty) {
+      final team = sp[0]['team'];
+      if (team is Map) return team['image_url'];
+    } else if (sp is Map) {
+      final team = sp['team'];
+      if (team is Map) return team['image_url'];
+    }
+    return null;
+  }
+  // ---------------------------------------------------------
+
   Future<void> _loadTeam() async {
     final dataManagement = Provider.of<DataManagement>(context, listen: false);
 
@@ -55,7 +103,7 @@ class _StarterTeamRevealScreenState extends State<StarterTeamRevealScreen> {
 
     int totalVal = 0;
     for(var p in players) {
-      totalVal += _toInt(p['marktwert']);
+      totalVal += _getMarktwert(p); // Nutzt nun die sichere Hilfsfunktion
     }
 
     if (mounted) {
@@ -99,7 +147,9 @@ class _StarterTeamRevealScreenState extends State<StarterTeamRevealScreen> {
 
   void _finishAndGoToLeague() {
     Navigator.of(context).pop(widget.leagueId);
-  }  @override
+  }
+
+  @override
   Widget build(BuildContext context) {
     return Scaffold(
       appBar: AppBar(
@@ -136,14 +186,13 @@ class _StarterTeamRevealScreenState extends State<StarterTeamRevealScreen> {
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    // Wir nutzen AnimatedSwitcher für einen sanften Übergang zwischen Spielern
                     AnimatedSwitcher(
                       duration: const Duration(milliseconds: 300),
                       transitionBuilder: (Widget child, Animation<double> animation) {
                         return ScaleTransition(scale: animation, child: child);
                       },
                       child: Container(
-                        key: ValueKey<int>(_toInt(player['id'])), // Wichtig für Animation
+                        key: ValueKey<int>(_toInt(player['id'])),
                         padding: const EdgeInsets.all(24),
                         decoration: BoxDecoration(
                           color: Colors.white,
@@ -160,11 +209,11 @@ class _StarterTeamRevealScreenState extends State<StarterTeamRevealScreen> {
                         child: Column(
                           mainAxisSize: MainAxisSize.min,
                           children: [
-                            // Team Logo Hintergrund (optional)
-                            if (player['team_image_url'] != null)
+                            // Team Logo Hintergrund
+                            if (_getTeamImageUrl(player) != null)
                               Padding(
                                 padding: const EdgeInsets.only(bottom: 16.0),
-                                child: Image.network(player['team_image_url'], height: 40, width: 40),
+                                child: Image.network(_getTeamImageUrl(player)!, height: 40, width: 40),
                               ),
 
                             // Profilbild
@@ -208,7 +257,7 @@ class _StarterTeamRevealScreenState extends State<StarterTeamRevealScreen> {
                             // Marktwert
                             const Text("Marktwert", style: TextStyle(color: Colors.grey)),
                             Text(
-                              _formatMoney(_toInt(player['marktwert'])),
+                              _formatMoney(_getMarktwert(player)), // Sichere Abfrage
                               style: const TextStyle(fontSize: 28, fontWeight: FontWeight.bold),
                             ),
                           ],
@@ -243,6 +292,8 @@ class _StarterTeamRevealScreenState extends State<StarterTeamRevealScreen> {
 
   // --- ANSICHT 2: Gesamtkader Liste (Wie TeamScreen) ---
   Widget _buildSummaryView() {
+    final seasonIdStr = Provider.of<DataManagement>(context, listen: false).seasonId.toString();
+
     return Column(
       children: [
         // Info Header
@@ -259,7 +310,7 @@ class _StarterTeamRevealScreenState extends State<StarterTeamRevealScreen> {
         ),
         const Divider(height: 1),
 
-        // Liste der Spieler (Wiederverwendung von PlayerListItem)
+        // Liste der Spieler
         Expanded(
           child: ListView.builder(
             itemCount: _players.length,
@@ -269,23 +320,19 @@ class _StarterTeamRevealScreenState extends State<StarterTeamRevealScreen> {
                 rank: index + 1,
                 profileImageUrl: player['profilbild_url'],
                 playerName: player['name']?.toString() ?? 'Unbekannt',
-                teamImageUrl: player['team_image_url'],
-                marketValue: _toInt(player['marktwert']),
-                score: _toInt(player['total_punkte']),
+                teamImageUrl: _getTeamImageUrl(player), // Nutzt die Hilfsfunktion
+                marketValue: _getMarktwert(player),     // Nutzt die Hilfsfunktion
+                score: _getPunkte(player, seasonIdStr), // Nutzt die Hilfsfunktion
                 maxScore:  2500,
-
-                // NEUE FELDER
                 position: player['position']?.toString() ?? 'N/A',
                 id: _toInt(player['id']),
-                goals: 0, // Stats müssten erst aufwendig geparst werden, 0 reicht für die Optik
+                goals: 0,
                 assists: 0,
                 ownGoals: 0,
-                teamColor: Colors.blue, // Oder eine Farbe passend zur Liga
-
-                onTap: () {
-
-                },
-              );        },
+                teamColor: Colors.blue,
+                onTap: () {},
+              );
+            },
           ),
         ),
 
@@ -297,7 +344,7 @@ class _StarterTeamRevealScreenState extends State<StarterTeamRevealScreen> {
             child: ElevatedButton(
               style: ElevatedButton.styleFrom(
                 padding: const EdgeInsets.symmetric(vertical: 16),
-                backgroundColor: Colors.green, // Grün für "Start" / "Los geht's"
+                backgroundColor: Colors.green,
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
               ),
               onPressed: _finishAndGoToLeague,

@@ -51,7 +51,6 @@ class _TransferMarketScreenState extends State<TransferMarketScreen> {
     }
   }
 
-// --- LOGIK ZUM FILTERN DER LISTEN ---
   List<Map<String, dynamic>> get _displayedOffers {
     final currentUserId = Provider.of<DataManagement>(context, listen: false).supabaseService.supabase.auth.currentUser?.id;
     if (currentUserId == null) return _offers;
@@ -73,7 +72,7 @@ class _TransferMarketScreenState extends State<TransferMarketScreen> {
         }).toList();
     }
   }
-  // --- NEU: Helfer für das Umschalten des Modus ---
+
   void _toggleMode() {
     setState(() {
       if (_currentMode == MarketMode.all) {
@@ -102,7 +101,6 @@ class _TransferMarketScreenState extends State<TransferMarketScreen> {
     }
   }
 
-  // --- BESTEHENDE LOGIK (leicht angepasst) ---
   Future<void> _showSellDialog() async {
     final service = Provider.of<DataManagement>(context, listen: false).supabaseService;
     final myPlayers = await service.fetchUserLeaguePlayers(widget.leagueId);
@@ -121,7 +119,7 @@ class _TransferMarketScreenState extends State<TransferMarketScreen> {
           return ListTile(
             leading: CircleAvatar(backgroundImage: NetworkImage(p['profilbild_url'] ?? '')),
             title: Text(p['name']),
-            subtitle: Text("MW: ${_currencyFormat.format(p['marktwert'])}"),
+            subtitle: Text("MW: ${_currencyFormat.format(p['spieler_analytics']?['marktwert'] ?? 0)}"),
             trailing: const Icon(Icons.sell, color: Colors.green),
             onTap: () {
               Navigator.pop(context);
@@ -145,11 +143,8 @@ class _TransferMarketScreenState extends State<TransferMarketScreen> {
     }
   }
 
-
-// lib/screens/leagues/transfer_market_screen.dart
-
   Future<void> _showPriceInputDialog(Map<String, dynamic> playerMap) async {
-    final int safeMarktwert = (playerMap['marktwert'] as num?)?.toInt() ?? 0;
+    final int safeMarktwert = (playerMap['spieler_analytics']?['marktwert'] as num?)?.toInt() ?? 0;
     final extraData = _extractPlayerData(playerMap);
 
     final player = PlayerInfo(
@@ -223,6 +218,7 @@ class _TransferMarketScreenState extends State<TransferMarketScreen> {
       },
     );
   }
+
   void _openBuyOverlay(Map<String, dynamic> offer, PlayerInfo playerInfo) {
     showDialog(
       context: context,
@@ -294,6 +290,7 @@ class _TransferMarketScreenState extends State<TransferMarketScreen> {
       _loadMarket();
     }
   }
+
   Map<String, dynamic> _extractPlayerData(Map<String, dynamic> playerRaw) {
     String? teamImg;
     if (playerRaw['season_players'] != null && (playerRaw['season_players'] as List).isNotEmpty) {
@@ -302,7 +299,7 @@ class _TransferMarketScreenState extends State<TransferMarketScreen> {
     int score = 0;
     final seasonId = Provider.of<DataManagement>(context, listen: false).seasonId.toString();
     try {
-      final dynamic stats = playerRaw['gesamtstatistiken'];
+      final dynamic stats = playerRaw['spieler_analytics']?['gesamtstatistiken'];
       dynamic seasonStats;
       if (stats is Map) {
         if (stats.containsKey(seasonId)) seasonStats = stats[seasonId];
@@ -426,7 +423,7 @@ class _TransferMarketScreenState extends State<TransferMarketScreen> {
                           profileImageUrl: player['profilbild_url'],
                           playerName: player['name'],
                           teamImageUrl: extraData['teamImageUrl'],
-                          marketValue: player['marktwert'],
+                          marketValue: player['spieler_analytics']?['marktwert'],
                           score: extraData['score'],
                           maxScore: 2500,
                           position: player['position'] ?? 'N/A',

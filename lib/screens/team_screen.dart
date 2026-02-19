@@ -81,7 +81,7 @@ class _TeamScreenState extends State<TeamScreen> with SingleTickerProviderStateM
 
       final playersResponse = await Supabase.instance.client
           .from('season_players')
-          .select('spieler:spieler(*, matchrating!inner(punkte, spiel!inner(season_id)))')
+          .select('spieler:spieler(*, spieler_analytics(marktwert), matchrating!inner(punkte, spiel!inner(season_id)))')
           .eq('season_id', seasonId)
           .eq('team_id', widget.teamId)
           .eq('spieler.matchrating.spiel.season_id', seasonId);
@@ -101,7 +101,7 @@ class _TeamScreenState extends State<TeamScreen> with SingleTickerProviderStateM
           'id': player['id'],
           'name': player['name'],
           'profilbild_url': player['profilbild_url'],
-          'marktwert': player['marktwert'], // Marktwert aus DB mappen
+          'marktwert': player['spieler_analytics']?['marktwert'], // Marktwert aus DB mappen
           'total_punkte': totalPoints,
         });
       }

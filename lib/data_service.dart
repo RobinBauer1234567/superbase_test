@@ -22,6 +22,7 @@ class ApiService {
     'Sec-Fetch-Mode': 'cors',
     'Sec-Fetch-Site': 'same-origin',
   };
+
   Future<void> fetchAndStoreTeams(String seasonId) async {
     final url = '$baseUrl/unique-tournament/$tournamentId/season/$seasonId/teams';
     final response = await http.get(Uri.parse(url));
@@ -220,14 +221,14 @@ class ApiService {
         finalPositionsToSave = currentPositions;
       }
       final existingPlayer = await supabaseService.supabase
-          .from('spieler')
+          .from('spieler_analytics') // <-- NEU
           .select('marktwert')
-          .eq('id', playerId)
+          .eq('spieler_id', playerId) // <-- NEU
           .maybeSingle();
 
       if (existingPlayer == null || existingPlayer['marktwert'] == null) {
-        print('Initialisiere Marktwert für Spieler $playerId ...');
-        marktwert = await _calculateInitialMarketValue(playerId);
+        print('Initialisiere Spieler $playerId ...');
+        await initializePlayerInDB(playerId);
       }
 
       final imageResponse = await http.get(Uri.parse('https://www.sofascore.com/api/v1/player/$playerId/image'));
@@ -841,8 +842,8 @@ class ApiService {
           );
 
           if (playerStats != null) {
-            double rating = (playerStats['statistics']?['rating'] as num).toDouble() ?? 6.0;
-            // Deine Punkteformel
+            num rating = playerStats['statistics']?['rating'] ?? 6.0;
+            rating = rating.toDouble();
             punkte.add(((rating - 6) * 100).round());
           }
         }
@@ -867,14 +868,19 @@ class ApiService {
     try {
       // 1. Suche nach Spielern, die 'SUB' sind UND keinen Marktwert haben
       // Wir begrenzen es auf 10 Spieler pro Durchlauf, um das API-Limit zu schonen.
+      // Wir holen Spieler, bei denen die Position SUB ist, inklusive Analytics
       final response = await supabaseService.supabase
           .from('spieler')
-          .select('id, name')
+          .select('id, name, spieler_analytics(spieler_id)')
           .eq('position', 'SUB')
-          .isFilter('marktwert', null)
-          .limit(10);
+          .limit(20);
 
-      final List<dynamic> incompletePlayers = response as List<dynamic>;
+      // Filtern: Nur Spieler behalten, die noch KEINEN Analytics-Eintrag haben
+      final List<dynamic> allFetched = response as List<dynamic>;
+      final List<dynamic> incompletePlayers = allFetched
+          .where((p) => p['spieler_analytics'] == null)
+          .take(10)
+          .toList();
 
       if (incompletePlayers.isEmpty) {
         print('✅ Alles sauber! Keine unvollständigen Spieler gefunden.');
@@ -888,15 +894,7 @@ class ApiService {
         String playerName = p['name'];
         print('   -> Bearbeite $playerName ($playerId)');
 
-        // a) Echte Position von Sofascore holen
-        String finalPosition = await getPlayerPosition(playerId);
-        // Falls Sofascore absolut nichts weiß, belassen wir es bei SUB oder N/V
-        if (finalPosition == 'NOT_FOUND' || finalPosition == 'N/V') {
-          finalPosition = 'SUB';
-        }
-
-        // b) Marktwert berechnen
-        int? marktwert = await _calculateInitialMarketValue(playerId);
+        await initializePlayerInDB(playerId);
 
         // c) Profilbild herunterladen und in Storage laden
         String? imageUrl;
@@ -921,18 +919,13 @@ class ApiService {
           print('      ⚠️ Fehler beim Bild-Download für $playerId: $e');
         }
 
-        // d) Datenbank-Update für diesen Spieler durchführen
-        final updateData = <String, dynamic>{};
-        if (finalPosition != 'SUB') updateData['position'] = finalPosition;
-        if (marktwert != null) updateData['marktwert'] = marktwert;
-        if (imageUrl != null) updateData['profilbild_url'] = imageUrl;
-
-        if (updateData.isNotEmpty) {
+        // d) Datenbank-Update für diesen Spieler durchführen (NUR NOCH BILD!)
+        if (imageUrl != null) {
           await supabaseService.supabase
               .from('spieler')
-              .update(updateData)
+              .update({'profilbild_url': imageUrl})
               .eq('id', playerId);
-          print('      ✅ $playerName erfolgreich aktualisiert!');
+          print('      ✅ Bild für $playerName aktualisiert!');
         }
 
         // e) Sehr wichtig: Eine kurze Pause für die API einlegen
@@ -945,6 +938,98 @@ class ApiService {
       } else {
         print('❌ Fehler im Reparatur-Job: $e');
       }
+    }
+  }
+
+  Future<void> initializePlayerInDB(int playerId) async {
+    try {
+      List<double> ratings = [];
+      String? foundFormation;
+      int? foundIndex;
+      String? fallbackPos;
+
+      int currentPage = 0;
+      bool hasNextPage = true;
+      bool positionFound = false;
+
+      // 1.1 Exakt wie davor: Schleife über die Seiten, bis Position gefunden wurde
+      while (hasNextPage) {
+        final response = await _throttledGet('https://www.sofascore.com/api/v1/player/$playerId/events/last/$currentPage');
+        if (response.statusCode != 200) break;
+
+        final data = json.decode(response.body);
+        final List<dynamic> events = data['events'] ?? [];
+        hasNextPage = data['hasNextPage'] ?? false;
+
+        for (var event in events) {
+          String eventId = event['id'].toString();
+
+          final lineupResp = await _throttledGet('https://www.sofascore.com/api/v1/event/$eventId/lineups');
+          if (lineupResp.statusCode == 200) {
+            final lineupData = json.decode(lineupResp.body);
+
+            for (var teamKey in ['home', 'away']) {
+              final teamData = lineupData[teamKey];
+              if (teamData == null) continue;
+
+              final players = teamData['players'] as List<dynamic>? ?? [];
+              final formation = teamData['formation'] as String?;
+
+              for (int i = 0; i < players.length; i++) {
+                final p = players[i];
+                if (p['player'] != null && p['player']['id'] == playerId) {
+
+                  // Rating für Marktwert NUR von Seite 0 sammeln (wie im alten Code)
+                  if (currentPage == 0 && p['statistics'] != null && p['statistics']['rating'] != null) {
+                    ratings.add((p['statistics']['rating'] as num).toDouble());
+                  }
+
+                  // Startelf-Check: Nur wenn er in den ersten 11 ist (Index 0-10)
+                  if (i <= 10 && !positionFound && formation != null) {
+                    foundFormation = formation;
+                    foundIndex = i;
+                    positionFound = true;
+                  }
+                }
+              }
+            }
+          }
+        }
+
+        // Abbruchbedingung: Wenn Seite 0 fertig ist (alle Ratings da) UND Position gefunden, stop!
+        if (currentPage >= 0 && positionFound) {
+          break;
+        }
+        currentPage++;
+      }
+
+      // 1.2 Wenn nach allen Seiten nichts gefunden wurde -> Fallback Position laden (wie altes guessPlayerPosition)
+      if (!positionFound) {
+        try {
+          final playerInfoResp = await _throttledGet('https://www.sofascore.com/api/v1/player/$playerId');
+          if (playerInfoResp.statusCode == 200) {
+            final playerInfoData = json.decode(playerInfoResp.body);
+            fallbackPos = playerInfoData['player']?['position'];
+          }
+        } catch (e) {
+          print('Fehler beim Abrufen der Fallback-Position für $playerId: $e');
+        }
+      }
+
+      // 2. Das gesammelte Paket an die performante Datenbank senden!
+      await supabaseService.supabase.rpc('init_player_from_sofascore', params: {
+        'p_player_id': playerId,
+        'p_formation': foundFormation,
+        'p_lineup_index': foundIndex,
+        'p_api_position': fallbackPos ?? 'M',
+        'p_ratings': ratings,
+      });
+
+      print('✅ Spieler $playerId erfolgreich via DB initialisiert!');
+
+    } catch (e) {
+      if (e.toString().contains('API_LIMIT_REACHED')) rethrow;
+      print('❌ Fehler bei der Initialisierung von $playerId: $e');
     }
   }
 }
@@ -1076,19 +1161,26 @@ class SupabaseService {
 
   Future<void> saveSpieler(int id, String name, String position, int teamId, String? profilbildUrl, int? marktwert) async {
     try {
-// In lib/data_service.dart -> saveSpieler
+      // 1. Stammdaten in die 'spieler' Tabelle
       final updateData = {
         'id': id,
         'name': name,
         'position': position,
-        'team_id': teamId // <--- DAS HAT GEFEHLT!
-      };      if (profilbildUrl != null) {
+        'team_id': teamId
+      };
+      if (profilbildUrl != null) {
         updateData['profilbild_url'] = profilbildUrl;
       }
-      if (marktwert != null) {
-        updateData['marktwert'] = marktwert;
-      }
       await supabase.from('spieler').upsert(updateData, onConflict: 'id');
+
+      // 2. Bewegungsdaten in 'spieler_analytics' speichern
+      if (marktwert != null) {
+        await supabase.from('spieler_analytics').upsert({
+          'spieler_id': id,
+          'marktwert': marktwert,
+          'calculated_marktwert': marktwert // Am Anfang sind beide Werte gleich
+        }, onConflict: 'spieler_id');
+      }
 
     } catch (error) {
       print('Fehler beim Speichern des Spielers: $error');
@@ -1415,14 +1507,12 @@ class SupabaseService {
             player:spieler (
               *,
               season_players(team(image_url)),
-              gesamtstatistiken
+              spieler_analytics (*)
             )
           ''')
           .eq('league_id', leagueId)
           .eq('user_id', user.id);
 
-      // Wir "packen" das Ergebnis aus, damit wir direkt eine Liste von Spielern haben
-      // (Die Datenbank gibt uns eine Liste von { "player": { ... } } Objekten)
       final List<Map<String, dynamic>> players = List<Map<String, dynamic>>.from(
           response.map((e) => e['player'])
       );
@@ -1567,7 +1657,7 @@ class SupabaseService {
             player:spieler(
               *,
               season_players(team(image_url)), 
-              gesamtstatistiken
+              spieler_analytics (*)
             ),
             transfer_bids (
               bidder_id,

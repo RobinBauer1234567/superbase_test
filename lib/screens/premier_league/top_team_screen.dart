@@ -115,7 +115,7 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
 
       var query = Supabase.instance.client
           .from('spieler')
-          .select('id, name, profilbild_url, position, marktwert, gesamtstatistiken, season_players!inner(team:team(id, name, image_url))')
+          .select('id, name, profilbild_url, position, spieler_analytics(marktwert, gesamtstatistiken), season_players!inner(team:team(id, name, image_url))')
           .eq('season_players.season_id', '$seasonIdInt');
 
       final teamId = _selectedTeamId;
@@ -129,7 +129,7 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
 
       for (var player in response) {
         try {
-          final dynamic stats = player['gesamtstatistiken'];
+          final dynamic stats = player['spieler_analytics']?['gesamtstatistiken'];
           dynamic seasonStats;
 
           if (stats is Map) {
@@ -187,9 +187,7 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
             'name': player['name'],
             'profilbild_url': player['profilbild_url'],
             'team_image_url': team['image_url'],
-            // --- FIX 2: Sicherer Cast für Marktwert ---
-            'marktwert': (player['marktwert'] as num?)?.toInt(),
-            // --- FIX 2: Sicherer Cast für Punkte ---
+            'marktwert': (player['spieler_analytics']?['marktwert'] as num?)?.toInt(),
             'total_punkte': (totalPunkte as num).toInt(),
             'position': player['position'],
           });
@@ -229,7 +227,7 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
 
       var query = Supabase.instance.client
           .from('matchrating')
-          .select('punkte, spieler:spieler!inner(id, name, profilbild_url, position, marktwert), spiel!inner(round, season_id)')
+          .select('punkte, spieler:spieler!inner(id, name, profilbild_url, position, spieler_analytics(marktwert)), spiel!inner(round, season_id)')
           .eq('spiel.round', spieltag)
           .eq('spiel.season_id', seasonId);
 
@@ -277,9 +275,7 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
           'name': player['name'],
           'profilbild_url': player['profilbild_url'],
           'team_image_url': team['image_url'],
-          // --- FIX 2: Sicherer Cast für Marktwert ---
-          'marktwert': (player['marktwert'] as num?)?.toInt(),
-          // --- FIX 2: Sicherer Cast für Punkte ---
+          'marktwert': (player['spieler_analytics']?['marktwert'] as num?)?.toInt(),
           'total_punkte': (rating['punkte'] as num?)?.toInt() ?? 0,
           'position': player['position'],
         });
@@ -561,6 +557,14 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
   }
 
   Widget _buildPlayerListView() {
+    if (_topPlayers.isEmpty) {
+      return const Center(
+        child: Text(
+            "Keine Spieler für diesen Filter gefunden.",
+            style: TextStyle(color: Colors.grey, fontSize: 16)
+        ),
+      );
+    }
     return ListView.builder(
       itemCount: _topPlayers.length,
       itemBuilder: (context, index) {
