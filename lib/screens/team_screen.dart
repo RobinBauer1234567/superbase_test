@@ -45,6 +45,21 @@ class _TeamScreenState extends State<TeamScreen> with SingleTickerProviderStateM
     _fetchTeamData();
   }
 
+
+  int _extractMarketValue(dynamic analyticsRaw, int seasonId) {
+    if (analyticsRaw is Map) {
+      return (analyticsRaw['marktwert'] as num?)?.toInt() ?? 0;
+    }
+    if (analyticsRaw is List) {
+      final selected = analyticsRaw.cast<Map<String, dynamic>>().firstWhere(
+        (a) => a['season_id'] == seasonId,
+        orElse: () => <String, dynamic>{},
+      );
+      return (selected['marktwert'] as num?)?.toInt() ?? 0;
+    }
+    return 0;
+  }
+
   Future<void> _fetchTeamData() async {
     if (!mounted) return;
     setState(() {
@@ -81,7 +96,7 @@ class _TeamScreenState extends State<TeamScreen> with SingleTickerProviderStateM
 
       final playersResponse = await Supabase.instance.client
           .from('season_players')
-          .select('spieler:spieler(*, spieler_analytics(marktwert), matchrating!inner(punkte, spiel!inner(season_id)))')
+          .select('spieler:spieler(*, spieler_analytics(marktwert, season_id), matchrating!inner(punkte, spiel!inner(season_id)))')
           .eq('season_id', seasonId)
           .eq('team_id', widget.teamId)
           .eq('spieler.matchrating.spiel.season_id', seasonId);
@@ -101,7 +116,7 @@ class _TeamScreenState extends State<TeamScreen> with SingleTickerProviderStateM
           'id': player['id'],
           'name': player['name'],
           'profilbild_url': player['profilbild_url'],
-          'marktwert': player['spieler_analytics']?['marktwert'], // Marktwert aus DB mappen
+          'marktwert': _extractMarketValue(player['spieler_analytics'], seasonId), // Marktwert aus DB mappen
           'total_punkte': totalPoints,
         });
       }

@@ -108,6 +108,21 @@ class _PlayerScreenState extends State<PlayerScreen>
     super.dispose();
   }
 
+
+  int _extractMarketValue(dynamic analyticsRaw, int seasonId) {
+    if (analyticsRaw is Map) {
+      return (analyticsRaw['marktwert'] as num?)?.toInt() ?? 0;
+    }
+    if (analyticsRaw is List) {
+      final selected = analyticsRaw.cast<Map<String, dynamic>>().firstWhere(
+        (a) => a['season_id'] == seasonId,
+        orElse: () => <String, dynamic>{},
+      );
+      return (selected['marktwert'] as num?)?.toInt() ?? 0;
+    }
+    return 0;
+  }
+
   Future<void> fetchPlayerData() async {
     if (!mounted) return;
     setState(() {
@@ -123,7 +138,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       final playerResponse = await supabase
           .from('season_players')
           .select(
-          'team:team(id, name, image_url), spieler:spieler(name, position, profilbild_url, spieler_analytics(marktwert))')
+          'team:team(id, name, image_url), spieler:spieler(name, position, profilbild_url, spieler_analytics(marktwert, season_id))')
           .eq('season_id', seasonId)
           .eq('player_id', widget.playerId)
           .single();
@@ -188,7 +203,8 @@ class _PlayerScreenState extends State<PlayerScreen>
 
       setState(() {
         playerName = spielerData['name'];
-        marketValue = spielerData['spieler_analytics']?['marktwert'];        teamName = teamData!['name'];
+        marketValue = _extractMarketValue(spielerData['spieler_analytics'], seasonId);
+        teamName = teamData!['name'];
         teamImageUrl = teamData!['image_url'];
         profileImageUrl = spielerData['profilbild_url'] ??
             'https://rcfetlzldccwjnuabfgj.supabase.co/storage/v1/object/public/spielerbilder//Photo-Missing.png';
