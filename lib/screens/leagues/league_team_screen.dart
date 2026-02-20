@@ -45,15 +45,13 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
     return 0;
   }
 
-  dynamic _getStats(dynamic playerMap) {
-    if (playerMap == null) return {};
+  Map<String, dynamic> _getStats(dynamic playerMap) {
+    if (playerMap == null) return <String, dynamic>{};
     final analytics = playerMap['spieler_analytics'];
-    if (analytics is List && analytics.isNotEmpty) {
-      return analytics[0]['gesamtstatistiken'] ?? {};
-    } else if (analytics is Map) {
-      return analytics['gesamtstatistiken'] ?? {};
-    }
-    return {};
+    final stats = analytics is Map ? analytics['gesamtstatistiken'] : null;
+    if (stats is Map<String, dynamic>) return stats;
+    if (stats is Map) return Map<String, dynamic>.from(stats);
+    return <String, dynamic>{};
   }
   @override
   void initState() {
@@ -66,7 +64,6 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
     final dataManagement = Provider.of<DataManagement>(context, listen: false);
     final seasonId = dataManagement.seasonId;
     final service = dataManagement.supabaseService;
-    final seasonIdStr = seasonId.toString();
 
     var formations = await service.fetchFormationsFromDb();
     final savedFormationName = await service.fetchUserFormation(
@@ -85,28 +82,8 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
     for (var p in playersRaw) {
       int rating = 0;
       try {
-        final dynamic stats = _getStats(p);
-        dynamic seasonStats;
-
-        if (stats is Map) {
-          if (stats.containsKey(seasonIdStr)) {
-            seasonStats = stats[seasonIdStr];
-          } else if (stats.containsKey(seasonId)) {
-            seasonStats = stats[seasonId];
-          }
-        } else if (stats is List) {
-          seasonStats = stats.firstWhere(
-            (e) =>
-                (e is Map &&
-                    (e['season_id']?.toString() == seasonIdStr ||
-                        e['season_id'] == seasonId)),
-            orElse: () => null,
-          );
-        }
-
-        if (seasonStats != null && seasonStats is Map) {
-          rating = seasonStats['gesamtpunkte'] ?? 0;
-        }
+        final stats = _getStats(p);
+        rating = _toInt(stats['gesamtpunkte']);
       } catch (e) {
         debugPrint("Fehler bei Punkteberechnung für ${p['name']}: $e");
       }

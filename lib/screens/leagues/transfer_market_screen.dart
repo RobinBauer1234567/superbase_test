@@ -51,15 +51,13 @@ class _TransferMarketScreenState extends State<TransferMarketScreen> {
     }
     return 0;
   }
-  dynamic _getStats(dynamic playerMap) {
-    if (playerMap == null) return {};
+  Map<String, dynamic> _getStats(dynamic playerMap) {
+    if (playerMap == null) return <String, dynamic>{};
     final analytics = playerMap['spieler_analytics'];
-    if (analytics is List && analytics.isNotEmpty) {
-      return analytics[0]['gesamtstatistiken'] ?? {};
-    } else if (analytics is Map) {
-      return analytics['gesamtstatistiken'] ?? {};
-    }
-    return {};
+    final stats = analytics is Map ? analytics['gesamtstatistiken'] : null;
+    if (stats is Map<String, dynamic>) return stats;
+    if (stats is Map) return Map<String, dynamic>.from(stats);
+    return <String, dynamic>{};
   }
   Future<void> _loadMarket() async {
     setState(() => _isLoading = true);
@@ -348,20 +346,17 @@ class _TransferMarketScreenState extends State<TransferMarketScreen> {
 
   Map<String, dynamic> _extractPlayerData(Map<String, dynamic> playerRaw) {
     String? teamImg;
-    if (playerRaw['season_players'] != null && (playerRaw['season_players'] as List).isNotEmpty) {
-      teamImg = playerRaw['season_players'][0]['team']['image_url'];
+    final seasonPlayers = playerRaw['season_players'];
+    if (seasonPlayers is Map && seasonPlayers['team'] is Map) {
+      teamImg = seasonPlayers['team']['image_url'];
+    } else if (seasonPlayers is List && seasonPlayers.isNotEmpty) {
+      teamImg = seasonPlayers[0]['team']?['image_url'];
     }
+
     int score = 0;
-    final seasonId = Provider.of<DataManagement>(context, listen: false).seasonId.toString();
     try {
-      final dynamic stats = _getStats(playerRaw);
-      dynamic seasonStats;
-      if (stats is Map) {
-        if (stats.containsKey(seasonId)) seasonStats = stats[seasonId];
-      } else if (stats is List) {
-        seasonStats = stats.firstWhere((e) => e['season_id'].toString() == seasonId, orElse: () => null);
-      }
-      if (seasonStats != null) score = seasonStats['gesamtpunkte'] ?? 0;
+      final stats = _getStats(playerRaw);
+      score = _toInt(stats['gesamtpunkte']);
     } catch (_) {}
 
     return {'teamImageUrl': teamImg, 'score': score};
