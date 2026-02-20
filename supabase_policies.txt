@@ -1,0 +1,112 @@
+[
+  {
+    "schemaname": "public",
+    "tablename": "api_sync_lock",
+    "policyname": "Jeder darf Status lesen",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "SELECT",
+    "qual": "true",
+    "with_check": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "league_activities",
+    "policyname": "Liga Mitglieder können Aktivitäten sehen",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "SELECT",
+    "qual": "(EXISTS ( SELECT 1\n   FROM league_members\n  WHERE ((league_members.league_id = league_activities.league_id) AND (league_members.user_id = auth.uid()))))",
+    "with_check": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "leagues",
+    "policyname": "Authenticated users can see public leagues.",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "SELECT",
+    "qual": "(is_public = true)",
+    "with_check": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "profiles",
+    "policyname": "Authenticated users can view all profiles.",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "SELECT",
+    "qual": "(auth.role() = 'authenticated'::text)",
+    "with_check": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "profiles",
+    "policyname": "Users can insert their own profile.",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "INSERT",
+    "qual": null,
+    "with_check": "(auth.uid() = user_id)"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "season_players",
+    "policyname": "season_players_insert_authenticated",
+    "permissive": "PERMISSIVE",
+    "roles": "{authenticated}",
+    "cmd": "INSERT",
+    "qual": null,
+    "with_check": "(auth.uid() IS NOT NULL)"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "transfer_bids",
+    "policyname": "Users can delete their own bids",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "DELETE",
+    "qual": "(auth.uid() = bidder_id)",
+    "with_check": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "transfer_bids",
+    "policyname": "Users can place bids",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "INSERT",
+    "qual": null,
+    "with_check": "(auth.uid() = bidder_id)"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "transfer_bids",
+    "policyname": "Users can see only their own bids",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "SELECT",
+    "qual": "(auth.uid() = bidder_id)",
+    "with_check": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "transfer_market",
+    "policyname": "Market visible to everyone",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "SELECT",
+    "qual": "true",
+    "with_check": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "transfer_market",
+    "policyname": "Users can insert sell offers",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "INSERT",
+    "qual": null,
+    "with_check": "(auth.uid() = seller_id)"
+  }
+]

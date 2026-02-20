@@ -1,0 +1,226 @@
+-- WARNING: This schema is for context only and is not meant to be run.
+-- Table order and constraints may not be valid for execution.
+
+CREATE TABLE public.api_debug_dump (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  spiel_id bigint,
+  raw_json jsonb,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT api_debug_dump_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.api_sync_lock (
+  id integer NOT NULL DEFAULT 1 CHECK (id = 1),
+  last_sync_at timestamp with time zone DEFAULT now(),
+  is_locked_by uuid,
+  lock_timeout timestamp with time zone DEFAULT now(),
+  CONSTRAINT api_sync_lock_pkey PRIMARY KEY (id),
+  CONSTRAINT api_sync_lock_is_locked_by_fkey FOREIGN KEY (is_locked_by) REFERENCES auth.users(id)
+);
+CREATE TABLE public.formation (
+  formation text NOT NULL,
+  positionsliste jsonb NOT NULL,
+  CONSTRAINT formation_pkey PRIMARY KEY (formation)
+);
+CREATE TABLE public.game_settings (
+  id integer NOT NULL DEFAULT 1 CHECK (id = 1),
+  mw_multiplier numeric DEFAULT 15000,
+  mw_exponent numeric DEFAULT 1.5,
+  mw_base_value numeric DEFAULT 1000000,
+  mw_daily_adjustment numeric DEFAULT 0.05,
+  tm_daily_players integer DEFAULT 10,
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT game_settings_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.league_activities (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  league_id bigint NOT NULL,
+  type text NOT NULL,
+  content jsonb NOT NULL DEFAULT '{}'::jsonb,
+  created_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT league_activities_pkey PRIMARY KEY (id),
+  CONSTRAINT league_activities_league_id_fkey FOREIGN KEY (league_id) REFERENCES public.leagues(id)
+);
+CREATE TABLE public.league_members (
+  league_id bigint NOT NULL,
+  user_id uuid NOT NULL,
+  manager_team_name text,
+  budget numeric NOT NULL,
+  joined_at timestamp with time zone NOT NULL DEFAULT now(),
+  role text DEFAULT 'player'::text,
+  is_admin boolean DEFAULT false,
+  position integer,
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  formation text,
+  CONSTRAINT league_members_pkey PRIMARY KEY (id),
+  CONSTRAINT league_members_league_id_fkey FOREIGN KEY (league_id) REFERENCES public.leagues(id),
+  CONSTRAINT league_members_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(user_id),
+  CONSTRAINT league_members_formation_fkey FOREIGN KEY (formation) REFERENCES public.formation(formation)
+);
+CREATE TABLE public.league_players (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  league_id bigint,
+  user_id uuid,
+  player_id bigint,
+  created_at timestamp with time zone DEFAULT now(),
+  formation_index smallint DEFAULT 99,
+  purchase_price integer DEFAULT 0,
+  CONSTRAINT league_players_pkey PRIMARY KEY (id),
+  CONSTRAINT league_players_league_id_fkey FOREIGN KEY (league_id) REFERENCES public.leagues(id),
+  CONSTRAINT league_players_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
+  CONSTRAINT league_players_player_id_fkey FOREIGN KEY (player_id) REFERENCES public.spieler(id)
+);
+CREATE TABLE public.leagues (
+  id bigint NOT NULL DEFAULT nextval('leagues_id_seq'::regclass),
+  name text NOT NULL,
+  admin_id uuid NOT NULL,
+  season_id bigint,
+  starting_budget numeric NOT NULL DEFAULT 100000.00,
+  settings jsonb DEFAULT '{}'::jsonb,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  is_public boolean DEFAULT false,
+  squad_limit integer,
+  num_starting_players integer DEFAULT 0,
+  starting_team_value bigint DEFAULT 0,
+  is_active boolean DEFAULT true,
+  last_activity_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT leagues_pkey PRIMARY KEY (id),
+  CONSTRAINT leagues_admin_id_fkey FOREIGN KEY (admin_id) REFERENCES public.profiles(user_id)
+);
+CREATE TABLE public.matchrating (
+  id bigint NOT NULL,
+  spieler_id integer,
+  spiel_id integer,
+  statistics jsonb,
+  neuepunkte numeric,
+  formationsindex smallint,
+  match_position text,
+  punkte numeric NOT NULL,
+  CONSTRAINT matchrating_pkey PRIMARY KEY (id),
+  CONSTRAINT matchrating_spiel_id_fkey FOREIGN KEY (spiel_id) REFERENCES public.spiel(id),
+  CONSTRAINT matchrating_spieler_id_fkey FOREIGN KEY (spieler_id) REFERENCES public.spieler(id)
+);
+CREATE TABLE public.profiles (
+  user_id uuid NOT NULL,
+  username text NOT NULL,
+  avatar_url text,
+  bio text,
+  created_at timestamp with time zone NOT NULL DEFAULT now(),
+  CONSTRAINT profiles_pkey PRIMARY KEY (user_id),
+  CONSTRAINT profiles_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id)
+);
+CREATE TABLE public.season (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  name text NOT NULL,
+  is_active boolean DEFAULT true,
+  last_schedule_update timestamp with time zone DEFAULT '2000-01-01 00:00:00+00'::timestamp with time zone,
+  CONSTRAINT season_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.season_players (
+  season_id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  player_id integer NOT NULL,
+  team_id integer,
+  CONSTRAINT season_players_pkey PRIMARY KEY (season_id, player_id),
+  CONSTRAINT season_players_season_id_fkey FOREIGN KEY (season_id) REFERENCES public.season(id),
+  CONSTRAINT season_players_player_id_fkey FOREIGN KEY (player_id) REFERENCES public.spieler(id),
+  CONSTRAINT season_players_team_id_fkey FOREIGN KEY (team_id) REFERENCES public.team(id)
+);
+CREATE TABLE public.season_teams (
+  season_id bigint NOT NULL,
+  team_id integer NOT NULL,
+  CONSTRAINT season_teams_pkey PRIMARY KEY (season_id, team_id),
+  CONSTRAINT season_teams_season_id_fkey FOREIGN KEY (season_id) REFERENCES public.season(id),
+  CONSTRAINT season_teams_team_id_fkey FOREIGN KEY (team_id) REFERENCES public.team(id)
+);
+CREATE TABLE public.spiel (
+  id integer NOT NULL DEFAULT nextval('spiel_id_seq'::regclass) UNIQUE,
+  datum timestamp without time zone NOT NULL,
+  heimteam_id integer,
+  auswärtsteam_id integer,
+  ergebnis text,
+  status text,
+  round integer,
+  season_id bigint,
+  hometeam_formation text,
+  awayteam_formation text,
+  last_updated_at timestamp with time zone DEFAULT '2000-01-01 00:00:00+00'::timestamp with time zone,
+  CONSTRAINT spiel_pkey PRIMARY KEY (id),
+  CONSTRAINT spiel_auswärtsteam_id_fkey FOREIGN KEY (auswärtsteam_id) REFERENCES public.team(id),
+  CONSTRAINT spiel_heimteam_id_fkey FOREIGN KEY (heimteam_id) REFERENCES public.team(id),
+  CONSTRAINT spiel_season_id_fkey FOREIGN KEY (season_id) REFERENCES public.season(id),
+  CONSTRAINT spiel_hometeam_formation_fkey FOREIGN KEY (hometeam_formation) REFERENCES public.formation(formation),
+  CONSTRAINT spiel_awayteam_formation_fkey FOREIGN KEY (awayteam_formation) REFERENCES public.formation(formation)
+);
+CREATE TABLE public.spieler (
+  id integer NOT NULL DEFAULT nextval('spieler_id_seq'::regclass) UNIQUE,
+  name text NOT NULL,
+  profilbild_url text,
+  season_players integer,
+  position text,
+  team_id bigint,
+  CONSTRAINT spieler_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.spieler_analytics (
+  spieler_id integer NOT NULL,
+  marktwert integer,
+  calculated_marktwert integer,
+  gesamtstatistiken jsonb DEFAULT '{}'::jsonb,
+  anzahl_spiele integer DEFAULT 0,
+  punkteschnitt numeric DEFAULT 0.0,
+  form numeric DEFAULT 0.0,
+  startelf_quote numeric DEFAULT 0.0,
+  expected_points numeric DEFAULT 0.0,
+  last_updated_at timestamp with time zone DEFAULT now(),
+  season_id bigint NOT NULL,
+  CONSTRAINT spieler_analytics_pkey PRIMARY KEY (spieler_id, season_id),
+  CONSTRAINT spieler_analytics_spieler_id_fkey FOREIGN KEY (spieler_id) REFERENCES public.spieler(id)
+);
+CREATE TABLE public.spieltag (
+  round integer NOT NULL,
+  status text NOT NULL,
+  season_id bigint NOT NULL,
+  best_formation text,
+  CONSTRAINT spieltag_pkey PRIMARY KEY (round, season_id),
+  CONSTRAINT spieltag_season_id_fkey FOREIGN KEY (season_id) REFERENCES public.season(id),
+  CONSTRAINT spieltag_best_formation_fkey FOREIGN KEY (best_formation) REFERENCES public.formation(formation)
+);
+CREATE TABLE public.team (
+  id integer NOT NULL DEFAULT nextval('team_id_seq'::regclass) UNIQUE,
+  name text NOT NULL UNIQUE,
+  image_url text,
+  CONSTRAINT team_pkey PRIMARY KEY (id)
+);
+CREATE TABLE public.team_analytics (
+  team_id integer NOT NULL,
+  gesamtstaerke numeric DEFAULT 5.0,
+  form numeric DEFAULT 0.0,
+  matchup_faktor numeric DEFAULT 1.0,
+  last_updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT team_analytics_pkey PRIMARY KEY (team_id),
+  CONSTRAINT team_analytics_team_id_fkey FOREIGN KEY (team_id) REFERENCES public.team(id)
+);
+CREATE TABLE public.transfer_bids (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  transfer_id bigint NOT NULL,
+  bidder_id uuid NOT NULL,
+  amount integer NOT NULL CHECK (amount > 0),
+  created_at timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()),
+  CONSTRAINT transfer_bids_pkey PRIMARY KEY (id),
+  CONSTRAINT transfer_bids_transfer_id_fkey FOREIGN KEY (transfer_id) REFERENCES public.transfer_market(id),
+  CONSTRAINT transfer_bids_bidder_id_fkey FOREIGN KEY (bidder_id) REFERENCES auth.users(id)
+);
+CREATE TABLE public.transfer_market (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  league_id bigint NOT NULL,
+  player_id bigint NOT NULL,
+  seller_id uuid,
+  listed_at timestamp with time zone NOT NULL DEFAULT timezone('utc'::text, now()),
+  expires_at timestamp with time zone NOT NULL,
+  buy_now_price integer,
+  min_bid_price integer NOT NULL DEFAULT 0,
+  is_active boolean DEFAULT true,
+  CONSTRAINT transfer_market_pkey PRIMARY KEY (id),
+  CONSTRAINT transfer_market_league_id_fkey FOREIGN KEY (league_id) REFERENCES public.leagues(id),
+  CONSTRAINT transfer_market_player_id_fkey FOREIGN KEY (player_id) REFERENCES public.spieler(id),
+  CONSTRAINT transfer_market_seller_id_fkey FOREIGN KEY (seller_id) REFERENCES auth.users(id),
+  CONSTRAINT fk_league FOREIGN KEY (league_id) REFERENCES public.leagues(id)
+);

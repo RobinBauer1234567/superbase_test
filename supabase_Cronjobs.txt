@@ -1,0 +1,46 @@
+[
+  {
+    "jobid": 1,
+    "jobname": "transfer-market-cleanup",
+    "schedule": "* * * * *",
+    "command": " SELECT public.process_expired_transfers(); ",
+    "active": true,
+    "status": "succeeded",
+    "return_message": "1 row",
+    "start_time": "2026-02-20 09:35:00.027086+00",
+    "end_time": "2026-02-20 09:35:00.03016+00"
+  },
+  {
+    "jobid": 7,
+    "jobname": "deactivate-idle-leagues-job",
+    "schedule": "0 3 * * *",
+    "command": " SELECT public.deactivate_idle_leagues(); ",
+    "active": true,
+    "status": "succeeded",
+    "return_message": "1 row",
+    "start_time": "2026-02-20 03:00:00.056083+00",
+    "end_time": "2026-02-20 03:00:00.083672+00"
+  },
+  {
+    "jobid": 8,
+    "jobname": "random-system-transfers",
+    "schedule": "*/30 * * * *",
+    "command": " SELECT public.process_random_system_transfers(); ",
+    "active": true,
+    "status": "succeeded",
+    "return_message": "1 row",
+    "start_time": "2026-02-20 09:30:00.019357+00",
+    "end_time": "2026-02-20 09:30:00.040168+00"
+  },
+  {
+    "jobid": 12,
+    "jobname": "daily-marktwert-update",
+    "schedule": "0 3 * * *",
+    "command": "SELECT public.daily_marktwert_update();",
+    "active": true,
+    "status": "succeeded",
+    "return_message": "1 row",
+    "start_time": "2026-02-20 03:00:00.045808+00",
+    "end_time": "2026-02-20 03:00:08.931747+00"
+  }
+]
