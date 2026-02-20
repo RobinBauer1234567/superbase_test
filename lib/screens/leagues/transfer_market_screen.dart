@@ -34,23 +34,59 @@ class _TransferMarketScreenState extends State<TransferMarketScreen> {
     _loadMarket();
   }
 
+  int _toInt(dynamic value) {
+    if (value == null) return 0;
+    if (value is int) return value;
+    if (value is num) return value.toInt();
+    if (value is String) return int.tryParse(value) ?? 0;
+    return 0;
+  }
+  int _getMarktwert(dynamic playerMap) {
+    if (playerMap == null) return 0;
+    final analytics = playerMap['spieler_analytics'];
+    if (analytics is List && analytics.isNotEmpty) {
+      return _toInt(analytics[0]['marktwert']);
+    } else if (analytics is Map) {
+      return _toInt(analytics['marktwert']);
+    }
+    return 0;
+  }
+  dynamic _getStats(dynamic playerMap) {
+    if (playerMap == null) return {};
+    final analytics = playerMap['spieler_analytics'];
+    if (analytics is List && analytics.isNotEmpty) {
+      return analytics[0]['gesamtstatistiken'] ?? {};
+    } else if (analytics is Map) {
+      return analytics['gesamtstatistiken'] ?? {};
+    }
+    return {};
+  }
   Future<void> _loadMarket() async {
     setState(() => _isLoading = true);
     final service = Provider.of<DataManagement>(context, listen: false).supabaseService;
 
-    // Wir laden gleichzeitig den Markt und das Budget
-    final data = await service.fetchTransferMarket(widget.leagueId);
-    final budget = await service.fetchUserBudget(widget.leagueId);
+    try {
+      // Wir laden gleichzeitig den Markt und das Budget
+      final data = await service.fetchTransferMarket(widget.leagueId);
+      final budget = await service.fetchUserBudget(widget.leagueId);
 
-    if (mounted) {
-      setState(() {
-        _offers = data;
-        _budget = budget;
-        _isLoading = false;
-      });
+      if (mounted) {
+        setState(() {
+          _offers = data;
+          _budget = budget;
+          _isLoading = false;
+        });
+      }
+    } catch (e, stacktrace) {
+      // 🚨 Wenn es schon beim Laden knallt (z.B. in der fetchTransferMarket Funktion), fangen wir es hier!
+      print("🚨 CRASH IM TRANSFERMARKT: $e");
+      print("📍 STACKTRACE: $stacktrace");
+
+      if (mounted) {
+        setState(() => _isLoading = false);
+      }
     }
   }
-
   List<Map<String, dynamic>> get _displayedOffers {
     final currentUserId = Provider.of<DataManagement>(context, listen: false).supabaseService.supabase.auth.currentUser?.id;
     if (currentUserId == null) return _offers;
@@ -119,7 +155,7 @@ class _TransferMarketScreenState extends State<TransferMarketScreen> {
           return ListTile(
             leading: CircleAvatar(backgroundImage: NetworkImage(p['profilbild_url'] ?? '')),
             title: Text(p['name']),
-            subtitle: Text("MW: ${_currencyFormat.format(p['spieler_analytics']?['marktwert'] ?? 0)}"),
+            subtitle: Text("MW: ${_currencyFormat.format(_getMarktwert(p))}"),
             trailing: const Icon(Icons.sell, color: Colors.green),
             onTap: () {
               Navigator.pop(context);
@@ -144,7 +180,7 @@ class _TransferMarketScreenState extends State<TransferMarketScreen> {
   }
 
   Future<void> _showPriceInputDialog(Map<String, dynamic> playerMap) async {
-    final int safeMarktwert = (playerMap['spieler_analytics']?['marktwert'] as num?)?.toInt() ?? 0;
+    final int safeMarktwert = _getMarktwert(playerMap);
     final extraData = _extractPlayerData(playerMap);
 
     final player = PlayerInfo(
@@ -251,11 +287,30 @@ class _TransferMarketScreenState extends State<TransferMarketScreen> {
         basePrice: offer['min_bid_price'],
         currentBid: currentBidAmount,
 
+        // CALLBACK: Gebot zurückziehen
         onWithdraw: () async {
-          // ... (Hier bleibt dein Withdraw Code unverändert) ...
+          try {
+            // Wir warten hier auf die Datenbank
+            await Provider.of<DataManagement>(context, listen: false)
+                .supabaseService
+                .withdrawBid(offer['id']);
+
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(content: Text("Gebot zurückgezogen."), duration: Duration(seconds: 1))
+              );
+            }
+          } catch (e) {
+            // WICHTIG: Fehler anzeigen UND weiterwerfen, damit das Overlay nicht "umschaltet"
+            if (mounted) {
+              ScaffoldMessenger.of(context).showSnackBar(
+                  SnackBar(content: Text("Fehler: $e"), backgroundColor: Colors.red)
+              );
+            }
+            rethrow;
+          }
         },
 
-        // --- HIER IST DIE ÄNDERUNG ---
         onConfirm: (amount) async {
           // 1. Messenger sichern
           final messenger = ScaffoldMessenger.of(context);
@@ -299,7 +354,7 @@ class _TransferMarketScreenState extends State<TransferMarketScreen> {
     int score = 0;
     final seasonId = Provider.of<DataManagement>(context, listen: false).seasonId.toString();
     try {
-      final dynamic stats = playerRaw['spieler_analytics']?['gesamtstatistiken'];
+      final dynamic stats = _getStats(playerRaw);
       dynamic seasonStats;
       if (stats is Map) {
         if (stats.containsKey(seasonId)) seasonStats = stats[seasonId];
@@ -423,7 +478,7 @@ class _TransferMarketScreenState extends State<TransferMarketScreen> {
                           profileImageUrl: player['profilbild_url'],
                           playerName: player['name'],
                           teamImageUrl: extraData['teamImageUrl'],
-                          marketValue: player['spieler_analytics']?['marktwert'],
+                          marketValue: _getMarktwert(player),
                           score: extraData['score'],
                           maxScore: 2500,
                           position: player['position'] ?? 'N/A',

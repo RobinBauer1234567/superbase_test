@@ -34,7 +34,27 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
     if (value is String) return int.tryParse(value) ?? fallback;
     return fallback;
   }
+  int _getMarktwert(dynamic playerMap) {
+    if (playerMap == null) return 0;
+    final analytics = playerMap['spieler_analytics'];
+    if (analytics is List && analytics.isNotEmpty) {
+      return _toInt(analytics[0]['marktwert']);
+    } else if (analytics is Map) {
+      return _toInt(analytics['marktwert']);
+    }
+    return 0;
+  }
 
+  dynamic _getStats(dynamic playerMap) {
+    if (playerMap == null) return {};
+    final analytics = playerMap['spieler_analytics'];
+    if (analytics is List && analytics.isNotEmpty) {
+      return analytics[0]['gesamtstatistiken'] ?? {};
+    } else if (analytics is Map) {
+      return analytics['gesamtstatistiken'] ?? {};
+    }
+    return {};
+  }
   @override
   void initState() {
     super.initState();
@@ -65,7 +85,7 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
     for (var p in playersRaw) {
       int rating = 0;
       try {
-        final dynamic stats = p['spieler_analytics']?['gesamtstatistiken'];
+        final dynamic stats = _getStats(p);
         dynamic seasonStats;
 
         if (stats is Map) {
@@ -102,7 +122,7 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
         ownGoals: 0,
         maxRating: 2500,
         teamImageUrl: p['team_image_url'],
-        marketValue: _toInt(p['spieler_analytics']?['marktwert']),
+        marketValue: _getMarktwert(p),
         teamName: p['team_name'],
       );
 

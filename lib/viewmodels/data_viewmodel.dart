@@ -4,6 +4,7 @@ import 'package:pool/pool.dart';
 import 'package:premier_league/data_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'dart:math'; // <-- Wichtig für Random()
 
 class DataManagement {
   final SupabaseClient _supabase = Supabase.instance.client;
@@ -12,6 +13,47 @@ class DataManagement {
   final int seasonId;
 
   DataManagement({required this.seasonId});
+// Steuerungsvariable, um die Schleife an- und auszuschalten
+  bool _isAutoSyncRunning = false;
+
+  /// Startet die automatische Update-Schleife
+  void startAutoSync() async {
+    // Verhindert, dass aus Versehen zwei Schleifen gleichzeitig laufen
+    if (_isAutoSyncRunning) return;
+    _isAutoSyncRunning = true;
+
+    print('🔄 🟢 Auto-Sync Schleife gestartet.');
+
+    while (_isAutoSyncRunning) {
+      // 1. Das Update durchführen
+      await updateData();
+
+      // 2. Wartezeit berechnen
+      // HIER ANPASSEN: Wie lange ist dein Sync-Lock in der Datenbank eingestellt?
+      // Angenommen, der Lock ist auf 3 Minuten gestellt:
+      final int syncLockMinutes = 5;
+
+      // Zufällige Zeit zwischen 0 und 120 Sekunden (2 Minuten) generieren
+      final int randomSeconds = Random().nextInt(121);
+
+      // Gesamte Wartezeit zusammensetzen
+      final Duration waitTime = Duration(
+          minutes: syncLockMinutes,
+          seconds: randomSeconds
+      );
+
+      print('⏳ Auto-Sync schläft jetzt für ${waitTime.inMinutes} Min und ${waitTime.inSeconds % 60} Sek...');
+
+      // 3. Warten (Diese Zeile pausiert NUR diese Schleife, die App läuft normal weiter!)
+      await Future.delayed(waitTime);
+    }
+  }
+
+  /// Stoppt die automatische Update-Schleife
+  void stopAutoSync() {
+    _isAutoSyncRunning = false;
+    print('🛑 🔴 Auto-Sync Schleife gestoppt.');
+  }
 
   Future<void> collectNewData() async {
     print('start: collectNewData for season $seasonId');

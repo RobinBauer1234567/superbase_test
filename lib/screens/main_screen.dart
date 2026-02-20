@@ -211,7 +211,7 @@ class _MainScreenState extends State<MainScreen> {
     final dataManagement = context.read<DataManagement>();
 
     // Ruft updateData() (für PL-Daten) und getLeaguesForUser() (für Ligen) auf
-    await dataManagement.updateData();
+    dataManagement.startAutoSync();
     final leagues = await dataManagement.supabaseService.getLeaguesForUser();
 
     if (mounted) {
