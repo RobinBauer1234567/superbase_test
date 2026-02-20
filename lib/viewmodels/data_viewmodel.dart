@@ -168,7 +168,7 @@ class DataManagement {
       await Future.wait(updateFutures);
       print('🏁 Update abgeschlossen.');
 
-      await apiService.fixIncompletePlayers();
+      await apiService.fixIncompletePlayers(seasonId);
     } catch (e) {
       if (e.toString().contains('API_LIMIT_REACHED')) {
         print('🛑 API-Limit erkannt! Aktiviere lokale Sperre für 30 Minuten.');

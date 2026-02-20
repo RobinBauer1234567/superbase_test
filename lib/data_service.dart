@@ -228,7 +228,7 @@ class ApiService {
 
       if (existingPlayer == null || existingPlayer['marktwert'] == null) {
         print('Initialisiere Spieler $playerId ...');
-        await initializePlayerInDB(playerId);
+        await initializePlayerInDB(playerId, seasonId);
       }
 
       final imageResponse = await http.get(Uri.parse('https://www.sofascore.com/api/v1/player/$playerId/image'));
@@ -863,25 +863,24 @@ class ApiService {
     }
   }
 
-  Future<void> fixIncompletePlayers() async {
+  Future<void> fixIncompletePlayers(int seasonId) async {
     print('🧹 Starte Reparatur-Job für unvollständige Spieler...');
 
     try {
-      // 1. Suche nach Spielern, die 'SUB' sind UND keinen Marktwert haben
-      // Wir begrenzen es auf 10 Spieler pro Durchlauf, um das API-Limit zu schonen.
-      // Wir holen Spieler, bei denen die Position SUB ist, inklusive Analytics
       final response = await supabaseService.supabase
           .from('spieler')
-          .select('id, name, spieler_analytics(spieler_id)')
-          .eq('position', 'SUB')
-          .limit(20);
+          .select('id, name, spieler_analytics(marktwert)')
+          .eq('spieler_analytics.season_id', seasonId)
+          .limit(50);
 
       // Filtern: Nur Spieler behalten, die noch KEINEN Analytics-Eintrag haben
       final List<dynamic> allFetched = response as List<dynamic>;
-      final List<dynamic> incompletePlayers = allFetched
-          .where((p) => p['spieler_analytics'] == null)
-          .take(10)
-          .toList();
+      final List<dynamic> incompletePlayers = allFetched.where((p) {
+        final analytics = p['spieler_analytics'];
+        if (analytics == null || (analytics is List && analytics.isEmpty)) return true;
+        if (analytics is List && analytics.isNotEmpty && analytics.first['marktwert'] == null) return true;
+        return false;
+      }).take(10).toList();
 
       if (incompletePlayers.isEmpty) {
         print('✅ Alles sauber! Keine unvollständigen Spieler gefunden.');
@@ -895,7 +894,7 @@ class ApiService {
         String playerName = p['name'];
         print('   -> Bearbeite $playerName ($playerId)');
 
-        await initializePlayerInDB(playerId);
+        await initializePlayerInDB(playerId, seasonId);
 
         // c) Profilbild herunterladen und in Storage laden
         String? imageUrl;
@@ -942,7 +941,7 @@ class ApiService {
     }
   }
 
-  Future<void> initializePlayerInDB(int playerId) async {
+  Future<void> initializePlayerInDB(int playerId, int seasonId) async {
     try {
       List<double> ratings = [];
       String? foundFormation;
@@ -953,39 +952,52 @@ class ApiService {
       bool hasNextPage = true;
       bool positionFound = false;
 
-      // 1.1 Exakt wie davor: Schleife über die Seiten, bis Position gefunden wurde
       while (hasNextPage) {
         final response = await _throttledGet('https://www.sofascore.com/api/v1/player/$playerId/events/last/$currentPage');
         if (response.statusCode != 200) break;
 
         final data = json.decode(response.body);
-        final List<dynamic> events = data['events'] ?? [];
+        // SICHERHEIT: Prüfen ob das JSON wirklich eine Map ist und nicht leer
+        if (data == null || data is! Map) break;
+
+        final List<dynamic> events = data['events'] as List<dynamic>? ?? [];
         hasNextPage = data['hasNextPage'] ?? false;
 
         for (var event in events) {
+          // SICHERHEIT: Leere Events oder fehlende IDs filtern
+          if (event == null || event is! Map || event['id'] == null) continue;
+
           String eventId = event['id'].toString();
 
           final lineupResp = await _throttledGet('https://www.sofascore.com/api/v1/event/$eventId/lineups');
           if (lineupResp.statusCode == 200) {
             final lineupData = json.decode(lineupResp.body);
+            if (lineupData == null || lineupData is! Map) continue;
 
             for (var teamKey in ['home', 'away']) {
               final teamData = lineupData[teamKey];
-              if (teamData == null) continue;
+              if (teamData == null || teamData is! Map) continue;
 
               final players = teamData['players'] as List<dynamic>? ?? [];
               final formation = teamData['formation'] as String?;
 
               for (int i = 0; i < players.length; i++) {
                 final p = players[i];
-                if (p['player'] != null && p['player']['id'] == playerId) {
+                // SICHERHEIT: Null-Spieler aus dem Array werfen
+                if (p == null || p is! Map) continue;
 
-                  // Rating für Marktwert NUR von Seite 0 sammeln (wie im alten Code)
-                  if (currentPage == 0 && p['statistics'] != null && p['statistics']['rating'] != null) {
-                    ratings.add((p['statistics']['rating'] as num).toDouble());
+                final playerMap = p['player'];
+                if (playerMap != null && playerMap is Map && playerMap['id'] == playerId) {
+
+                  // Rating für Marktwert
+                  if (currentPage == 0 && p['statistics'] != null && p['statistics'] is Map) {
+                    final stats = p['statistics'];
+                    if (stats['rating'] != null) {
+                      ratings.add((stats['rating'] as num).toDouble());
+                    }
                   }
 
-                  // Startelf-Check: Nur wenn er in den ersten 11 ist (Index 0-10)
+                  // Startelf-Check
                   if (i <= 10 && !positionFound && formation != null) {
                     foundFormation = formation;
                     foundIndex = i;
@@ -997,29 +1009,29 @@ class ApiService {
           }
         }
 
-        // Abbruchbedingung: Wenn Seite 0 fertig ist (alle Ratings da) UND Position gefunden, stop!
         if (currentPage >= 0 && positionFound) {
           break;
         }
         currentPage++;
       }
 
-      // 1.2 Wenn nach allen Seiten nichts gefunden wurde -> Fallback Position laden (wie altes guessPlayerPosition)
       if (!positionFound) {
         try {
           final playerInfoResp = await _throttledGet('https://www.sofascore.com/api/v1/player/$playerId');
           if (playerInfoResp.statusCode == 200) {
             final playerInfoData = json.decode(playerInfoResp.body);
-            fallbackPos = playerInfoData['player']?['position'];
+            if (playerInfoData != null && playerInfoData is Map && playerInfoData['player'] is Map) {
+              fallbackPos = playerInfoData['player']['position'];
+            }
           }
         } catch (e) {
           print('Fehler beim Abrufen der Fallback-Position für $playerId: $e');
         }
       }
 
-      // 2. Das gesammelte Paket an die performante Datenbank senden!
       await supabaseService.supabase.rpc('init_player_from_sofascore', params: {
         'p_player_id': playerId,
+        'p_season_id': seasonId,
         'p_formation': foundFormation,
         'p_lineup_index': foundIndex,
         'p_api_position': fallbackPos ?? 'M',
@@ -1032,8 +1044,7 @@ class ApiService {
       if (e.toString().contains('API_LIMIT_REACHED')) rethrow;
       print('❌ Fehler bei der Initialisierung von $playerId: $e');
     }
-  }
-}
+  }}
 
 class SupabaseService {
   final SupabaseClient supabase = Supabase.instance.client;
