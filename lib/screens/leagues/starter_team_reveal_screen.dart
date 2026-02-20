@@ -58,24 +58,9 @@ class _StarterTeamRevealScreenState extends State<StarterTeamRevealScreen> {
 
   int _getPunkte(Map<String, dynamic> player, String seasonIdStr) {
     final analytics = player['spieler_analytics'];
-    dynamic stats;
-
-    if (analytics is Map) {
-      stats = analytics['gesamtstatistiken'];
-    } else if (analytics is List && analytics.isNotEmpty) {
-      stats = analytics[0]['gesamtstatistiken'];
-    }
-
-    if (stats is Map && stats.containsKey(seasonIdStr)) {
-      return _toInt(stats[seasonIdStr]['gesamtpunkte']);
-    } else if (stats is List) {
-      final seasonStats = stats.firstWhere(
-            (e) => e is Map && e['season_id']?.toString() == seasonIdStr,
-        orElse: () => null,
-      );
-      if (seasonStats != null) {
-        return _toInt(seasonStats['gesamtpunkte']);
-      }
+    final stats = analytics is Map ? analytics['gesamtstatistiken'] : null;
+    if (stats is Map) {
+      return _toInt(stats['gesamtpunkte']);
     }
     return 0;
   }

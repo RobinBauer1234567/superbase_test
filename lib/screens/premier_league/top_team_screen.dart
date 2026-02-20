@@ -115,8 +115,8 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
 
       var query = Supabase.instance.client
           .from('spieler')
-          .select('id, name, profilbild_url, position, spieler_analytics(marktwert, gesamtstatistiken), season_players!inner(team:team(id, name, image_url))')
-          .eq('season_players.season_id', '$seasonIdInt');
+          .select('id, name, profilbild_url, position, spieler_analytics(marktwert, gesamtstatistiken, season_id), season_players!inner(season_id, team:team(id, name, image_url))')
+          .eq('season_players.season_id', seasonIdInt ?? rawSeasonId);
 
       final teamId = _selectedTeamId;
       if (teamId != null) {
@@ -129,28 +129,19 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
 
       for (var player in response) {
         try {
-          final dynamic stats = player['spieler_analytics']?['gesamtstatistiken'];
-          dynamic seasonStats;
-
-          if (stats is Map) {
-            if (stats.containsKey(seasonIdStr)) {
-              seasonStats = stats[seasonIdStr];
-            } else if (seasonIdInt != null && stats.containsKey(seasonIdInt)) {
-              seasonStats = stats[seasonIdInt];
-            } else {
-              for (var k in stats.keys) {
-                if (k.toString() == seasonIdStr) {
-                  seasonStats = stats[k];
-                  break;
-                }
-              }
-            }
-          } else if (stats is List) {
-            seasonStats = stats.firstWhere(
-                  (e) => (e is Map && (e['season_id']?.toString() == seasonIdStr || e['season_id'] == seasonIdInt)),
-              orElse: () => null,
+          final analyticsRaw = player['spieler_analytics'];
+          Map<String, dynamic>? analytics;
+          if (analyticsRaw is List) {
+            analytics = analyticsRaw.cast<Map<String, dynamic>>().firstWhere(
+              (a) => a['season_id'] == seasonIdInt,
+              orElse: () => <String, dynamic>{},
             );
+          } else if (analyticsRaw is Map) {
+            analytics = Map<String, dynamic>.from(analyticsRaw);
           }
+
+          final dynamic stats = analytics?['gesamtstatistiken'];
+          final dynamic seasonStats = stats is Map ? stats : null;
 
           final dynamic seasonPlayers = player['season_players'];
           dynamic team;
@@ -187,7 +178,7 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
             'name': player['name'],
             'profilbild_url': player['profilbild_url'],
             'team_image_url': team['image_url'],
-            'marktwert': (player['spieler_analytics']?['marktwert'] as num?)?.toInt(),
+            'marktwert': (analytics?['marktwert'] as num?)?.toInt(),
             'total_punkte': (totalPunkte as num).toInt(),
             'position': player['position'],
           });
@@ -227,7 +218,7 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
 
       var query = Supabase.instance.client
           .from('matchrating')
-          .select('punkte, spieler:spieler!inner(id, name, profilbild_url, position, spieler_analytics(marktwert)), spiel!inner(round, season_id)')
+          .select('punkte, spieler:spieler!inner(id, name, profilbild_url, position, spieler_analytics(marktwert, season_id)), spiel!inner(round, season_id)')
           .eq('spiel.round', spieltag)
           .eq('spiel.season_id', seasonId);
 
@@ -275,7 +266,7 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
           'name': player['name'],
           'profilbild_url': player['profilbild_url'],
           'team_image_url': team['image_url'],
-          'marktwert': (player['spieler_analytics']?['marktwert'] as num?)?.toInt(),
+          'marktwert': (() { final a = player['spieler_analytics']; if (a is List) { final f = a.cast<Map<String,dynamic>>().firstWhere((x)=>x['season_id']==seasonId, orElse: ()=> <String,dynamic>{}); return (f['marktwert'] as num?)?.toInt(); } return (a is Map ? (a['marktwert'] as num?)?.toInt() : null); })(),
           'total_punkte': (rating['punkte'] as num?)?.toInt() ?? 0,
           'position': player['position'],
         });

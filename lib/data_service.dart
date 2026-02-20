@@ -267,7 +267,8 @@ class ApiService {
         finalPositionsToSave,
         teamId,
         imageUrl,
-        marktwert
+        marktwert,
+        seasonId,
     );
     await supabaseService.saveSeasonPlayer(seasonId, playerId, teamId);
     await supabaseService.saveMatchrating(ratingId, spielId, playerId, punktzahl, stats, newRating, formationIndex, matchPosition);
@@ -1159,7 +1160,7 @@ class SupabaseService {
     await supabase.from('spieltag').update({'status': neuerStatus}).eq('round', round).eq('season_id', seasonId);
   }
 
-  Future<void> saveSpieler(int id, String name, String position, int teamId, String? profilbildUrl, int? marktwert) async {
+  Future<void> saveSpieler(int id, String name, String position, int teamId, String? profilbildUrl, int? marktwert, int seasonId) async {
     try {
       // 1. Stammdaten in die 'spieler' Tabelle
       final updateData = {
@@ -1177,9 +1178,10 @@ class SupabaseService {
       if (marktwert != null) {
         await supabase.from('spieler_analytics').upsert({
           'spieler_id': id,
+          'season_id': seasonId,
           'marktwert': marktwert,
           'calculated_marktwert': marktwert // Am Anfang sind beide Werte gleich
-        }, onConflict: 'spieler_id');
+        }, onConflict: 'spieler_id,season_id');
       }
 
     } catch (error) {
@@ -1474,17 +1476,15 @@ class SupabaseService {
             id,
             round,
             status,
-            hometeam:team!spiel_hometeam_id_fkey(name, image_url),
-            awayteam:team!spiel_awayteam_id_fkey(name, image_url),
-            hometeam_score,
-            awayteam_score,
+            heimteam:team!spiel_heimteam_id_fkey(name, image_url),
+            auswaertsteam:team!spiel_auswärtsteam_id_fkey(name, image_url),
             matchrating (
               punkte,
               match_position
             )
           ''')
           .eq('season_id', seasonId)
-          .or('hometeam_id.eq.$teamId,awayteam_id.eq.$teamId')
+          .or('heimteam_id.eq.$teamId,auswärtsteam_id.eq.$teamId')
       // Filtere die verschachtelte matchrating-Tabelle nach unserem Spieler
           .eq('matchrating.spieler_id', playerId)
           .order('round', ascending: true);
@@ -1501,21 +1501,54 @@ class SupabaseService {
     if (user == null) return [];
 
     try {
+      final leagueResponse = await supabase
+          .from('leagues')
+          .select('season_id')
+          .eq('id', leagueId)
+          .single();
+      final int seasonId = (leagueResponse['season_id'] as num).toInt();
+
       final response = await supabase
           .from('league_players')
           .select('''
+            formation_index,
             player:spieler (
               *,
-              season_players(team(image_url)),
+              season_players(season_id, team:team(name, image_url)),
               spieler_analytics (*)
             )
           ''')
           .eq('league_id', leagueId)
           .eq('user_id', user.id);
 
-      final List<Map<String, dynamic>> players = List<Map<String, dynamic>>.from(
-          response.map((e) => e['player'])
-      );
+      final List<Map<String, dynamic>> players = List<Map<String, dynamic>>.from(response.map((e) {
+        final player = Map<String, dynamic>.from(e['player'] as Map);
+
+        final analytics = player['spieler_analytics'];
+        if (analytics is List) {
+          player['spieler_analytics'] = analytics.cast<Map<String, dynamic>>().firstWhere(
+            (a) => a['season_id'] == seasonId,
+            orElse: () => <String, dynamic>{},
+          );
+        }
+
+        final seasonPlayers = player['season_players'];
+        if (seasonPlayers is List) {
+          final seasonEntry = seasonPlayers.cast<Map<String, dynamic>>().firstWhere(
+            (sp) => sp['season_id'] == seasonId,
+            orElse: () => <String, dynamic>{},
+          );
+          final team = seasonEntry['team'];
+          if (team is Map) {
+            player['team_name'] = team['name'];
+            player['team_image_url'] = team['image_url'];
+          }
+          player['season_players'] = seasonEntry;
+        }
+
+        player['formation_index'] = e['formation_index'];
+        return player;
+      }));
 
       return players;
     } catch (e) {
@@ -1650,13 +1683,20 @@ class SupabaseService {
       // Wenn du die Aufräum-Funktion noch drin hast:
       await supabase.rpc('process_expired_transfers');
 
+      final leagueResponse = await supabase
+          .from('leagues')
+          .select('season_id')
+          .eq('id', leagueId)
+          .single();
+      final int seasonId = (leagueResponse['season_id'] as num).toInt();
+
       final response = await supabase
           .from('transfer_market')
           .select('''
             *,
             player:spieler(
               *,
-              season_players(team(image_url)), 
+              season_players(season_id, team:team(name, image_url)),
               spieler_analytics (*)
             ),
             transfer_bids (
@@ -1668,7 +1708,33 @@ class SupabaseService {
           .eq('is_active', true)
           .order('expires_at', ascending: true);
 
-      return List<Map<String, dynamic>>.from(response);
+      return List<Map<String, dynamic>>.from(response.map((entry) {
+        final mapped = Map<String, dynamic>.from(entry as Map);
+        final player = mapped['player'];
+        if (player is Map) {
+          final playerMap = Map<String, dynamic>.from(player);
+
+          final analytics = playerMap['spieler_analytics'];
+          if (analytics is List) {
+            playerMap['spieler_analytics'] = analytics.cast<Map<String, dynamic>>().firstWhere(
+              (a) => a['season_id'] == seasonId,
+              orElse: () => <String, dynamic>{},
+            );
+          }
+
+          final seasonPlayers = playerMap['season_players'];
+          if (seasonPlayers is List) {
+            final seasonEntry = seasonPlayers.cast<Map<String, dynamic>>().firstWhere(
+              (sp) => sp['season_id'] == seasonId,
+              orElse: () => <String, dynamic>{},
+            );
+            playerMap['season_players'] = seasonEntry;
+          }
+
+          mapped['player'] = playerMap;
+        }
+        return mapped;
+      }));
     } catch (e) {
       print("Fehler beim Laden des Transfermarkts: $e");
       return [];
