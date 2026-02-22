@@ -1361,7 +1361,6 @@ class SupabaseService {
     }
   }
 
-
   Future<int> createLeague({required String name, required double startingBudget, required int seasonId, required bool isPublic, required int? squadLimit, required int numStartingPlayers, required double startingTeamValue,}) async {
     try {
       // Wir erwarten jetzt einen Rückgabewert (die ID)
@@ -1504,114 +1503,6 @@ class SupabaseService {
     } catch (e) {
       print('Fehler in fetchPlayerGameHistoryForSeason: $e');
       return [];
-    }
-  }
-
-  Future<List<Map<String, dynamic>>> fetchUserLeaguePlayers(int leagueId) async {
-    final user = supabase.auth.currentUser;
-    if (user == null) return [];
-
-    try {
-      final leagueResponse = await supabase
-          .from('leagues')
-          .select('season_id')
-          .eq('id', leagueId)
-          .single();
-      final int seasonId = (leagueResponse['season_id'] as num).toInt();
-
-      final response = await supabase
-          .from('league_players')
-          .select('''
-            formation_index,
-            player:spieler (
-              *,
-              season_players(season_id, team:team(name, image_url)),
-              spieler_analytics (*)
-            )
-          ''')
-          .eq('league_id', leagueId)
-          .eq('user_id', user.id);
-
-      final List<Map<String, dynamic>> players = List<Map<String, dynamic>>.from(response.map((e) {
-        final player = Map<String, dynamic>.from(e['player'] as Map);
-
-        final analytics = player['spieler_analytics'];
-        if (analytics is List) {
-          player['spieler_analytics'] = analytics.cast<Map<String, dynamic>>().firstWhere(
-            (a) => a['season_id'] == seasonId,
-            orElse: () => <String, dynamic>{},
-          );
-        }
-
-        final seasonPlayers = player['season_players'];
-        if (seasonPlayers is List) {
-          final seasonEntry = seasonPlayers.cast<Map<String, dynamic>>().firstWhere(
-            (sp) => sp['season_id'] == seasonId,
-            orElse: () => <String, dynamic>{},
-          );
-          final team = seasonEntry['team'];
-          if (team is Map) {
-            player['team_name'] = team['name'];
-            player['team_image_url'] = team['image_url'];
-          }
-          player['season_players'] = seasonEntry;
-        }
-
-        player['formation_index'] = e['formation_index'];
-        return player;
-      }));
-
-      return players;
-    } catch (e) {
-      print("Fehler beim Laden der eigenen Spieler: $e");
-      return [];
-    }
-  }
-
-  Future<String?> fetchUserFormation(int leagueId) async {
-    final user = supabase.auth.currentUser;
-    if (user == null) return null;
-
-    try {
-      final response = await supabase
-          .from('league_members')
-          .select('formation')
-          .eq('league_id', leagueId)
-          .eq('user_id', user.id)
-          .maybeSingle();
-
-      return response?['formation'] as String?;
-    } catch (e) {
-      print('Fehler beim Laden der Formation: $e');
-      return null;
-    }
-  }
-
-  Future<void> updateUserFormation(int leagueId, String formation) async {
-    final user = supabase.auth.currentUser;
-    if (user == null) return;
-
-    try {
-      await supabase
-          .from('league_members')
-          .update({'formation': formation})
-          .eq('league_id', leagueId)
-          .eq('user_id', user.id);
-    } catch (e) {
-      print('Fehler beim Speichern der Formation: $e');
-    }
-  }
-
-  Future<void> saveTeamLineup(int leagueId, List<Map<String, dynamic>> lineupUpdates) async {
-    try {
-      await supabase.rpc('save_lineup', params: {
-        'p_league_id': leagueId,
-        'p_updates': lineupUpdates,
-      });
-    } catch (e) {
-      print("Fehler beim Speichern der Aufstellung RPC: $e");
-      // Fallback falls RPC noch nicht existiert (nicht empfohlen für Produktion, aber gut zum Testen):
-      // Man könnte hier einzeln updaten, aber RPC ist viel besser.
     }
   }
 
@@ -1894,12 +1785,7 @@ class SupabaseService {
     }
   }
 
-  Future<Map<String, dynamic>> fetchMatchdayState({
-    required String userId,
-    required int leagueId,
-    required int seasonId,
-    required int round,
-  }) async {
+  Future<Map<String, dynamic>> fetchMatchdayState({required String userId, required int leagueId, required int seasonId, required int round,}) async {
     try {
       // 1. Zeitfenster aus 'spieltag' holen
       final spieltagResponse = await supabase
@@ -1956,6 +1842,187 @@ class SupabaseService {
         'is_formation_locked': false,
         'frozen_player_ids': <int>[],
       };
+    }
+  }
+
+  Future<Map<String, dynamic>> fetchMatchdayData(int leagueId, int seasonId, int round) async {
+    final userId = supabase.auth.currentUser!.id;
+
+    try {
+      // 1. Snapshot initialisieren (macht nichts, falls er schon existiert)
+      await supabase.rpc('initialize_matchday_snapshot', params: {
+        'p_league_id': leagueId,
+        'p_user_id': userId,
+        'p_season_id': seasonId,
+        'p_round': round,
+      });
+
+      // 2. Die Meta-Daten des Spieltags holen (Formation, Punkte, is_locked)
+      final pointsData = await supabase
+          .from('user_matchday_points')
+          .select()
+          .eq('league_id', leagueId)
+          .eq('user_id', userId)
+          .eq('round', round)
+          .maybeSingle();
+
+      if (pointsData == null) return {};
+
+      final matchdayPointId = pointsData['id'];
+
+      // 3. Die Spieler für genau diesen Snapshot laden
+      // Wir joinen die Tabellen, um Name, Bild und Marktwert direkt mitzunehmen
+      final playersData = await supabase
+          .from('user_matchday_players')
+          .select('''
+            formation_index,
+            is_locked,
+            points,
+            spieler:player_id (
+              id, name, position, profilbild_url,
+              team:team_id (name, image_url),
+              spieler_analytics (marktwert, gesamtstatistiken)
+            )
+          ''')
+          .eq('matchday_point_id', matchdayPointId)
+      // Nur die Analytics der aktuellen Saison laden
+          .eq('spieler.spieler_analytics.season_id', seasonId);
+
+      return {
+        'points_data': pointsData,
+        'players': playersData,
+      };
+    } catch (e) {
+      print("Fehler beim Laden der Matchday-Daten: $e");
+      return {};
+    }
+  }
+
+  Future<void> saveMatchdayLineup(int matchdayPointId, String formation, List<Map<String, dynamic>> playerUpdates) async {
+    try {
+      // 1. Formation in user_matchday_points updaten
+      await supabase
+          .from('user_matchday_points')
+          .update({'formation': formation})
+          .eq('id', matchdayPointId);
+
+      // 2. Die Indizes der Spieler aktualisieren
+      // Wir updaten nur Spieler, die NICHT gelockt sind (is_locked = false)
+      for (var update in playerUpdates) {
+        await supabase
+            .from('user_matchday_players')
+            .update({'formation_index': update['index']})
+            .eq('matchday_point_id', matchdayPointId)
+            .eq('player_id', update['player_id'])
+            .eq('is_locked', false); // Sicherheits-Check
+      }
+    } catch (e) {
+      print("Fehler beim Speichern der Matchday-Aufstellung: $e");
+    }
+  }
+
+  Future<List<dynamic>> fetchAllSpieltage(int seasonId) async {
+    final response = await supabase
+        .from('spieltag')
+        .select('round, status, matchday_start')
+        .eq('season_id', seasonId)
+        .order('round', ascending: true);
+    return response;
+  }
+
+  Future<List<Map<String, dynamic>>> fetchUserLeaguePlayers(int leagueId) async {
+    final user = supabase.auth.currentUser;
+    if (user == null) return [];
+
+    try {
+      final leagueResponse = await supabase
+          .from('leagues')
+          .select('season_id')
+          .eq('id', leagueId)
+          .single();
+      final int seasonId = (leagueResponse['season_id'] as num).toInt();
+
+      final response = await supabase
+          .from('league_players')
+          .select('''
+            player:spieler (
+              *,
+              season_players(season_id, team:team(name, image_url)),
+              spieler_analytics (*)
+            )
+          ''') // formation_index entfernt!
+          .eq('league_id', leagueId)
+          .eq('user_id', user.id);
+
+      final List<Map<String, dynamic>> players = List<Map<String, dynamic>>.from(response.map((e) {
+        final player = Map<String, dynamic>.from(e['player'] as Map);
+
+        final analytics = player['spieler_analytics'];
+        if (analytics is List) {
+          player['spieler_analytics'] = analytics.cast<Map<String, dynamic>>().firstWhere(
+                (a) => a['season_id'] == seasonId,
+            orElse: () => <String, dynamic>{},
+          );
+        }
+
+        final seasonPlayers = player['season_players'];
+        if (seasonPlayers is List) {
+          final seasonEntry = seasonPlayers.cast<Map<String, dynamic>>().firstWhere(
+                (sp) => sp['season_id'] == seasonId,
+            orElse: () => <String, dynamic>{},
+          );
+          final team = seasonEntry['team'];
+          if (team is Map) {
+            player['team_name'] = team['name'];
+            player['team_image_url'] = team['image_url'];
+          }
+          player['season_players'] = seasonEntry;
+        }
+
+        // Standardmäßig weisen wir allem Index 99 zu, das Zusammenfügen macht der TeamScreen
+        player['formation_index'] = 99;
+        return player;
+      }));
+
+      return players;
+    } catch (e) {
+      print("Fehler beim Laden der eigenen Spieler: $e");
+      return [];
+    }
+  }
+
+  Future<String?> fetchUserFormation(int leagueId, int seasonId, int round) async {
+    final user = supabase.auth.currentUser;
+    if (user == null) return null;
+
+    try {
+      final response = await supabase
+          .from('user_matchday_points')
+          .select('formation')
+          .eq('league_id', leagueId)
+          .eq('user_id', user.id)
+          .eq('season_id', seasonId)
+          .eq('round', round)
+          .maybeSingle();
+
+      return response?['formation'] as String?;
+    } catch (e) {
+      print('Fehler beim Laden der Formation: $e');
+      return null;
+    }
+  }
+
+  Future<void> saveTeamLineup(int leagueId, int seasonId, int round, String formation, List<Map<String, dynamic>> lineupUpdates) async {
+    try {
+      await supabase.rpc('save_lineup', params: {
+        'p_league_id': leagueId,
+        'p_season_id': seasonId,
+        'p_round': round,
+        'p_formation': formation,
+        'p_updates': lineupUpdates,
+      });
+    } catch (e) {
+      print("Fehler beim Speichern der Aufstellung RPC: $e");
     }
   }
 }

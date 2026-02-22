@@ -28,9 +28,14 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
   String? _filterTeam;
   String? _filterPosition;
 
-  bool _isMatchdayMode = false;
+  // --- SPIELTAG, PUNKTE & LOCK VARIABLEN ---
   bool _isFormationLocked = false;
   List<int> _frozenPlayerIds = [];
+  int _selectedRound = 1;
+  int _latestActiveRound = 1;
+  int _matchdayPoints = 0;
+  bool _isViewingHistory = false;
+  // --------------------------------
 
   int _toInt(dynamic value, {int fallback = 0}) {
     if (value is int) return value;
@@ -62,93 +67,204 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
   @override
   void initState() {
     super.initState();
-    _loadAllData();
+    _initMatchdayData();
   }
 
-  Future<void> _loadAllData() async {
+  // --- Initialisierung beim Starten des Screens ---
+  Future<void> _initMatchdayData() async {
     setState(() => _isLoading = true);
     final dataManagement = Provider.of<DataManagement>(context, listen: false);
     final seasonId = dataManagement.seasonId;
+
+    // Aktuellen Spieltag abfragen (z.B. 27)
+    final currentRound = await dataManagement.supabaseService.getCurrentRound(seasonId);
+
+    _latestActiveRound = currentRound;
+    _selectedRound = currentRound;
+    _isViewingHistory = false;
+
+    // Daten für diesen Spieltag laden
+    await _loadDataForRound(_selectedRound);
+  }
+
+  // --- Wechseln zwischen den Spieltagen (Historie) ---
+  Future<void> _changeRound(int newRound) async {
+    if (newRound < 1 || newRound > _latestActiveRound) return;
+
+    setState(() {
+      _selectedRound = newRound;
+      _isViewingHistory = newRound != _latestActiveRound;
+    });
+
+    await _loadDataForRound(newRound);
+  }
+
+  // --- DIE NEUE "SINGLE SOURCE OF TRUTH" LADE-LOGIK ---
+  Future<void> _loadDataForRound(int round) async {
+    setState(() => _isLoading = true);
+    final dataManagement = Provider.of<DataManagement>(context, listen: false);
     final service = dataManagement.supabaseService;
+    final seasonId = dataManagement.seasonId;
+    final userId = service.supabase.auth.currentUser!.id;
 
-    var formations = await service.fetchFormationsFromDb();
-    final savedFormationName = await service.fetchUserFormation(
-      widget.leagueId,
-    );
+    try {
+      // 1. Alle verfügbaren Formations-Varianten laden
+      var formations = await service.fetchFormationsFromDb();
 
-    final playersRaw = await service.fetchUserLeaguePlayers(widget.leagueId);
+      // 2. Kader des Users aus der Datenbank holen (Liefert standardmäßig alle auf die Bank/Index 99)
+      final playersRaw = await service.fetchUserLeaguePlayers(widget.leagueId);
 
-    List<PlayerInfo> field = List.generate(
-      11,
-      (index) => _createPlaceholder(index),
-    );
-    List<PlayerInfo> bench = [];
-
-    // 3. Spieler verteilen
-    for (var p in playersRaw) {
-      int rating = 0;
-      try {
-        final stats = _getStats(p);
-        rating = _toInt(stats['gesamtpunkte']);
-      } catch (e) {
-        debugPrint("Fehler bei Punkteberechnung für ${p['name']}: $e");
-      }
-
-      final playerInfo = PlayerInfo(
-        id: _toInt(p['id'], fallback: -9999),
-        name: (p['name'] ?? 'Unbekannt').toString(),
-        position: p['position'] ?? 'N/A',
-        profileImageUrl: p['profilbild_url'],
-        rating: rating,
-        goals: 0,
-        assists: 0,
-        ownGoals: 0,
-        maxRating: 2500,
-        teamImageUrl: p['team_image_url'],
-        marketValue: _getMarktwert(p),
-        teamName: p['team_name'],
+      // 3. Den Snapshot / Zustand für exakt diese Runde abfragen
+      final state = await service.fetchMatchdayState(
+        userId: userId,
+        leagueId: widget.leagueId,
+        seasonId: seasonId,
+        round: round,
       );
 
-      // WICHTIG: Prüfen, wo der Spieler hin soll
-      final int fIndex = _toInt(p['formation_index'], fallback: 99);
+      // 4. Die für diese Runde gespeicherte Formation abfragen
+      String? savedFormationName = await service.fetchUserFormation(widget.leagueId, seasonId, round);
 
-      if (fIndex >= 0 && fIndex <= 10) {
-        // Spieler gehört auf das Feld an Position fIndex
-        field[fIndex] = playerInfo;
-      } else {
-        // Spieler gehört auf die Bank
-        bench.add(playerInfo);
+      // --- DATEN VERARBEITEN ---
+      final frozenPlayersFull = state['frozen_players_full'] as List<dynamic>? ?? [];
+      final bool isLocked = state['is_formation_locked'] ?? false;
+      final List<int> frozenIds = List<int>.from(state['frozen_player_ids'] ?? []);
+
+      int totalPts = 0;
+      List<PlayerInfo> field = List.generate(11, (index) => _createPlaceholder(index));
+      List<PlayerInfo> bench = [];
+      Set<int> processedPlayerIds = {};
+
+      // Snapshot als leicht abrufbare Map aufbereiten
+      Map<int, Map<String, dynamic>> snapshotMap = {};
+      for (var fp in frozenPlayersFull) {
+        snapshotMap[fp['player_id']] = fp;
+        totalPts += _toInt(fp['points']);
+      }
+
+      // A) AKTUELLE KADERSPIELER VERTEILEN
+      for (var p in playersRaw) {
+        final int pId = _toInt(p['id'], fallback: -9999);
+        processedPlayerIds.add(pId);
+
+        int rating = 0;
+        int fIndex = 99; // Standardmäßig Bank
+
+        // Falls der Spieler einen Snapshot-Eintrag für diesen Spieltag hat, übernimmt dieser die Kontrolle!
+        if (snapshotMap.containsKey(pId)) {
+          final snapData = snapshotMap[pId]!;
+          fIndex = _toInt(snapData['formation_index'], fallback: 99);
+          rating = _toInt(snapData['points']);
+        } else {
+          // Falls er keinen hat (z.B. neu gekauft), nehmen wir die regulären Live-Punkte
+          try {
+            final stats = _getStats(p);
+            rating = _toInt(stats['gesamtpunkte']);
+          } catch (e) {}
+        }
+
+        final playerInfo = PlayerInfo(
+          id: pId,
+          name: (p['name'] ?? 'Unbekannt').toString(),
+          position: p['position'] ?? 'N/A',
+          profileImageUrl: p['profilbild_url'],
+          rating: rating,
+          goals: 0, assists: 0, ownGoals: 0,
+          maxRating: 2500,
+          teamImageUrl: p['team_image_url'],
+          marketValue: _getMarktwert(p),
+          teamName: p['team_name'],
+        );
+
+        if (fIndex >= 0 && fIndex <= 10) {
+          field[fIndex] = playerInfo;
+        } else {
+          bench.add(playerInfo);
+        }
+      }
+
+      // B) GEISTER-SPIELER (Verkauft, aber noch im Snapshot der Historie)
+      for (var pId in snapshotMap.keys) {
+        if (!processedPlayerIds.contains(pId)) {
+          final snapData = snapshotMap[pId]!;
+          final spielerInfo = snapData['spieler'];
+          if (spielerInfo == null) continue;
+
+          final missingPlayer = PlayerInfo(
+            id: pId,
+            name: "${spielerInfo['name']} (Verkauft)", // Markierung
+            position: spielerInfo['position'] ?? 'N/A',
+            profileImageUrl: spielerInfo['profilbild_url'],
+            rating: _toInt(snapData['points']),
+            goals: 0, assists: 0, ownGoals: 0,
+          );
+
+          final int fIndex = _toInt(snapData['formation_index'], fallback: 99);
+          if (fIndex >= 0 && fIndex <= 10) {
+            field[fIndex] = missingPlayer;
+          } else {
+            bench.add(missingPlayer);
+          }
+        }
+      }
+
+      bench.sort((a, b) => _getPositionOrder(a.position).compareTo(_getPositionOrder(b.position)));
+
+      if (mounted) {
+        setState(() {
+          _allFormations = formations;
+
+          if (savedFormationName != null && _allFormations.containsKey(savedFormationName)) {
+            _selectedFormationName = savedFormationName;
+          } else if (_allFormations.isNotEmpty) {
+            _selectedFormationName = '4-4-2'; // Standard-Fallback
+          }
+
+          _fieldPlayers = field;
+          _substitutePlayers = bench;
+
+          // In der Historie ist IMMER alles komplett gesperrt
+          _isFormationLocked = isLocked || _isViewingHistory;
+          _frozenPlayerIds = frozenIds;
+          _matchdayPoints = totalPts;
+
+          _updatePlaceholderNames();
+          _isLoading = false;
+        });
+      }
+    } catch (e) {
+      print("Fehler beim Laden der Aufstellung: $e");
+      if (mounted) setState(() => _isLoading = false);
+    }
+  }
+
+  // --- SPEICHERN (Nur noch direkt für den aktuellen Spieltag) ---
+  Future<void> _saveLineupToDb() async {
+    final dataManagement = Provider.of<DataManagement>(context, listen: false);
+    final service = dataManagement.supabaseService;
+    final seasonId = dataManagement.seasonId;
+
+    List<Map<String, dynamic>> updates = [];
+
+    for (int i = 0; i < _fieldPlayers.length; i++) {
+      if (_fieldPlayers[i].id > 0) {
+        updates.add({'player_id': _fieldPlayers[i].id, 'index': i});
       }
     }
 
-
-    if (mounted) {
-      // 1. ZUERST den State mit den normalen Spielern füllen!
-      setState(() {
-        _allFormations = formations;
-
-        if (savedFormationName != null &&
-            _allFormations.containsKey(savedFormationName)) {
-          _selectedFormationName = savedFormationName;
-        } else if (_allFormations.isNotEmpty) {
-          _selectedFormationName = _allFormations.keys.first;
-        }
-
-        _fieldPlayers = field;         // HIER bekommt die Liste ihre 11 Plätze
-        _substitutePlayers = bench;    // HIER wird die Bank zugewiesen
-
-        _updatePlaceholderNames();
-      });
-
-      // 2. DANACH den Matchday-State laden!
-      // Jetzt existieren die 11 Plätze in _fieldPlayers und Frimpong kann auf Index 6 gesetzt werden.
-      await _loadMatchdayState();
-
-      // 3. Lade-Bildschirm beenden
-      setState(() {
-        _isLoading = false;
-      });
+    for (int i = 0; i < _substitutePlayers.length; i++) {
+      updates.add({'player_id': _substitutePlayers[i].id, 'index': 11 + i});
     }
+
+    // Übergibt nun auch seasonId und Runde an deine neue Methode
+    await service.saveTeamLineup(
+        widget.leagueId,
+        seasonId,
+        _selectedRound,
+        _selectedFormationName,
+        updates
+    );
+    print("Aufstellung & Formation für Runde $_selectedRound gespeichert.");
   }
 
   List<PlayerInfo> _getFilteredPlayers() {
@@ -164,7 +280,6 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
       allPlayers = allPlayers.where((p) => p.position.contains(_filterPosition!)).toList();
     }
 
-    // Sortieren nach Punkten (Top-Team Style)
     allPlayers.sort((a, b) => b.rating.compareTo(a.rating));
     return allPlayers;
   }
@@ -180,7 +295,6 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
     final all = [..._fieldPlayers.where((p) => p.id > 0), ..._substitutePlayers];
     final positions = <String>{};
     for (var p in all) {
-      // Split "IV, RV" -> ["IV", "RV"]
       p.position.split(',').forEach((pos) => positions.add(pos.trim()));
     }
     final sortedList = positions.toList()..sort();
@@ -192,16 +306,12 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
     if (positions == null || positions.length != 11) return;
 
     for (int i = 0; i < 11; i++) {
-      // Wenn es ein Platzhalter ist (ID < 0), aktualisieren wir seine Rolle
       if (_fieldPlayers[i].id < 0) {
         _fieldPlayers[i] = PlayerInfo(
-          id: _fieldPlayers[i].id, // ID beibehalten
-          name: positions[i], // Neuer Name aus Formation (z.B. "IV")
-          position: positions[i], // Neue Position
-          rating: 0,
-          goals: 0,
-          assists: 0,
-          ownGoals: 0,
+          id: _fieldPlayers[i].id,
+          name: positions[i],
+          position: positions[i],
+          rating: 0, goals: 0, assists: 0, ownGoals: 0,
           profileImageUrl: null,
         );
       }
@@ -209,172 +319,95 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
   }
 
   PlayerInfo _createPlaceholder(int index) {
-    // Simpel: Index 0 ist TW, Rest Feld
-    if (index == 0)
-      return const PlayerInfo(
-        id: -1,
-        name: "TW",
-        position: "TW",
-        rating: 0,
-        goals: 0,
-        assists: 0,
-        ownGoals: 0,
-      );
-    return PlayerInfo(
-      id: -1 - index,
-      name: "POS",
-      position: "Feld",
-      rating: 0,
-      goals: 0,
-      assists: 0,
-      ownGoals: 0,
-    );
+    if (index == 0) return const PlayerInfo(id: -1, name: "TW", position: "TW", rating: 0, goals: 0, assists: 0, ownGoals: 0);
+    return PlayerInfo(id: -1 - index, name: "POS", position: "Feld", rating: 0, goals: 0, assists: 0, ownGoals: 0);
   }
 
   void _handlePlayerTap(int playerId, double radius) {
     if (playerId < 0) {
+      if (_isViewingHistory) {
+        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+          content: Text("Historische Aufstellungen können nicht bearbeitet werden."),
+          backgroundColor: Colors.red,
+        ));
+        return;
+      }
+
       final placeholder = _fieldPlayers.firstWhere(
-        (p) => p.id == playerId,
-        orElse:
-            () => const PlayerInfo(
-              id: -999,
-              name: "?",
-              position: "",
-              rating: 0,
-              goals: 0,
-              assists: 0,
-              ownGoals: 0,
-            ),
+            (p) => p.id == playerId,
+        orElse: () => const PlayerInfo(id: -999, name: "?", position: "", rating: 0, goals: 0, assists: 0, ownGoals: 0),
       );
 
       if (placeholder.id != -999) {
-        // HIER: Aufruf der neuen Dialog-Funktion
         _showAvailablePlayersDialog(placeholder, radius);
       }
     } else {
-      Navigator.push(
-        context,
-        MaterialPageRoute(
-          builder: (context) => PlayerScreen(playerId: playerId),
-        ),
-      );
+      Navigator.push(context, MaterialPageRoute(builder: (context) => PlayerScreen(playerId: playerId)));
     }
   }
 
-  void _showAvailablePlayersDialog(PlayerInfo placeholder, double sourceRadius,) {
-    final String requiredPos = placeholder.position.toUpperCase();
+  void _showAvailablePlayersDialog(PlayerInfo placeholder, double sourceRadius) {
+    if (_isViewingHistory) return;
 
-    // Filter-Logik (unverändert)
-    final availablePlayers =
-        _substitutePlayers.where((p) {
-          final String playerPos = p.position.toUpperCase();
-          return playerPos == requiredPos || playerPos.contains(requiredPos);
-        }).toList();
+    final String requiredPos = placeholder.position.toUpperCase();
+    final availablePlayers = _substitutePlayers.where((p) {
+      final String playerPos = p.position.toUpperCase();
+      return playerPos == requiredPos || playerPos.contains(requiredPos);
+    }).toList();
 
     availablePlayers.sort((a, b) => b.rating.compareTo(a.rating));
 
-    // Dialog anzeigen
     showDialog(
       context: context,
       builder: (BuildContext context) {
-        // Dialog Widget sorgt für das "Kästchen" in der Mitte
         return Dialog(
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(20.0),
-          ), // Runde Ecken
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20.0)),
           elevation: 10,
           backgroundColor: Colors.white,
-          insetPadding: const EdgeInsets.all(20), // Abstand zum Bildschirmrand
+          insetPadding: const EdgeInsets.all(20),
           child: Container(
-            // Begrenzung der Höhe, damit es nicht den ganzen Screen füllt, wenn die Liste lang ist
-            constraints: BoxConstraints(
-              maxHeight: MediaQuery.of(context).size.height * 0.7,
-              maxWidth: 400, // Maximale Breite (gut für Tablets)
-            ),
+            constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.7, maxWidth: 400),
             padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
             child: Column(
-              mainAxisSize:
-                  MainAxisSize.min, // WICHTIG: Schrumpft auf Inhaltgröße
+              mainAxisSize: MainAxisSize.min,
               children: [
-                // --- Header im Dialog ---
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text(
-                          "POSITION",
-                          style: TextStyle(
-                            fontSize: 11,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.grey.shade500,
-                            letterSpacing: 1.0,
-                          ),
-                        ),
+                        Text("POSITION", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey.shade500, letterSpacing: 1.0)),
                         const SizedBox(height: 2),
-                        Text(
-                          placeholder.name, // z.B. "IV"
-                          style: const TextStyle(
-                            fontSize: 20,
-                            fontWeight: FontWeight.bold,
-                            color: Colors.black87,
-                          ),
-                        ),
+                        Text(placeholder.name, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.black87)),
                       ],
                     ),
-                    // Schließen Button (X)
-                    IconButton(
-                      icon: Icon(Icons.close, color: Colors.grey.shade400),
-                      onPressed: () => Navigator.of(context).pop(),
-                    ),
+                    IconButton(icon: Icon(Icons.close, color: Colors.grey.shade400), onPressed: () => Navigator.of(context).pop()),
                   ],
                 ),
-
                 const SizedBox(height: 16),
                 Divider(height: 1, color: Colors.grey.shade200),
                 const SizedBox(height: 16),
-
-                // --- Liste der Spieler ---
                 Flexible(
-                  // Flexible macht die Liste scrollbar innerhalb des Dialogs
-                  child:
-                      availablePlayers.isEmpty
-                          ? Padding(
-                            padding: const EdgeInsets.symmetric(vertical: 32.0),
-                            child: Column(
-                              children: [
-                                Icon(
-                                  Icons.person_off_rounded,
-                                  size: 48,
-                                  color: Colors.grey.shade300,
-                                ),
-                                const SizedBox(height: 12),
-                                Text(
-                                  "Keine passenden Spieler",
-                                  style: TextStyle(
-                                    color: Colors.grey.shade500,
-                                    fontWeight: FontWeight.w500,
-                                  ),
-                                ),
-                              ],
-                            ),
-                          )
-                          : ListView.separated(
-                            shrinkWrap:
-                                true, // WICHTIG für dynamische Höhe bei wenigen Items
-                            itemCount: availablePlayers.length,
-                            separatorBuilder:
-                                (ctx, i) => const SizedBox(height: 12),
-                            itemBuilder: (ctx, index) {
-                              final player = availablePlayers[index];
-                              return _buildPlayerDialogItem(
-                                player,
-                                placeholder,
-                                sourceRadius,
-                              );
-                            },
-                          ),
+                  child: availablePlayers.isEmpty
+                      ? Padding(
+                    padding: const EdgeInsets.symmetric(vertical: 32.0),
+                    child: Column(
+                      children: [
+                        Icon(Icons.person_off_rounded, size: 48, color: Colors.grey.shade300),
+                        const SizedBox(height: 12),
+                        Text("Keine passenden Spieler", style: TextStyle(color: Colors.grey.shade500, fontWeight: FontWeight.w500)),
+                      ],
+                    ),
+                  )
+                      : ListView.separated(
+                    shrinkWrap: true,
+                    itemCount: availablePlayers.length,
+                    separatorBuilder: (ctx, i) => const SizedBox(height: 12),
+                    itemBuilder: (ctx, index) {
+                      return _buildPlayerDialogItem(availablePlayers[index], placeholder, sourceRadius);
+                    },
+                  ),
                 ),
               ],
             ),
@@ -384,103 +417,67 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
     );
   }
 
-  Widget _buildPlayerDialogItem(PlayerInfo player, PlayerInfo placeholder, double radius,) {
-    // 1. Prüfen, ob der Spieler eingefroren ist
+  Widget _buildPlayerDialogItem(PlayerInfo player, PlayerInfo placeholder, double radius) {
     final bool isFrozen = _frozenPlayerIds.contains(player.id);
 
     return InkWell(
       onTap: () {
-        // 2. Klick-Logik anpassen
         if (isFrozen) {
-          ScaffoldMessenger.of(context).showSnackBar(
-            const SnackBar(
-              content: Text("Spieler kann nicht hinzugefügt werden, weil er bereits gespielt hat."),
-              backgroundColor: Colors.red,
-            ),
-          );
+          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+            content: Text("Spieler kann nicht hinzugefügt werden, weil er bereits gespielt hat."),
+            backgroundColor: Colors.red,
+          ));
         } else {
           _swapPlayer(placeholder, player);
-          Navigator.pop(context); // Dialog schließen
+          Navigator.pop(context);
         }
       },
       borderRadius: BorderRadius.circular(12),
       child: Container(
         decoration: BoxDecoration(
-          // 3. Hintergrundfarbe anpassen (Grau hinterlegt, wenn gesperrt)
           color: isFrozen ? Colors.grey.shade300 : Colors.grey.shade50,
           borderRadius: BorderRadius.circular(12),
           border: Border.all(color: Colors.grey.shade200),
         ),
         padding: const EdgeInsets.all(12),
-        // 4. Den kompletten Inhalt leicht ausgrauen, wenn gesperrt
         child: Opacity(
           opacity: isFrozen ? 0.5 : 1.0,
           child: Row(
             children: [
-              // Avatar (Größe dynamisch vom Feld übernommen)
               Hero(
                 tag: 'player_${player.id}_dialog',
                 child: PlayerAvatar(
                   player: player,
                   teamColor: Theme.of(context).primaryColor,
-                  radius: radius, // Größe vom Feld!
-                  isLocked: isFrozen, // Optional: Zeigt auch im Dialog das Schloss auf dem Profilbild
+                  radius: radius,
+                  isLocked: isFrozen,
                 ),
               ),
               const SizedBox(width: 16),
-
-              // Infos
               Expanded(
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(
-                      player.name,
-                      style: const TextStyle(
-                        fontWeight: FontWeight.bold,
-                        fontSize: 16,
-                      ),
-                      maxLines: 1,
-                      overflow: TextOverflow.ellipsis,
-                    ),
+                    Text(player.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16), maxLines: 1, overflow: TextOverflow.ellipsis),
                     const SizedBox(height: 4),
                     Row(
                       children: [
-                        // Kleines Badge für Position
                         Container(
-                          padding: const EdgeInsets.symmetric(
-                            horizontal: 6,
-                            vertical: 2,
-                          ),
+                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
                           decoration: BoxDecoration(
                             color: Colors.blueGrey.shade50,
                             borderRadius: BorderRadius.circular(4),
                             border: Border.all(color: Colors.blueGrey.shade100),
                           ),
-                          child: Text(
-                            player.position,
-                            style: TextStyle(
-                              fontSize: 11,
-                              fontWeight: FontWeight.bold,
-                              color: Colors.blueGrey.shade700,
-                            ),
-                          ),
+                          child: Text(player.position, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.blueGrey.shade700)),
                         ),
                         const SizedBox(width: 8),
-                        Text(
-                          "${player.rating} Pkt",
-                          style: TextStyle(
-                            color: Colors.grey.shade600,
-                            fontSize: 13,
-                          ),
-                        ),
+                        Text("${player.rating} Pkt", style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
                       ],
                     ),
                   ],
                 ),
               ),
-
-              // Einwechseln Icon ODER Schloss-Icon
               Icon(
                 isFrozen ? Icons.lock : Icons.arrow_forward_ios_rounded,
                 size: isFrozen ? 20 : 16,
@@ -492,11 +489,8 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
       ),
     );
   }
+
   void _swapPlayer(PlayerInfo placeholder, PlayerInfo newPlayer) {
-    if (_isMatchdayMode && (_frozenPlayerIds.contains(placeholder.id) || _frozenPlayerIds.contains(newPlayer.id))) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Einwechselung nicht möglich: Spieler ist gelockt!")));
-      return;
-    }
     setState(() {
       _substitutePlayers.removeWhere((p) => p.id == newPlayer.id);
       final index = _fieldPlayers.indexWhere((p) => p.id == placeholder.id);
@@ -511,33 +505,6 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
     _saveLineupToDb();
   }
 
-  Future<void> _saveLineupToDb() async {
-    final service = Provider.of<DataManagement>(context, listen: false).supabaseService;
-
-    // 1. Formation speichern
-    await service.updateUserFormation(widget.leagueId, _selectedFormationName);
-
-    // 2. Aufstellung speichern
-    List<Map<String, dynamic>> updates = [];
-
-    // Feldspieler (Index 0-10)
-    for (int i = 0; i < _fieldPlayers.length; i++) {
-      final p = _fieldPlayers[i];
-      if (p.id > 0) { // Nur echte Spieler
-        updates.add({'player_id': p.id, 'index': i});
-      }
-    }
-
-    // Bankspieler (Index 11+)
-    for (int i = 0; i < _substitutePlayers.length; i++) {
-      final p = _substitutePlayers[i];
-      updates.add({'player_id': p.id, 'index': 11 + i});
-    }
-
-    await service.saveTeamLineup(widget.leagueId, updates);
-    print("Aufstellung & Formation gespeichert.");
-  }
-
   int _getPositionOrder(String? position) {
     if (position == null) return 99;
     final pos = position.toUpperCase();
@@ -549,43 +516,27 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
   }
 
   void _generateFieldPlaceholders() {
-    // Hole die Positions-Liste (z.B. ["TW", "RV", "IV", ...])
     final positions = _allFormations[_selectedFormationName];
-
-    // Sicherheitscheck
-    if (positions == null || positions.length != 11) {
-      print("Warnung: Keine oder ungültige Formation für $_selectedFormationName gefunden.");
-      return;
-    }
-
+    if (positions == null || positions.length != 11) return;
     List<PlayerInfo> newField = [];
     for (int i = 0; i < 11; i++) {
-      newField.add(PlayerInfo(
-        id: -1 - i, // WICHTIG: Negative IDs von -1 bis -11 für die Platzhalter
-        name: positions[i], // Name ist die Position (z.B. "IV")
-        position: positions[i], // Position für die Logik
-        rating: 0,
-        goals: 0,
-        assists: 0,
-        ownGoals: 0,
-        profileImageUrl: null,
-      ));
+      newField.add(PlayerInfo(id: -1 - i, name: positions[i], position: positions[i], rating: 0, goals: 0, assists: 0, ownGoals: 0, profileImageUrl: null));
     }
-
-    setState(() {
-      _fieldPlayers = newField;
-    });
+    setState(() { _fieldPlayers = newField; });
   }
 
   void _handlePlayerDrop(PlayerInfo fieldSlot, PlayerInfo incomingPlayer) {
+    if (_isViewingHistory) return;
+
+    if (_frozenPlayerIds.contains(fieldSlot.id) || _frozenPlayerIds.contains(incomingPlayer.id)) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Spieler ist gelockt und kann nicht getauscht werden!"), backgroundColor: Colors.red));
+      return;
+    }
+
     setState(() {
       bool cameFromBench = false;
       int sourceFieldIndex = -1;
-      if (_isMatchdayMode && (_frozenPlayerIds.contains(fieldSlot.id) || _frozenPlayerIds.contains(incomingPlayer.id))) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Spieler ist gelockt und kann nicht getauscht werden!")));
-        return;
-      }
-      // 1. Herkunft ermitteln
+
       if (_substitutePlayers.any((p) => p.id == incomingPlayer.id)) {
         cameFromBench = true;
         _substitutePlayers.removeWhere((p) => p.id == incomingPlayer.id);
@@ -594,77 +545,48 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
         if (sourceFieldIndex == -1) return;
       }
 
-      // 2. Ziel ermitteln
       final int targetIndex = _fieldPlayers.indexWhere((p) => p.id == fieldSlot.id);
       if (targetIndex == -1) return;
+      if (!cameFromBench && sourceFieldIndex == targetIndex) return;
 
-      // --- BUGFIX: Self-Drop verhindern ---
-      // Wenn der Spieler auf sich selbst fallen gelassen wird -> Nichts tun!
-      if (!cameFromBench && sourceFieldIndex == targetIndex) {
-        return;
-      }
-
-      // 3. Aktion ausführen
       if (cameFromBench) {
-        // Bank -> Feld (Einwechseln)
         if (fieldSlot.id > 0) {
           _substitutePlayers.add(fieldSlot);
           _sortBench();
         }
         _fieldPlayers[targetIndex] = incomingPlayer;
-
       } else {
-        // Feld -> Feld (Verschieben)
-
-        // a) Spieler auf neuen Platz
         _fieldPlayers[targetIndex] = incomingPlayer;
-
-        // b) Alten Platz leeren (Placeholder wiederherstellen)
         final List<String> positions = _allFormations[_selectedFormationName] ?? [];
         if (sourceFieldIndex < positions.length) {
           final String roleName = positions[sourceFieldIndex];
-          _fieldPlayers[sourceFieldIndex] = PlayerInfo(
-              id: -1 - sourceFieldIndex,
-              name: roleName,
-              position: roleName,
-              rating: 0, goals: 0, assists: 0, ownGoals: 0, profileImageUrl: null
-          );
+          _fieldPlayers[sourceFieldIndex] = PlayerInfo(id: -1 - sourceFieldIndex, name: roleName, position: roleName, rating: 0, goals: 0, assists: 0, ownGoals: 0, profileImageUrl: null);
         }
-
-        // c) Verdrängten Spieler auf die Bank (falls einer da war)
         if (fieldSlot.id > 0) {
           _substitutePlayers.add(fieldSlot);
           _sortBench();
         }
       }
     });
-
     _saveLineupToDb();
   }
 
   void _handleMoveToBench(PlayerInfo player) {
-    if (_isMatchdayMode && _frozenPlayerIds.contains(player.id)) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Spieler spielt bereits und kann nicht auf die Bank!")));
+    if (_isViewingHistory) return;
+
+    if (_frozenPlayerIds.contains(player.id)) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Spieler spielt bereits und kann nicht auf die Bank!"), backgroundColor: Colors.red));
       return;
     }
-    setState(() {
-      // Index auf dem Feld finden
-      final int index = _fieldPlayers.indexWhere((p) => p.id == player.id);
 
+    setState(() {
+      final int index = _fieldPlayers.indexWhere((p) => p.id == player.id);
       if (index != -1) {
-        // Spieler vom Feld entfernen (durch Placeholder ersetzen)
         final List<String> positions = _allFormations[_selectedFormationName] ?? [];
         if (index < positions.length) {
           final String roleName = positions[index];
-          _fieldPlayers[index] = PlayerInfo(
-              id: -1 - index,
-              name: roleName,
-              position: roleName,
-              rating: 0, goals: 0, assists: 0, ownGoals: 0, profileImageUrl: null
-          );
+          _fieldPlayers[index] = PlayerInfo(id: -1 - index, name: roleName, position: roleName, rating: 0, goals: 0, assists: 0, ownGoals: 0, profileImageUrl: null);
         }
-
-        // Spieler auf die Bank setzen (wenn nicht schon da, was bei Drag von Bank->Bank passieren könnte)
         if (!_substitutePlayers.any((p) => p.id == player.id)) {
           _substitutePlayers.add(player);
           _sortBench();
@@ -678,71 +600,52 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
     _substitutePlayers.sort((a, b) => _getPositionOrder(a.position).compareTo(_getPositionOrder(b.position)));
   }
 
-  Future<void> _loadMatchdayState() async {
-    final dataManagement = Provider.of<DataManagement>(context, listen: false);
-    final seasonId = dataManagement.seasonId;
-    // Die UserId holen wir über den Supabase Client
-    final userId = dataManagement.supabaseService.supabase.auth.currentUser!.id;
-
-      try {
-        final currentRound = await dataManagement.supabaseService.getCurrentRound(seasonId);
-
-        final state = await dataManagement.supabaseService.fetchMatchdayState(
-          userId: userId,
-          leagueId: widget.leagueId,
-          seasonId: seasonId,
-          round: currentRound,
-        );
-
-        setState(() {
-          _isFormationLocked = state['is_formation_locked'] ?? false;
-          _frozenPlayerIds = List<int>.from(state['frozen_player_ids'] ?? []);
-        });
-
-        // --- NEU: VERKAUFTE SPIELER WIEDERHERSTELLEN ---
-        final frozenPlayersFull = state['frozen_players_full'] as List<dynamic>? ?? [];
-
-        bool missingPlayerFound = false;
-
-        for (var fp in frozenPlayersFull) {
-          final int pId = fp['player_id'];
-          final int fIndex = fp['formation_index'];
-
-          // Ist der gelockte Spieler noch in unserem normalen Kader?
-          final bool onField = _fieldPlayers.any((p) => p.id == pId);
-          final bool onBench = _substitutePlayers.any((p) => p.id == pId);
-
-          // Wenn nein: Er wurde verkauft! Wir zwingen ihn zurück auf den Bildschirm.
-          if (!onField && !onBench) {
-            final spielerInfo = fp['spieler'];
-            if (spielerInfo == null) continue;
-
-            final missingPlayer = PlayerInfo(
-              id: pId,
-              name: "${spielerInfo['name']} (Verkauft)", // Deutliche Markierung
-              position: spielerInfo['position'] ?? 'N/A',
-              profileImageUrl: spielerInfo['profilbild_url'],
-              rating: fp['points'] ?? 0, // Wir zeigen direkt seine Live-Punkte aus dem Freeze an!
-              goals: 0, assists: 0, ownGoals: 0,
-            );
-
-            // An seine eingefrorene Position setzen
-            if (fIndex >= 0 && fIndex <= 10) {
-              _fieldPlayers[fIndex] = missingPlayer;
-            } else {
-              _substitutePlayers.add(missingPlayer);
-            }
-            missingPlayerFound = true;
-          }
-        }
-
-        // Wenn wir jemanden hinzugefügt haben, aktualisieren wir das UI nochmal
-        if (missingPlayerFound) {
-          setState(() {});
-        }
-      } catch (e) {
-      print("Fehler beim Laden des Matchday-States: $e");
-    }
+  // --- UI: SPIELTAGS-SELECTOR ---
+  Widget _buildMatchdaySelector() {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.chevron_left),
+                onPressed: _selectedRound > 1 ? () => _changeRound(_selectedRound - 1) : null,
+                color: _selectedRound > 1 ? Theme.of(context).primaryColor : Colors.grey,
+              ),
+              Text(
+                "Spieltag $_selectedRound",
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+              ),
+              IconButton(
+                icon: const Icon(Icons.chevron_right),
+                onPressed: _selectedRound < _latestActiveRound ? () => _changeRound(_selectedRound + 1) : null,
+                color: _selectedRound < _latestActiveRound ? Theme.of(context).primaryColor : Colors.grey,
+              ),
+            ],
+          ),
+          Container(
+            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+            decoration: BoxDecoration(
+              color: Theme.of(context).primaryColor.withOpacity(0.1),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: Text(
+              "$_matchdayPoints Pkt",
+              style: TextStyle(
+                fontWeight: FontWeight.bold,
+                color: Theme.of(context).primaryColor,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
   }
 
   Widget _buildFormationDropdown() {
@@ -759,12 +662,10 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
             value: _selectedFormationName,
             isExpanded: true,
             icon: Icon(
-              _isFormationLocked ? Icons.lock : Icons.keyboard_arrow_down_rounded, // <-- GEÄNDERT
-              color: _isFormationLocked ? Colors.red : null,                       // <-- GEÄNDERT
+              _isFormationLocked ? Icons.lock : Icons.keyboard_arrow_down_rounded,
+              color: _isFormationLocked ? Colors.red : null,
             ),
-            onChanged: _isFormationLocked                                          // <-- GEÄNDERT
-                ? null
-                : (String? newValue) {
+            onChanged: _isFormationLocked ? null : (String? newValue) {
               if (newValue != null && newValue != _selectedFormationName) {
                 setState(() {
                   _selectedFormationName = newValue;
@@ -780,13 +681,7 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
             items: sortedFormationKeys.map((String value) {
               return DropdownMenuItem<String>(
                 value: value,
-                child: Text(
-                    'Formation: $value',
-                    style: TextStyle(
-                      fontWeight: FontWeight.bold,
-                      color: (_isMatchdayMode && _isFormationLocked) ? Colors.grey : Colors.black, // Graue Schrift wenn gelockt
-                    )
-                ),
+                child: Text('Formation: $value', style: TextStyle(fontWeight: FontWeight.bold, color: _isFormationLocked ? Colors.grey : Colors.black)),
               );
             }).toList(),
           ),
@@ -801,25 +696,15 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
 
     return Row(
       children: [
-        // Team Filter
         Expanded(
           child: Card(
-            elevation: 2,
-            shadowColor: Colors.black12,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            margin: EdgeInsets.zero,
+            elevation: 2, shadowColor: Colors.black12, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), margin: EdgeInsets.zero,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 4.0),
               child: DropdownButtonHideUnderline(
                 child: DropdownButton<String?>(
-                  value: _filterTeam,
-                  hint: const Text("Team", style: TextStyle(fontSize: 13)),
-                  isExpanded: true,
-                  icon: const Icon(Icons.keyboard_arrow_down_rounded),
-                  items: [
-                    const DropdownMenuItem(value: null, child: Text("Alle Teams")),
-                    ...teams.map((t) => DropdownMenuItem(value: t, child: Text(t, overflow: TextOverflow.ellipsis))),
-                  ],
+                  value: _filterTeam, hint: const Text("Team", style: TextStyle(fontSize: 13)), isExpanded: true, icon: const Icon(Icons.keyboard_arrow_down_rounded),
+                  items: [const DropdownMenuItem(value: null, child: Text("Alle Teams")), ...teams.map((t) => DropdownMenuItem(value: t, child: Text(t, overflow: TextOverflow.ellipsis)))],
                   onChanged: (val) => setState(() => _filterTeam = val),
                 ),
               ),
@@ -827,25 +712,15 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
           ),
         ),
         const SizedBox(width: 8),
-        // Position Filter
         Expanded(
           child: Card(
-            elevation: 2,
-            shadowColor: Colors.black12,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-            margin: EdgeInsets.zero,
+            elevation: 2, shadowColor: Colors.black12, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), margin: EdgeInsets.zero,
             child: Padding(
               padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 4.0),
               child: DropdownButtonHideUnderline(
                 child: DropdownButton<String?>(
-                  value: _filterPosition,
-                  hint: const Text("Pos", style: TextStyle(fontSize: 13)),
-                  isExpanded: true,
-                  icon: const Icon(Icons.keyboard_arrow_down_rounded),
-                  items: [
-                    const DropdownMenuItem(value: null, child: Text("Alle Pos")),
-                    ...positions.map((p) => DropdownMenuItem(value: p, child: Text(p))),
-                  ],
+                  value: _filterPosition, hint: const Text("Pos", style: TextStyle(fontSize: 13)), isExpanded: true, icon: const Icon(Icons.keyboard_arrow_down_rounded),
+                  items: [const DropdownMenuItem(value: null, child: Text("Alle Pos")), ...positions.map((p) => DropdownMenuItem(value: p, child: Text(p)))],
                   onChanged: (val) => setState(() => _filterPosition = val),
                 ),
               ),
@@ -858,11 +733,8 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
 
   Widget _buildTeamListView() {
     final players = _getFilteredPlayers();
-    final primaryColor = Theme.of(context).primaryColor; // Farbe holen
-
-    if (players.isEmpty) {
-      return const Center(child: Text("Keine Spieler gefunden"));
-    }
+    final primaryColor = Theme.of(context).primaryColor;
+    if (players.isEmpty) return const Center(child: Text("Keine Spieler gefunden"));
 
     return ListView.builder(
       padding: const EdgeInsets.only(top: 8),
@@ -870,25 +742,10 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
       itemBuilder: (context, index) {
         final player = players[index];
         return PlayerListItem(
-          rank: index + 1,
-          profileImageUrl: player.profileImageUrl,
-          playerName: player.name,
-          teamImageUrl: player.teamImageUrl,
-          marketValue: player.marketValue,
-          score: player.rating,
-          maxScore: player.maxRating,
-
-          // NEUE FELDER ÜBERGEBEN
-          position: player.position,
-          id: player.id,
-          goals: player.goals,
-          assists: player.assists,
-          ownGoals: player.ownGoals,
-          teamColor: primaryColor, // Teamfarbe für den Avatar-Rand
-
-          onTap: () {
-            Navigator.push(context, MaterialPageRoute(builder: (_) => PlayerScreen(playerId: player.id)));
-          },
+          rank: index + 1, profileImageUrl: player.profileImageUrl, playerName: player.name, teamImageUrl: player.teamImageUrl,
+          marketValue: player.marketValue, score: player.rating, maxScore: player.maxRating, position: player.position,
+          id: player.id, goals: player.goals, assists: player.assists, ownGoals: player.ownGoals, teamColor: primaryColor,
+          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => PlayerScreen(playerId: player.id))),
         );
       },
     );
@@ -896,51 +753,35 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) return const Center(child: CircularProgressIndicator());
+    if (_isLoading && _fieldPlayers.isEmpty) return const Center(child: CircularProgressIndicator());
     final primaryColor = Theme.of(context).primaryColor;
     final List<String> currentRequiredPositions = _allFormations[_selectedFormationName] ?? [];
 
     return Column(
       children: [
-        // --- HEADER ---
+        _buildMatchdaySelector(),
+
         Padding(
           padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
           child: Row(
             children: [
-              // Wenn Liste: Zeige Filter (Team, Pos)
-              // Wenn Feld: Zeige Formation Dropdown
-              Expanded(
-                child: _isListView ? _buildFilterBar() : _buildFormationDropdown(),
-              ),
-
+              Expanded(child: _isListView ? _buildFilterBar() : _buildFormationDropdown()),
               const SizedBox(width: 8),
-
-              // Toggle Button
               Card(
-                elevation: 2,
-                shadowColor: Colors.black12,
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-                margin: EdgeInsets.zero,
+                elevation: 2, shadowColor: Colors.black12, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), margin: EdgeInsets.zero,
                 child: IconButton(
-                  icon: Icon(_isListView ? Icons.sports_soccer : Icons.list_alt),
-                  color: primaryColor,
-                  tooltip: _isListView ? "Spielfeldansicht" : "Listenansicht",
-                  onPressed: () {
-                    setState(() {
-                      _isListView = !_isListView;
-                      // Filter beim Wechseln resetten? Optional:
-                      // _filterTeam = null; _filterPosition = null;
-                    });
-                  },
+                  icon: Icon(_isListView ? Icons.sports_soccer : Icons.list_alt), color: primaryColor, tooltip: _isListView ? "Spielfeldansicht" : "Listenansicht",
+                  onPressed: () => setState(() => _isListView = !_isListView),
                 ),
               ),
             ],
           ),
         ),
 
-        // --- BODY ---
         Expanded(
-          child: _isListView
+          child: _isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : _isListView
               ? _buildTeamListView()
               : MatchFormationDisplay(
             homeFormation: _selectedFormationName,
@@ -951,7 +792,7 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
             onPlayerDrop: _handlePlayerDrop,
             onMoveToBench: _handleMoveToBench,
             requiredPositions: currentRequiredPositions,
-            frozenPlayerIds: _frozenPlayerIds, // <--- DIESE ZEILE HINZUFÜGEN!
+            frozenPlayerIds: _frozenPlayerIds,
           ),
         ),
       ],
