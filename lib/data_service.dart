@@ -1800,4 +1800,162 @@ class SupabaseService {
       rethrow; // Fehler weitergeben, damit UI oder Logik reagieren kann
     }
   }
+
+  Future<List<Map<String, dynamic>>> fetchOverallRanking(int leagueId) async {
+    try {
+      final response = await supabase.rpc('get_ranking_overall', params: {
+        'p_league_id': leagueId,
+      });
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      print('Fehler beim Laden des Gesamtrankings: $e');
+      return [];
+    }
+  }
+
+  Future<List<Map<String, dynamic>>> fetchMatchdayRanking(int leagueId, int round) async {
+    try {
+      final response = await supabase.rpc('get_ranking_matchday', params: {
+        'p_league_id': leagueId,
+        'p_round': round,
+      });
+      return List<Map<String, dynamic>>.from(response);
+    } catch (e) {
+      print('Fehler beim Laden des Spieltagsrankings: $e');
+      return [];
+    }
+  }
+
+  Future<int> getCurrentRound(int seasonId) async {
+    try {
+      final now = DateTime.now().toUtc().toIso8601String();
+
+      // 1. Alle aktuell laufenden Spieltage holen
+      final laufendeSpieltage = await supabase
+          .from('spieltag')
+          .select('round')
+          .eq('season_id', seasonId)
+          .eq('status', 'läuft');
+
+      final List<dynamic> rounds = laufendeSpieltage as List<dynamic>;
+
+      // 2. Wenn gar kein Spieltag läuft, den nächsten geplanten suchen
+      if (rounds.isEmpty) {
+        final fallbackResponse = await supabase
+            .from('spieltag')
+            .select('round')
+            .eq('season_id', seasonId)
+            .eq('status', 'geplant')
+            .order('round', ascending: true)
+            .limit(1)
+            .maybeSingle();
+
+        return fallbackResponse != null ? fallbackResponse['round'] as int : 1;
+      }
+
+      // 3. Wenn genau EIN Spieltag läuft, ist die Sache klar
+      if (rounds.length == 1) {
+        return rounds.first['round'] as int;
+      }
+
+      // 4. Wenn MEHRERE laufen: Welcher Spieltag hat das früheste "nächste Spiel"?
+      int bestRound = rounds.first['round'] as int; // Fallback auf den ersten
+      DateTime? earliestNextGameDate;
+
+      for (var row in rounds) {
+        int roundNum = row['round'] as int;
+
+        // Das nächste Spiel für diese Runde in der Zukunft finden
+        final nextGame = await supabase
+            .from('spiel')
+            .select('datum')
+            .eq('season_id', seasonId)
+            .eq('round', roundNum)
+            .gt('datum', now) // Nur Spiele, die in der Zukunft liegen!
+            .order('datum', ascending: true)
+            .limit(1)
+            .maybeSingle();
+
+        if (nextGame != null) {
+          DateTime gameDate = DateTime.parse(nextGame['datum']);
+
+          // Ist dieses Spiel früher als unser bisheriger Rekordhalter?
+          if (earliestNextGameDate == null || gameDate.isBefore(earliestNextGameDate!)) {
+            earliestNextGameDate = gameDate;
+            bestRound = roundNum;
+          }
+        }
+      }
+
+      return bestRound;
+    } catch (e) {
+      print('Fehler beim Abrufen des aktuellen Spieltags: $e');
+      return 1; // Fallback bei Fehler
+    }
+  }
+
+  Future<Map<String, dynamic>> fetchMatchdayState({
+    required String userId,
+    required int leagueId,
+    required int seasonId,
+    required int round,
+  }) async {
+    try {
+      // 1. Zeitfenster aus 'spieltag' holen
+      final spieltagResponse = await supabase
+          .from('spieltag')
+          .select('matchday_start, matchday_end')
+          .eq('season_id', seasonId)
+          .eq('round', round)
+          .maybeSingle();
+
+      // 2. Prüfen, ob die Formation bereits gelockt ist (Snapshot existiert)
+      final pointsResponse = await supabase
+          .from('user_matchday_points')
+          .select('id') // Wir brauchen nur die ID um zu wissen, ob es existiert
+          .eq('user_id', userId)
+          .eq('league_id', leagueId)
+          .eq('season_id', seasonId)
+          .eq('round', round)
+          .maybeSingle();
+
+      bool isFormationLocked = pointsResponse != null;
+      List<int> frozenPlayerIds = [];
+      List<Map<String, dynamic>> frozenPlayersData = []; // NEU
+
+      if (isFormationLocked) {
+        // NEU: Wir holen uns hier auch direkt die Infos aus der spieler-Tabelle über den Foreign Key
+        final playersResponse = await supabase
+            .from('user_matchday_players')
+            .select('''
+              player_id, 
+              formation_index, 
+              points,
+              spieler (
+                id, name, position, profilbild_url
+              )
+            ''')
+            .eq('matchday_point_id', pointsResponse['id']);
+
+        frozenPlayersData = List<Map<String, dynamic>>.from(playersResponse);
+        frozenPlayerIds = frozenPlayersData.map((row) => row['player_id'] as int).toList();
+      }
+
+      return {
+        'matchday_start': spieltagResponse?['matchday_start'],
+        'matchday_end': spieltagResponse?['matchday_end'],
+        'is_formation_locked': isFormationLocked,
+        'frozen_player_ids': frozenPlayerIds,
+        'frozen_players_full': frozenPlayersData, // NEU übergeben wir das ans UI
+      };
+    } catch (e) {
+      print('Fehler beim Laden des Matchday-States: $e');
+      return {
+        'matchday_start': null,
+        'matchday_end': null,
+        'is_formation_locked': false,
+        'frozen_player_ids': <int>[],
+      };
+    }
+  }
 }

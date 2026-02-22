@@ -48,6 +48,7 @@ class PlayerAvatar extends StatelessWidget {
 
   final bool showDetails;
   final bool showPositions;
+  final bool isLocked; // NEU: Weiß jetzt, ob der Spieler gelockt ist
 
 
   const PlayerAvatar({
@@ -58,7 +59,8 @@ class PlayerAvatar extends StatelessWidget {
     this.showHoverEffect = false,
     this.showValidTargetEffect = false,
     this.showDetails = true,
-    this.showPositions = true
+    this.showPositions = true,
+    this.isLocked = false, // Standardmäßig nicht gelockt
   });
 
   Widget _buildEventIcon(IconData icon, Color color, int count, double size) {
@@ -95,8 +97,9 @@ class PlayerAvatar extends StatelessWidget {
     final double nameFontSize = radius * 0.42;
     final double eventIconSize = radius * 0.45;
 
+    // NEU: Wenn gelockt, wird der äußere Ring grau
     Color outerColor = isGoalkeeper ? Colors.orange.shade700 : teamColor;
-    if (isPlaceholder) outerColor = Colors.grey.shade400;
+    if (isPlaceholder || isLocked) outerColor = Colors.grey.shade400;
 
     double scale = 1.0;
     if (showHoverEffect) {
@@ -112,13 +115,32 @@ class PlayerAvatar extends StatelessWidget {
       positions = [];
     }
 
+    // NEU: Das Profilbild (Wird grau, wenn gelockt)
+    Widget profileImageWidget = CircleAvatar(
+      radius: imageRadius,
+      backgroundColor: Colors.grey.shade200,
+      backgroundImage: (player.profileImageUrl != null && !isPlaceholder)
+          ? NetworkImage(player.profileImageUrl!)
+          : null,
+      child: (player.profileImageUrl == null || isPlaceholder)
+          ? Icon(isPlaceholder ? Icons.add_rounded : Icons.person, color: Colors.grey.shade400, size: imageRadius * 1.2)
+          : null,
+    );
+
+    // Filter anwenden
+    if (isLocked && !isPlaceholder) {
+      profileImageWidget = ColorFiltered(
+        colorFilter: const ColorFilter.mode(Colors.grey, BlendMode.saturation),
+        child: profileImageWidget,
+      );
+    }
+
     return Transform.scale(
       scale: scale,
       child: SizedBox(
-        // WICHTIG: Wenn keine Details, brauchen wir weniger Platz in der Breite
         width: totalRadius * (showDetails ? 2.8 : 2.2),
         child: Column(
-          mainAxisSize: MainAxisSize.min, // WICHTIG gegen Overflow
+          mainAxisSize: MainAxisSize.min,
           children: [
             Stack(
               clipBehavior: Clip.none,
@@ -139,21 +161,11 @@ class PlayerAvatar extends StatelessWidget {
                 // 2. Kreise (Rahmen + Bild)
                 CircleAvatar(radius: totalRadius, backgroundColor: outerColor),
                 CircleAvatar(radius: imageRadius + whiteRingWidth, backgroundColor: Colors.white),
-                CircleAvatar(
-                  radius: imageRadius,
-                  backgroundColor: Colors.grey.shade200,
-                  backgroundImage: (player.profileImageUrl != null && !isPlaceholder)
-                      ? NetworkImage(player.profileImageUrl!)
-                      : null,
-                  child: (player.profileImageUrl == null || isPlaceholder)
-                      ? Icon(isPlaceholder ? Icons.add_rounded : Icons.person, color: Colors.grey.shade400, size: imageRadius * 1.2)
-                      : null,
-                ),
+                profileImageWidget, // Das gefilterte Bild
 
-                // 3. Positions-Badges (IMMER ANZEIGEN, auch in Liste)
+                // 3. Positions-Badges
                 if (!isPlaceholder && positions.isNotEmpty && showPositions)
                   ...List.generate(positions.length, (index) {
-                    // Positionierung am Kreisbogen
                     const double startAngle = 225 * (pi / 180);
                     const double stepAngle = 22 * (pi / 180);
                     final double angle = startAngle - (index * stepAngle);
@@ -171,12 +183,10 @@ class PlayerAvatar extends StatelessWidget {
                         height: badgeSize,
                         alignment: Alignment.center,
                         decoration: BoxDecoration(
-                          color: teamColor,
+                          color: isLocked ? Colors.grey : teamColor, // Auch Badge wird grau
                           shape: BoxShape.circle,
                           border: Border.all(color: Colors.white, width: 1.0),
-                          boxShadow: [
-                            BoxShadow(color: Colors.black38, blurRadius: 1, offset: const Offset(1, 1))
-                          ],
+                          boxShadow: const [BoxShadow(color: Colors.black38, blurRadius: 1, offset: Offset(1, 1))],
                         ),
                         child: FittedBox(
                           child: Padding(
@@ -191,7 +201,7 @@ class PlayerAvatar extends StatelessWidget {
                     );
                   }),
 
-                // 4. Event Icons (Nur wenn showDetails = true)
+                // 4. Event Icons
                 if (!isPlaceholder && showDetails)
                   Positioned(
                     top: 0,
@@ -205,7 +215,7 @@ class PlayerAvatar extends StatelessWidget {
                     ),
                   ),
 
-                // 5. Rating Pill (Nur wenn showDetails = true)
+                // 5. Rating Pill
                 if (!isPlaceholder && showDetails)
                   Positioned(
                     bottom: -radius * 0.45,
@@ -215,9 +225,7 @@ class PlayerAvatar extends StatelessWidget {
                         color: getColorForRating(player.rating, player.maxRating),
                         borderRadius: BorderRadius.circular(8),
                         border: Border.all(color: Colors.white, width: 1.5),
-                        boxShadow: [
-                          BoxShadow(color: Colors.black26, blurRadius: 2, offset: const Offset(0, 1))
-                        ],
+                        boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 2, offset: Offset(0, 1))],
                       ),
                       child: Text(
                         player.rating.toString(),
@@ -225,10 +233,26 @@ class PlayerAvatar extends StatelessWidget {
                       ),
                     ),
                   ),
+
+                // 6. NEU: Rotes Schloss-Symbol, wenn gelockt
+                if (isLocked && !isPlaceholder)
+                  Positioned(
+                    top: 0,
+                    left: -radius * 0.3,
+                    child: Container(
+                      padding: EdgeInsets.all(radius * 0.1),
+                      decoration: const BoxDecoration(
+                        color: Colors.white,
+                        shape: BoxShape.circle,
+                        boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 2)],
+                      ),
+                      child: Icon(Icons.lock, color: Colors.redAccent, size: radius * 0.5),
+                    ),
+                  ),
               ],
             ),
 
-            // 6. Name (Nur wenn showDetails = true)
+            // 7. Name
             if (showDetails) ...[
               SizedBox(height: radius * 0.35),
               Container(
@@ -245,7 +269,7 @@ class PlayerAvatar extends StatelessWidget {
                   child: Text(
                     player.name.split(' ').last.toUpperCase(),
                     style: TextStyle(
-                        color: Colors.grey.shade800,
+                        color: isLocked ? Colors.grey.shade600 : Colors.grey.shade800,
                         fontSize: nameFontSize,
                         fontWeight: FontWeight.bold,
                         letterSpacing: 0.3
@@ -260,7 +284,9 @@ class PlayerAvatar extends StatelessWidget {
       ),
     );
   }
-}class MatchFormationDisplay extends StatefulWidget {
+}
+
+class MatchFormationDisplay extends StatefulWidget {
   final String homeFormation;
   final List<PlayerInfo> homePlayers;
   final Color homeColor;
@@ -272,6 +298,7 @@ class PlayerAvatar extends StatelessWidget {
   final void Function(PlayerInfo fieldSlot, PlayerInfo benchPlayer)? onPlayerDrop;
   final void Function(PlayerInfo player)? onMoveToBench;
   final List<String> requiredPositions;
+  final List<int> frozenPlayerIds; // NEU: Nimmt die Liste aus dem TeamScreen entgegen
 
   const MatchFormationDisplay({
     super.key,
@@ -284,8 +311,9 @@ class PlayerAvatar extends StatelessWidget {
     this.awayColor = Colors.red,
     this.substitutes,
     this.onPlayerDrop,
-    this.onMoveToBench, // NEU
+    this.onMoveToBench,
     this.requiredPositions = const [],
+    this.frozenPlayerIds = const [], // NEU
   });
 
   @override
@@ -471,9 +499,24 @@ class _MatchFormationDisplayState extends State<MatchFormationDisplay> {
                             padding: EdgeInsets.symmetric(horizontal: radius * 0.5),
                             child: Row(
                               children: widget.substitutes!.map((player) {
+                                // NEU: Prüfen, ob der Bankspieler gelockt ist
+                                final bool isPlayerLocked = widget.frozenPlayerIds.contains(player.id);
+                                final displayWidget = PlayerAvatar(
+                                  player: player,
+                                  teamColor: widget.homeColor,
+                                  radius: radius,
+                                  isLocked: isPlayerLocked, // NEU
+                                );
+
                                 return Padding(
                                   padding: EdgeInsets.only(right: radius * 0.2),
-                                  child: LongPressDraggable<PlayerInfo>(
+                                  // NEU: Wenn gelockt, dann nur Klickbar, nicht Draggable
+                                  child: isPlayerLocked
+                                      ? GestureDetector(
+                                    onTap: () => widget.onPlayerTap(player.id, radius),
+                                    child: displayWidget,
+                                  )
+                                      : LongPressDraggable<PlayerInfo>(
                                     data: player,
                                     delay: const Duration(milliseconds: 200),
                                     feedback: Material(
@@ -485,21 +528,18 @@ class _MatchFormationDisplayState extends State<MatchFormationDisplay> {
                                     ),
                                     childWhenDragging: Opacity(
                                       opacity: 0.3,
-                                      child: PlayerAvatar(player: player, teamColor: widget.homeColor, radius: radius),
+                                      child: displayWidget,
                                     ),
-                                    onDragStarted: () {
-                                      setState(() => _draggingPlayer = player);
-                                    },
+                                    onDragStarted: () => setState(() => _draggingPlayer = player),
                                     onDragEnd: (_) => setState(() => _draggingPlayer = null),
                                     child: GestureDetector(
                                       onTap: () => widget.onPlayerTap(player.id, radius),
-                                      child: PlayerAvatar(player: player, teamColor: widget.homeColor, radius: radius),
+                                      child: displayWidget,
                                     ),
                                   ),
                                 );
                               }).toList(),
-                            ),
-                          ),
+                            ),                          ),
                         ),
                       ],
                     ),
@@ -562,6 +602,9 @@ class _MatchFormationDisplayState extends State<MatchFormationDisplay> {
                   builder: (context, candidateData, rejectedData) {
                     final bool isHovering = candidateData.isNotEmpty;
 
+                    // NEU: Prüfen, ob der Spieler gelockt ist
+                    final bool isPlayerLocked = widget.frozenPlayerIds.contains(targetPlayer.id);
+
                     // Das Basis-Widget (Avatar)
                     final displayWidget = PlayerAvatar(
                       player: targetPlayer,
@@ -569,11 +612,12 @@ class _MatchFormationDisplayState extends State<MatchFormationDisplay> {
                       radius: radius,
                       showHoverEffect: isHovering,
                       showValidTargetEffect: isValidTarget,
+                      isLocked: isPlayerLocked, // NEU übergeben
                     );
 
-                    // Fallunterscheidung: Echter Spieler vs. Platzhalter
-                    if (targetPlayer.id > 0) {
-                      // Echter Spieler -> Ziehbar (Draggable)
+                    // NEU: Platzhalter ODER gelockter Spieler -> NICHT ziehbar!
+                    if (targetPlayer.id > 0 && !isPlayerLocked) {
+                      // Echter, ungelockter Spieler -> Ziehbar (Draggable)
                       return LongPressDraggable<PlayerInfo>(
                         data: targetPlayer,
                         delay: const Duration(milliseconds: 100),
@@ -617,6 +661,7 @@ class _MatchFormationDisplayState extends State<MatchFormationDisplay> {
       ),
     );
   }
+
   Widget _buildAwayTeam(BuildContext context, BoxConstraints constraints,
       double radius) {
     final awayGoalkeeper = _findGoalkeeper(widget.awayPlayers!);
