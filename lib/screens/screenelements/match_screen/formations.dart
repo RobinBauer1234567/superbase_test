@@ -99,7 +99,7 @@ class PlayerAvatar extends StatelessWidget {
 
     // NEU: Wenn gelockt, wird der äußere Ring grau
     Color outerColor = isGoalkeeper ? Colors.orange.shade700 : teamColor;
-    if (isPlaceholder || isLocked) outerColor = Colors.grey.shade400;
+    if (isPlaceholder) outerColor = Colors.grey.shade400;
 
     double scale = 1.0;
     if (showHoverEffect) {
@@ -127,13 +127,6 @@ class PlayerAvatar extends StatelessWidget {
           : null,
     );
 
-    // Filter anwenden
-    if (isLocked && !isPlaceholder) {
-      profileImageWidget = ColorFiltered(
-        colorFilter: const ColorFilter.mode(Colors.grey, BlendMode.saturation),
-        child: profileImageWidget,
-      );
-    }
 
     return Transform.scale(
       scale: scale,
@@ -183,7 +176,7 @@ class PlayerAvatar extends StatelessWidget {
                         height: badgeSize,
                         alignment: Alignment.center,
                         decoration: BoxDecoration(
-                          color: isLocked ? Colors.grey : teamColor, // Auch Badge wird grau
+                          color: teamColor,
                           shape: BoxShape.circle,
                           border: Border.all(color: Colors.white, width: 1.0),
                           boxShadow: const [BoxShadow(color: Colors.black38, blurRadius: 1, offset: Offset(1, 1))],
