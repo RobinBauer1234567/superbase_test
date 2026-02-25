@@ -1,5 +1,6 @@
 // lib/screens/leagues/league_team_screen.dart
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:premier_league/viewmodels/data_viewmodel.dart';
 import 'package:premier_league/screens/screenelements/match_screen/formations.dart';
@@ -17,6 +18,8 @@ class LeagueTeamScreen extends StatefulWidget {
 }
 
 class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
+  final NumberFormat _pointsFormat = NumberFormat.decimalPattern('de_DE');
+
   bool _isLoading = true;
   bool _isListView = false;
 
