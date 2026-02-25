@@ -50,11 +50,9 @@ CREATE TABLE public.league_members (
   is_admin boolean DEFAULT false,
   position integer,
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
-  formation text,
   CONSTRAINT league_members_pkey PRIMARY KEY (id),
   CONSTRAINT league_members_league_id_fkey FOREIGN KEY (league_id) REFERENCES public.leagues(id),
-  CONSTRAINT league_members_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(user_id),
-  CONSTRAINT league_members_formation_fkey FOREIGN KEY (formation) REFERENCES public.formation(formation)
+  CONSTRAINT league_members_user_id_fkey FOREIGN KEY (user_id) REFERENCES public.profiles(user_id)
 );
 CREATE TABLE public.league_players (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
@@ -62,7 +60,6 @@ CREATE TABLE public.league_players (
   user_id uuid,
   player_id bigint,
   created_at timestamp with time zone DEFAULT now(),
-  formation_index smallint DEFAULT 99,
   purchase_price integer DEFAULT 0,
   CONSTRAINT league_players_pkey PRIMARY KEY (id),
   CONSTRAINT league_players_league_id_fkey FOREIGN KEY (league_id) REFERENCES public.leagues(id),
@@ -157,7 +154,8 @@ CREATE TABLE public.spieler (
   season_players integer,
   position text,
   team_id bigint,
-  CONSTRAINT spieler_pkey PRIMARY KEY (id)
+  CONSTRAINT spieler_pkey PRIMARY KEY (id),
+  CONSTRAINT spieler_team_id_fkey FOREIGN KEY (team_id) REFERENCES public.team(id)
 );
 CREATE TABLE public.spieler_analytics (
   spieler_id integer NOT NULL,
@@ -179,6 +177,8 @@ CREATE TABLE public.spieltag (
   status text NOT NULL,
   season_id bigint NOT NULL,
   best_formation text,
+  matchday_start timestamp with time zone,
+  matchday_end timestamp with time zone,
   CONSTRAINT spieltag_pkey PRIMARY KEY (round, season_id),
   CONSTRAINT spieltag_season_id_fkey FOREIGN KEY (season_id) REFERENCES public.season(id),
   CONSTRAINT spieltag_best_formation_fkey FOREIGN KEY (best_formation) REFERENCES public.formation(formation)
@@ -223,4 +223,38 @@ CREATE TABLE public.transfer_market (
   CONSTRAINT transfer_market_player_id_fkey FOREIGN KEY (player_id) REFERENCES public.spieler(id),
   CONSTRAINT transfer_market_seller_id_fkey FOREIGN KEY (seller_id) REFERENCES auth.users(id),
   CONSTRAINT fk_league FOREIGN KEY (league_id) REFERENCES public.leagues(id)
+);
+CREATE TABLE public.user_matchday_players (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  matchday_point_id bigint NOT NULL,
+  player_id bigint NOT NULL,
+  formation_index integer NOT NULL,
+  points integer DEFAULT 0,
+  spiel_id integer,
+  matchrating_id bigint,
+  is_locked boolean DEFAULT false,
+  CONSTRAINT user_matchday_players_pkey PRIMARY KEY (id),
+  CONSTRAINT user_matchday_players_matchday_point_id_fkey FOREIGN KEY (matchday_point_id) REFERENCES public.user_matchday_points(id),
+  CONSTRAINT user_matchday_players_player_id_fkey FOREIGN KEY (player_id) REFERENCES public.spieler(id),
+  CONSTRAINT user_matchday_players_spiel_id_fkey FOREIGN KEY (spiel_id) REFERENCES public.spiel(id),
+  CONSTRAINT user_matchday_players_matchrating_id_fkey FOREIGN KEY (matchrating_id) REFERENCES public.matchrating(id)
+);
+CREATE TABLE public.user_matchday_points (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  user_id uuid NOT NULL,
+  league_id bigint NOT NULL,
+  season_id bigint NOT NULL,
+  round integer NOT NULL,
+  formation text NOT NULL,
+  total_points integer DEFAULT 0,
+  is_locked boolean DEFAULT false,
+  CONSTRAINT user_matchday_points_pkey PRIMARY KEY (id),
+  CONSTRAINT user_matchday_points_user_id_fkey FOREIGN KEY (user_id) REFERENCES auth.users(id),
+  CONSTRAINT user_matchday_points_league_id_fkey FOREIGN KEY (league_id) REFERENCES public.leagues(id),
+  CONSTRAINT user_matchday_points_season_id_fkey FOREIGN KEY (season_id) REFERENCES public.season(id),
+  CONSTRAINT user_matchday_points_formation_fkey FOREIGN KEY (formation) REFERENCES public.formation(formation),
+  CONSTRAINT fk_spieltag FOREIGN KEY (season_id) REFERENCES public.spieltag(round),
+  CONSTRAINT fk_spieltag FOREIGN KEY (round) REFERENCES public.spieltag(round),
+  CONSTRAINT fk_spieltag FOREIGN KEY (season_id) REFERENCES public.spieltag(season_id),
+  CONSTRAINT fk_spieltag FOREIGN KEY (round) REFERENCES public.spieltag(season_id)
 );

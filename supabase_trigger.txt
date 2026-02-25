@@ -1,0 +1,106 @@
+[
+  {
+    "schema_name": "public",
+    "table_name": "league_members",
+    "trigger_name": "on_member_change",
+    "trigger_status": "enabled",
+    "trigger_function_name": "handle_member_activity",
+    "trigger_def": "CREATE TRIGGER on_member_change AFTER INSERT OR DELETE ON league_members FOR EACH ROW EXECUTE FUNCTION handle_member_activity()"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "league_players",
+    "trigger_name": "on_league_player_delete",
+    "trigger_status": "enabled",
+    "trigger_function_name": "cleanup_unlocked_matchday_players",
+    "trigger_def": "CREATE TRIGGER on_league_player_delete AFTER DELETE ON league_players FOR EACH ROW EXECUTE FUNCTION cleanup_unlocked_matchday_players()"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "league_players",
+    "trigger_name": "on_player_owner_change",
+    "trigger_status": "enabled",
+    "trigger_function_name": "handle_player_transfer",
+    "trigger_def": "CREATE TRIGGER on_player_owner_change AFTER UPDATE ON league_players FOR EACH ROW EXECUTE FUNCTION handle_player_transfer()"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "league_players",
+    "trigger_name": "trigger_freeze_late_transfers",
+    "trigger_status": "enabled",
+    "trigger_function_name": "freeze_late_transfers",
+    "trigger_def": "CREATE TRIGGER trigger_freeze_late_transfers AFTER INSERT OR UPDATE OF user_id ON league_players FOR EACH ROW EXECUTE FUNCTION freeze_late_transfers()"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "leagues",
+    "trigger_name": "market_reactivation_trigger",
+    "trigger_status": "enabled",
+    "trigger_function_name": "trigger_fill_market_on_reactivation",
+    "trigger_def": "CREATE TRIGGER market_reactivation_trigger AFTER UPDATE OF is_active ON leagues FOR EACH ROW EXECUTE FUNCTION trigger_fill_market_on_reactivation()"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "matchrating",
+    "trigger_name": "trigger_sync_matchday_points",
+    "trigger_status": "enabled",
+    "trigger_function_name": "sync_matchday_points",
+    "trigger_def": "CREATE TRIGGER trigger_sync_matchday_points AFTER INSERT OR UPDATE OF punkte ON matchrating FOR EACH ROW EXECUTE FUNCTION sync_matchday_points()"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "matchrating",
+    "trigger_name": "trigger_update_gesamtstatistiken",
+    "trigger_status": "enabled",
+    "trigger_function_name": "update_gesamtstatistiken",
+    "trigger_def": "CREATE TRIGGER trigger_update_gesamtstatistiken AFTER INSERT OR DELETE OR UPDATE ON matchrating FOR EACH ROW EXECUTE FUNCTION update_gesamtstatistiken()"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "spiel",
+    "trigger_name": "trg_team_analytics_update",
+    "trigger_status": "enabled",
+    "trigger_function_name": "trigger_update_team_analytics_on_final",
+    "trigger_def": "CREATE TRIGGER trg_team_analytics_update AFTER UPDATE OF status ON spiel FOR EACH ROW EXECUTE FUNCTION trigger_update_team_analytics_on_final()"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "spiel",
+    "trigger_name": "trigger_lock_matchday_players",
+    "trigger_status": "enabled",
+    "trigger_function_name": "lock_matchday_players",
+    "trigger_def": "CREATE TRIGGER trigger_lock_matchday_players AFTER UPDATE ON spiel FOR EACH ROW EXECUTE FUNCTION lock_matchday_players()"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "spiel",
+    "trigger_name": "trigger_spieltag_status_update",
+    "trigger_status": "enabled",
+    "trigger_function_name": "update_spieltag_status",
+    "trigger_def": "CREATE TRIGGER trigger_spieltag_status_update AFTER UPDATE OF status ON spiel FOR EACH ROW WHEN (old.status IS DISTINCT FROM new.status) EXECUTE FUNCTION update_spieltag_status()"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "spiel",
+    "trigger_name": "trigger_update_spieltag_zeitfenster",
+    "trigger_status": "enabled",
+    "trigger_function_name": "update_spieltag_zeitfenster",
+    "trigger_def": "CREATE TRIGGER trigger_update_spieltag_zeitfenster AFTER INSERT OR UPDATE OF datum ON spiel FOR EACH ROW EXECUTE FUNCTION update_spieltag_zeitfenster()"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "spieler",
+    "trigger_name": "trigger_on_spieler_created",
+    "trigger_status": "enabled",
+    "trigger_function_name": "on_spieler_created",
+    "trigger_def": "CREATE TRIGGER trigger_on_spieler_created AFTER INSERT ON spieler FOR EACH ROW EXECUTE FUNCTION on_spieler_created()"
+  },
+  {
+    "schema_name": "public",
+    "table_name": "transfer_market",
+    "trigger_name": "on_transfer_listing",
+    "trigger_status": "enabled",
+    "trigger_function_name": "handle_new_listing",
+    "trigger_def": "CREATE TRIGGER on_transfer_listing AFTER INSERT ON transfer_market FOR EACH ROW EXECUTE FUNCTION handle_new_listing()"
+  }
+]

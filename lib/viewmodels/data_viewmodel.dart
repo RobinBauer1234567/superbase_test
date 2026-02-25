@@ -31,7 +31,7 @@ class DataManagement {
       // 2. Wartezeit berechnen
       // HIER ANPASSEN: Wie lange ist dein Sync-Lock in der Datenbank eingestellt?
       // Angenommen, der Lock ist auf 3 Minuten gestellt:
-      final int syncLockMinutes = 5;
+      final int syncLockMinutes = 2;
 
       // Zufällige Zeit zwischen 0 und 120 Sekunden (2 Minuten) generieren
       final int randomSeconds = Random().nextInt(121);

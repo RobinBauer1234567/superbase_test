@@ -209,8 +209,6 @@ class _MainScreenState extends State<MainScreen> {
 
     setState(() => _isLoading = true);
     final dataManagement = context.read<DataManagement>();
-
-    // Ruft updateData() (für PL-Daten) und getLeaguesForUser() (für Ligen) auf
     dataManagement.startAutoSync();
     final leagues = await dataManagement.supabaseService.getLeaguesForUser();
 
