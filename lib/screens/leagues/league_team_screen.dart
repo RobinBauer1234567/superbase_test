@@ -1,5 +1,6 @@
 // lib/screens/leagues/league_team_screen.dart
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:premier_league/viewmodels/data_viewmodel.dart';
 import 'package:premier_league/screens/screenelements/match_screen/formations.dart';
@@ -17,6 +18,8 @@ class LeagueTeamScreen extends StatefulWidget {
 }
 
 class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
+  final NumberFormat _pointsFormat = NumberFormat.decimalPattern('de_DE');
+
   bool _isLoading = true;
   bool _isListView = false;
 
@@ -34,8 +37,24 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
   int _selectedRound = 1;
   int _latestActiveRound = 1;
   int _matchdayPoints = 0;
+  int _overallTeamPoints = 0;
   bool _isViewingHistory = false;
+  int _currentRound = 1;
+  DateTime? _matchdayStart;
+  DateTime? _matchdayEnd;
+  final Map<int, Map<String, dynamic>> _matchdayMetaByRound = {};
   // --------------------------------
+
+  MatchdayPhase get _matchdayPhase {
+    final now = DateTime.now().toUtc();
+    final start = _matchdayStart;
+    final end = _matchdayEnd;
+
+    if (start == null || end == null) return MatchdayPhase.inProgress;
+    if (now.isBefore(start)) return MatchdayPhase.before;
+    if (now.isAfter(end)) return MatchdayPhase.after;
+    return MatchdayPhase.inProgress;
+  }
 
   int _toInt(dynamic value, {int fallback = 0}) {
     if (value is int) return value;
@@ -59,10 +78,21 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
 
     // 1. Aktuellen Spieltag abfragen (hier starten wir standardmäßig)
     final currentRound = await dataManagement.supabaseService.getCurrentRound(seasonId);
+    _currentRound = currentRound;
 
     // 2. NEU: Alle Spieltage abfragen, um das Maximum (z.B. 38) zu finden.
     // Dadurch darf der User auch nach rechts klicken, um für die Zukunft aufzustellen!
-    final allRounds = await dataManagement.supabaseService.fetchAllSpieltagIds(seasonId);
+    final allSpieltage = await dataManagement.supabaseService.fetchAllSpieltage(seasonId);
+    for (final dynamic item in allSpieltage) {
+      if (item is! Map) continue;
+      final row = Map<String, dynamic>.from(item as Map);
+      final round = _toInt(row['round'], fallback: -1);
+      if (round > 0) {
+        _matchdayMetaByRound[round] = row;
+      }
+    }
+
+    final allRounds = _matchdayMetaByRound.keys.toList();
     int maxRound = currentRound;
     if (allRounds.isNotEmpty) {
       maxRound = allRounds.reduce((curr, next) => curr > next ? curr : next);
@@ -116,6 +146,14 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
 
       final pointsData = matchdayData['points_data'] ?? {};
       final playersData = matchdayData['players'] as List<dynamic>? ?? [];
+
+      final roundMeta = _matchdayMetaByRound[round] ?? <String, dynamic>{};
+      final DateTime? matchdayStart = DateTime.tryParse(
+        (roundMeta['matchday_start'] ?? '').toString(),
+      )?.toUtc();
+      final DateTime? matchdayEnd = DateTime.tryParse(
+        (roundMeta['matchday_end'] ?? '').toString(),
+      )?.toUtc();
 
       // --- DATEN VERARBEITEN ---
       String? savedFormationName = pointsData['formation'];
@@ -174,6 +212,23 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
       bench.sort((a, b) => _getPositionOrder(a.position).compareTo(_getPositionOrder(b.position)));
 
       if (mounted) {
+        int teamTotalPoints = _overallTeamPoints;
+        try {
+          final ranking = await service.fetchOverallRanking(widget.leagueId);
+          final userId = service.supabase.auth.currentUser?.id;
+          if (userId != null) {
+            final currentUserRow = ranking.cast<Map<String, dynamic>?>().firstWhere(
+                  (row) => row?['user_id']?.toString() == userId,
+                  orElse: () => null,
+                );
+            if (currentUserRow != null) {
+              teamTotalPoints = _toInt(currentUserRow['total_points']);
+            }
+          }
+        } catch (_) {
+          // Fallback: Bisherigen Wert behalten.
+        }
+
         setState(() {
           _allFormations = formations;
 
@@ -190,6 +245,9 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
           _isFormationLocked = isLocked || _isViewingHistory;
           _frozenPlayerIds = frozenIds;
           _matchdayPoints = totalPts;
+          _overallTeamPoints = teamTotalPoints;
+          _matchdayStart = matchdayStart;
+          _matchdayEnd = matchdayEnd;
 
           _updatePlaceholderNames();
           _isLoading = false;
@@ -564,6 +622,18 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
 
   // --- UI: SPIELTAGS-SELECTOR ---
   Widget _buildMatchdaySelector() {
+    final phase = _matchdayPhase;
+    final bool isCurrentRound = _selectedRound == _currentRound;
+    final bool showOverallPoints = phase == MatchdayPhase.before;
+    final int displayedPoints = showOverallPoints ? _overallTeamPoints : _matchdayPoints;
+    final String pointsLabel = showOverallPoints ? 'Gesamtpunkte' : 'Spieltag';
+    final Color pointsColor = getColorForRating(displayedPoints, 2500);
+    final String phaseLabel = switch (phase) {
+      MatchdayPhase.before => 'Vor Matchday-Start',
+      MatchdayPhase.inProgress => 'Matchday läuft',
+      MatchdayPhase.after => 'Matchday beendet',
+    };
+
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       decoration: BoxDecoration(
@@ -584,6 +654,25 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
                 "Spieltag $_selectedRound",
                 style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
               ),
+              if (isCurrentRound)
+                Container(
+                  margin: const EdgeInsets.only(left: 8),
+                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
+                  decoration: BoxDecoration(
+                    color: Colors.green.withOpacity(0.12),
+                    borderRadius: BorderRadius.circular(14),
+                    border: Border.all(color: Colors.green.shade400),
+                  ),
+                  child: const Text(
+                    'AKTUELL',
+                    style: TextStyle(
+                      color: Colors.green,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 10,
+                      letterSpacing: 0.6,
+                    ),
+                  ),
+                ),
               IconButton(
                 icon: const Icon(Icons.chevron_right),
                 onPressed: _selectedRound < _latestActiveRound ? () => _changeRound(_selectedRound + 1) : null,
@@ -591,24 +680,77 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
               ),
             ],
           ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              color: Theme.of(context).primaryColor.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: Text(
-              "$_matchdayPoints Pkt",
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                color: Theme.of(context).primaryColor,
+          Row(
+            children: [
+              Container(
+                margin: const EdgeInsets.only(right: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  phaseLabel,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey.shade700,
+                    fontSize: 12,
+                  ),
+                ),
               ),
-            ),
+              Container(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                decoration: BoxDecoration(
+                  color: showOverallPoints
+                      ? Colors.white
+                      : pointsColor.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(20),
+                  border: Border.all(
+                    color: showOverallPoints
+                        ? Colors.grey.shade300
+                        : pointsColor.withOpacity(0.35),
+                  ),
+                ),
+                child: showOverallPoints
+                    ? Column(
+                        mainAxisSize: MainAxisSize.min,
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(
+                            pointsLabel,
+                            style: TextStyle(
+                              fontSize: 10,
+                              color: Colors.grey.shade600,
+                              letterSpacing: 0.4,
+                            ),
+                          ),
+                          Text(
+                            '${_pointsFormat.format(displayedPoints)} Pkt',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 16,
+                              color: Colors.black87,
+                            ),
+                          ),
+                        ],
+                      )
+                    : Text(
+                        "$displayedPoints Pkt · $pointsLabel",
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          color: pointsColor,
+                        ),
+                      ),
+                ),
+              ),
+            ],
           ),
         ],
       ),
     );
   }
+
+  
 
   Widget _buildFormationDropdown() {
     final sortedFormationKeys = _allFormations.keys.toList()..sort();
@@ -760,4 +902,10 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
       ],
     );
   }
+}
+
+enum MatchdayPhase {
+  before,
+  inProgress,
+  after,
 }
