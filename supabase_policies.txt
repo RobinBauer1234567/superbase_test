@@ -108,5 +108,25 @@
     "cmd": "INSERT",
     "qual": null,
     "with_check": "(auth.uid() = seller_id)"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "user_matchday_players",
+    "policyname": "Jeder darf Matchday Players lesen",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "SELECT",
+    "qual": "true",
+    "with_check": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "user_matchday_points",
+    "policyname": "Jeder darf Matchday Points lesen",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "SELECT",
+    "qual": "true",
+    "with_check": null
   }
 ]
