@@ -626,8 +626,10 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
     final bool isCurrentRound = _selectedRound == _currentRound;
     final bool showOverallPoints = phase == MatchdayPhase.before;
     final int displayedPoints = showOverallPoints ? _overallTeamPoints : _matchdayPoints;
-    final String pointsLabel = showOverallPoints ? 'Gesamtpunkte' : 'Spieltag';
-    final Color pointsColor = getColorForRating(displayedPoints, 2500);
+    final String pointsLabel = showOverallPoints ? 'Gesamt' : 'Spieltag';
+    final Color pointsColor = showOverallPoints
+        ? Theme.of(context).primaryColor
+        : getColorForRating(displayedPoints, 2500);
     final String phaseLabel = switch (phase) {
       MatchdayPhase.before => 'Vor Matchday-Start',
       MatchdayPhase.inProgress => 'Matchday läuft',
@@ -701,46 +703,15 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                 decoration: BoxDecoration(
-                  color: showOverallPoints
-                      ? Colors.white
-                      : pointsColor.withOpacity(0.15),
+                  color: pointsColor.withOpacity(0.15),
                   borderRadius: BorderRadius.circular(20),
-                  border: Border.all(
-                    color: showOverallPoints
-                        ? Colors.grey.shade300
-                        : pointsColor.withOpacity(0.35),
-                  ),
                 ),
-                child: showOverallPoints
-                    ? Column(
-                        mainAxisSize: MainAxisSize.min,
-                        crossAxisAlignment: CrossAxisAlignment.end,
-                        children: [
-                          Text(
-                            pointsLabel,
-                            style: TextStyle(
-                              fontSize: 10,
-                              color: Colors.grey.shade600,
-                              letterSpacing: 0.4,
-                            ),
-                          ),
-                          Text(
-                            '${_pointsFormat.format(displayedPoints)} Pkt',
-                            style: const TextStyle(
-                              fontWeight: FontWeight.bold,
-                              fontSize: 16,
-                              color: Colors.black87,
-                            ),
-                          ),
-                        ],
-                      )
-                    : Text(
-                        "$displayedPoints Pkt · $pointsLabel",
-                        style: TextStyle(
-                          fontWeight: FontWeight.bold,
-                          color: pointsColor,
-                        ),
-                      ),
+                child: Text(
+                  "$displayedPoints Pkt · $pointsLabel",
+                  style: TextStyle(
+                    fontWeight: FontWeight.bold,
+                    color: pointsColor,
+                  ),
                 ),
               ),
             ],
