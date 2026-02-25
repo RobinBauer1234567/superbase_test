@@ -44,26 +44,6 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
     return fallback;
   }
 
-  int _getMarktwert(dynamic playerMap) {
-    if (playerMap == null) return 0;
-    final analytics = playerMap['spieler_analytics'];
-    if (analytics is List && analytics.isNotEmpty) {
-      return _toInt(analytics[0]['marktwert']);
-    } else if (analytics is Map) {
-      return _toInt(analytics['marktwert']);
-    }
-    return 0;
-  }
-
-  Map<String, dynamic> _getStats(dynamic playerMap) {
-    if (playerMap == null) return <String, dynamic>{};
-    final analytics = playerMap['spieler_analytics'];
-    final stats = analytics is Map ? analytics['gesamtstatistiken'] : null;
-    if (stats is Map<String, dynamic>) return stats;
-    if (stats is Map) return Map<String, dynamic>.from(stats);
-    return <String, dynamic>{};
-  }
-
   @override
   void initState() {
     super.initState();
@@ -71,140 +51,123 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
   }
 
   // --- Initialisierung beim Starten des Screens ---
+// --- Initialisierung beim Starten des Screens ---
   Future<void> _initMatchdayData() async {
     setState(() => _isLoading = true);
     final dataManagement = Provider.of<DataManagement>(context, listen: false);
     final seasonId = dataManagement.seasonId;
 
-    // Aktuellen Spieltag abfragen (z.B. 27)
+    // 1. Aktuellen Spieltag abfragen (hier starten wir standardmäßig)
     final currentRound = await dataManagement.supabaseService.getCurrentRound(seasonId);
 
-    _latestActiveRound = currentRound;
+    // 2. NEU: Alle Spieltage abfragen, um das Maximum (z.B. 38) zu finden.
+    // Dadurch darf der User auch nach rechts klicken, um für die Zukunft aufzustellen!
+    final allRounds = await dataManagement.supabaseService.fetchAllSpieltagIds(seasonId);
+    int maxRound = currentRound;
+    if (allRounds.isNotEmpty) {
+      maxRound = allRounds.reduce((curr, next) => curr > next ? curr : next);
+    }
+
+    // Das absolute Limit ist nun das Saisonende, nicht mehr das aktuelle Wochenende!
+    _latestActiveRound = maxRound;
     _selectedRound = currentRound;
     _isViewingHistory = false;
 
-    // Daten für diesen Spieltag laden
+    // Daten für den aktuellen Spieltag laden
     await _loadDataForRound(_selectedRound);
   }
-
+  // --- Wechseln zwischen den Spieltagen (Historie) ---
   // --- Wechseln zwischen den Spieltagen (Historie) ---
   Future<void> _changeRound(int newRound) async {
     if (newRound < 1 || newRound > _latestActiveRound) return;
 
     setState(() {
       _selectedRound = newRound;
-      _isViewingHistory = newRound != _latestActiveRound;
+      // WICHTIG: Weg mit der pauschalen Sperre! Wir vertrauen ab jetzt
+      // zu 100% auf das 'is_locked' aus der Datenbank.
+      _isViewingHistory = false;
     });
 
     await _loadDataForRound(newRound);
   }
 
-  // --- DIE NEUE "SINGLE SOURCE OF TRUTH" LADE-LOGIK ---
+  // --- DIE NEUE, SAUBERE LADE-LOGIK ---
   Future<void> _loadDataForRound(int round) async {
     setState(() => _isLoading = true);
     final dataManagement = Provider.of<DataManagement>(context, listen: false);
     final service = dataManagement.supabaseService;
     final seasonId = dataManagement.seasonId;
-    final userId = service.supabase.auth.currentUser!.id;
 
     try {
       // 1. Alle verfügbaren Formations-Varianten laden
       var formations = await service.fetchFormationsFromDb();
 
-      // 2. Kader des Users aus der Datenbank holen (Liefert standardmäßig alle auf die Bank/Index 99)
-      final playersRaw = await service.fetchUserLeaguePlayers(widget.leagueId);
-
-      // 3. Den Snapshot / Zustand für exakt diese Runde abfragen
-      final state = await service.fetchMatchdayState(
-        userId: userId,
-        leagueId: widget.leagueId,
-        seasonId: seasonId,
-        round: round,
+      // 2. Snapshot abrufen ODER ERSTELLEN (Die Magie passiert hier im RPC!)
+      final matchdayData = await service.fetchMatchdayData(
+          widget.leagueId,
+          seasonId,
+          round
       );
 
-      // 4. Die für diese Runde gespeicherte Formation abfragen
-      String? savedFormationName = await service.fetchUserFormation(widget.leagueId, seasonId, round);
-
-      // --- DATEN VERARBEITEN ---
-      final frozenPlayersFull = state['frozen_players_full'] as List<dynamic>? ?? [];
-      final bool isLocked = state['is_formation_locked'] ?? false;
-      final List<int> frozenIds = List<int>.from(state['frozen_player_ids'] ?? []);
-
-      int totalPts = 0;
-      List<PlayerInfo> field = List.generate(11, (index) => _createPlaceholder(index));
-      List<PlayerInfo> bench = [];
-      Set<int> processedPlayerIds = {};
-
-      // Snapshot als leicht abrufbare Map aufbereiten
-      Map<int, Map<String, dynamic>> snapshotMap = {};
-      for (var fp in frozenPlayersFull) {
-        snapshotMap[fp['player_id']] = fp;
-        totalPts += _toInt(fp['points']);
+      if (matchdayData.isEmpty) {
+        if (mounted) setState(() => _isLoading = false);
+        return; // Kein Snapshot erstellbar / abrufbar
       }
 
-      // A) AKTUELLE KADERSPIELER VERTEILEN
-      for (var p in playersRaw) {
-        final int pId = _toInt(p['id'], fallback: -9999);
-        processedPlayerIds.add(pId);
+      final pointsData = matchdayData['points_data'] ?? {};
+      final playersData = matchdayData['players'] as List<dynamic>? ?? [];
 
-        int rating = 0;
-        int fIndex = 99; // Standardmäßig Bank
+      // --- DATEN VERARBEITEN ---
+      String? savedFormationName = pointsData['formation'];
+      bool isLocked = pointsData['is_locked'] ?? false;
+      int totalPts = pointsData['total_points'] ?? 0;
 
-        // Falls der Spieler einen Snapshot-Eintrag für diesen Spieltag hat, übernimmt dieser die Kontrolle!
-        if (snapshotMap.containsKey(pId)) {
-          final snapData = snapshotMap[pId]!;
-          fIndex = _toInt(snapData['formation_index'], fallback: 99);
-          rating = _toInt(snapData['points']);
-        } else {
-          // Falls er keinen hat (z.B. neu gekauft), nehmen wir die regulären Live-Punkte
-          try {
-            final stats = _getStats(p);
-            rating = _toInt(stats['gesamtpunkte']);
-          } catch (e) {}
+      List<PlayerInfo> field = List.generate(11, (index) => _createPlaceholder(index));
+      List<PlayerInfo> bench = [];
+      List<int> frozenIds = [];
+
+      for (var pd in playersData) {
+        final spieler = pd['spieler'];
+        if (spieler == null) continue;
+
+        final int pId = _toInt(spieler['id'], fallback: -9999);
+        final int fIndex = _toInt(pd['formation_index'], fallback: 99);
+        final int rating = _toInt(pd['points'], fallback: 0);
+
+        // Spieler ist gelockt, wenn er selbst in der DB gelockt ist,
+        // der Spieltag gesperrt ist oder wir die Historie anschauen.
+        final bool playerLocked = pd['is_locked'] ?? false;
+        if (playerLocked || _isViewingHistory) {
+          frozenIds.add(pId);
+        }
+
+        final team = spieler['team'];
+        final analytics = spieler['spieler_analytics'];
+
+        int mw = 0;
+        if (analytics is Map) {
+          mw = _toInt(analytics['marktwert']);
+        } else if (analytics is List && analytics.isNotEmpty) {
+          mw = _toInt(analytics[0]['marktwert']);
         }
 
         final playerInfo = PlayerInfo(
           id: pId,
-          name: (p['name'] ?? 'Unbekannt').toString(),
-          position: p['position'] ?? 'N/A',
-          profileImageUrl: p['profilbild_url'],
+          name: (spieler['name'] ?? 'Unbekannt').toString(),
+          position: spieler['position'] ?? 'N/A',
+          profileImageUrl: spieler['profilbild_url'],
           rating: rating,
           goals: 0, assists: 0, ownGoals: 0,
           maxRating: 2500,
-          teamImageUrl: p['team_image_url'],
-          marketValue: _getMarktwert(p),
-          teamName: p['team_name'],
+          teamImageUrl: team != null ? team['image_url'] : null,
+          marketValue: mw,
+          teamName: team != null ? team['name'] : null,
         );
 
         if (fIndex >= 0 && fIndex <= 10) {
           field[fIndex] = playerInfo;
         } else {
           bench.add(playerInfo);
-        }
-      }
-
-      // B) GEISTER-SPIELER (Verkauft, aber noch im Snapshot der Historie)
-      for (var pId in snapshotMap.keys) {
-        if (!processedPlayerIds.contains(pId)) {
-          final snapData = snapshotMap[pId]!;
-          final spielerInfo = snapData['spieler'];
-          if (spielerInfo == null) continue;
-
-          final missingPlayer = PlayerInfo(
-            id: pId,
-            name: "${spielerInfo['name']} (Verkauft)", // Markierung
-            position: spielerInfo['position'] ?? 'N/A',
-            profileImageUrl: spielerInfo['profilbild_url'],
-            rating: _toInt(snapData['points']),
-            goals: 0, assists: 0, ownGoals: 0,
-          );
-
-          final int fIndex = _toInt(snapData['formation_index'], fallback: 99);
-          if (fIndex >= 0 && fIndex <= 10) {
-            field[fIndex] = missingPlayer;
-          } else {
-            bench.add(missingPlayer);
-          }
         }
       }
 
@@ -238,7 +201,7 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
     }
   }
 
-  // --- SPEICHERN (Nur noch direkt für den aktuellen Spieltag) ---
+  // --- SPEICHERN ---
   Future<void> _saveLineupToDb() async {
     final dataManagement = Provider.of<DataManagement>(context, listen: false);
     final service = dataManagement.supabaseService;
@@ -256,7 +219,6 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
       updates.add({'player_id': _substitutePlayers[i].id, 'index': 11 + i});
     }
 
-    // Übergibt nun auch seasonId und Runde an deine neue Methode
     await service.saveTeamLineup(
         widget.leagueId,
         seasonId,

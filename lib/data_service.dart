@@ -867,20 +867,17 @@ class ApiService {
     print('🧹 Starte Reparatur-Job für unvollständige Spieler...');
 
     try {
+      // Wir suchen explizit nach Spielern ohne Bild ODER mit der Position SUB / N/V
       final response = await supabaseService.supabase
           .from('spieler')
-          .select('id, name, spieler_analytics(marktwert)')
+          .select('id, name, position, profilbild_url, spieler_analytics(marktwert)')
           .eq('spieler_analytics.season_id', seasonId)
+          .or('profilbild_url.is.null,position.eq.SUB,position.eq.N/V') // Das ist der entscheidende Filter!
           .limit(50);
 
-      // Filtern: Nur Spieler behalten, die noch KEINEN Analytics-Eintrag haben
       final List<dynamic> allFetched = response as List<dynamic>;
-      final List<dynamic> incompletePlayers = allFetched.where((p) {
-        final analytics = p['spieler_analytics'];
-        if (analytics == null || (analytics is List && analytics.isEmpty)) return true;
-        if (analytics is List && analytics.isNotEmpty && analytics.first['marktwert'] == null) return true;
-        return false;
-      }).take(10).toList();
+      final List<dynamic> incompletePlayers = allFetched.take(25).toList();
+
 
       if (incompletePlayers.isEmpty) {
         print('✅ Alles sauber! Keine unvollständigen Spieler gefunden.');
@@ -1719,72 +1716,41 @@ class SupabaseService {
 
   Future<int> getCurrentRound(int seasonId) async {
     try {
-      final now = DateTime.now().toUtc().toIso8601String();
+      // Wir ziehen 3 Stunden von der aktuellen Zeit ab.
+      // Dadurch bleibt ein laufendes Spiel bis ca. 1 Stunde nach Abpfiff der Fokus.
+      final targetTime = DateTime.now().toUtc().subtract(const Duration(hours: 3)).toIso8601String();
 
-      // 1. Alle aktuell laufenden Spieltage holen
-      final laufendeSpieltage = await supabase
+      // 1. Suche das erste Spiel, dessen (Anpfiff + 3h) in der Zukunft liegt
+      final nextGame = await supabase
+          .from('spiel')
+          .select('round')
+          .eq('season_id', seasonId)
+          .gte('datum', targetTime)
+          .order('datum', ascending: true) // Das Datum, das am nächsten dran ist
+          .limit(1)
+          .maybeSingle();
+
+      if (nextGame != null) {
+        return nextGame['round'] as int;
+      }
+
+      // 2. Fallback für das Saisonende:
+      // Wenn es gar keine zukünftigen Spiele mehr gibt, nimm die allerletzte Runde.
+      final lastGame = await supabase
           .from('spieltag')
           .select('round')
           .eq('season_id', seasonId)
-          .eq('status', 'läuft');
+          .order('round', ascending: false) // Höchste Runde zuerst
+          .limit(1)
+          .maybeSingle();
 
-      final List<dynamic> rounds = laufendeSpieltage as List<dynamic>;
+      return lastGame != null ? lastGame['round'] as int : 1;
 
-      // 2. Wenn gar kein Spieltag läuft, den nächsten geplanten suchen
-      if (rounds.isEmpty) {
-        final fallbackResponse = await supabase
-            .from('spieltag')
-            .select('round')
-            .eq('season_id', seasonId)
-            .eq('status', 'geplant')
-            .order('round', ascending: true)
-            .limit(1)
-            .maybeSingle();
-
-        return fallbackResponse != null ? fallbackResponse['round'] as int : 1;
-      }
-
-      // 3. Wenn genau EIN Spieltag läuft, ist die Sache klar
-      if (rounds.length == 1) {
-        return rounds.first['round'] as int;
-      }
-
-      // 4. Wenn MEHRERE laufen: Welcher Spieltag hat das früheste "nächste Spiel"?
-      int bestRound = rounds.first['round'] as int; // Fallback auf den ersten
-      DateTime? earliestNextGameDate;
-
-      for (var row in rounds) {
-        int roundNum = row['round'] as int;
-
-        // Das nächste Spiel für diese Runde in der Zukunft finden
-        final nextGame = await supabase
-            .from('spiel')
-            .select('datum')
-            .eq('season_id', seasonId)
-            .eq('round', roundNum)
-            .gt('datum', now) // Nur Spiele, die in der Zukunft liegen!
-            .order('datum', ascending: true)
-            .limit(1)
-            .maybeSingle();
-
-        if (nextGame != null) {
-          DateTime gameDate = DateTime.parse(nextGame['datum']);
-
-          // Ist dieses Spiel früher als unser bisheriger Rekordhalter?
-          if (earliestNextGameDate == null || gameDate.isBefore(earliestNextGameDate!)) {
-            earliestNextGameDate = gameDate;
-            bestRound = roundNum;
-          }
-        }
-      }
-
-      return bestRound;
     } catch (e) {
       print('Fehler beim Abrufen des aktuellen Spieltags: $e');
-      return 1; // Fallback bei Fehler
+      return 1; // Sicherer Fallback
     }
   }
-
   Future<Map<String, dynamic>> fetchMatchdayState({required String userId, required int leagueId, required int seasonId, required int round,}) async {
     try {
       // 1. Zeitfenster aus 'spieltag' holen
@@ -1795,14 +1761,14 @@ class SupabaseService {
           .eq('round', round)
           .maybeSingle();
 
-      // 2. Prüfen, ob die Formation bereits gelockt ist (Snapshot existiert)
       final pointsResponse = await supabase
           .from('user_matchday_points')
-          .select('id') // Wir brauchen nur die ID um zu wissen, ob es existiert
+          .select('id')
           .eq('user_id', userId)
           .eq('league_id', leagueId)
           .eq('season_id', seasonId)
           .eq('round', round)
+          .eq('is_locked', true)
           .maybeSingle();
 
       bool isFormationLocked = pointsResponse != null;
@@ -1810,7 +1776,6 @@ class SupabaseService {
       List<Map<String, dynamic>> frozenPlayersData = []; // NEU
 
       if (isFormationLocked) {
-        // NEU: Wir holen uns hier auch direkt die Infos aus der spieler-Tabelle über den Foreign Key
         final playersResponse = await supabase
             .from('user_matchday_players')
             .select('''
@@ -1821,7 +1786,8 @@ class SupabaseService {
                 id, name, position, profilbild_url
               )
             ''')
-            .eq('matchday_point_id', pointsResponse['id']);
+            .eq('matchday_point_id', pointsResponse['id'])
+            .eq('is_locked', true);
 
         frozenPlayersData = List<Map<String, dynamic>>.from(playersResponse);
         frozenPlayerIds = frozenPlayersData.map((row) => row['player_id'] as int).toList();
