@@ -1,5 +1,6 @@
 // lib/screens/main_screen.dart
 import 'dart:async';
+import 'dart:typed_data';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:premier_league/auth_service.dart';
@@ -12,6 +13,7 @@ import 'dart:math';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:premier_league/screens/player_screen.dart';
 import 'package:premier_league/screens/team_screen.dart';
+import 'package:image_picker/image_picker.dart';
 
 enum SearchFilter { players, teams }
 
@@ -25,6 +27,10 @@ class _MainScreenState extends State<MainScreen> {
   int _selectedIndex = 0;
   List<Map<String, dynamic>> _userLeagues = [];
   bool _isLoading = true;
+  Map<int, String> _leagueImageUrls = {};
+  String? _accountImageUrl;
+  Uint8List? _accountImagePreview;
+  final Map<int, Uint8List> _leagueImagePreviews = {};
 
   OverlayEntry? _overflowOverlay;
   bool _isOverflowMenuOpen = false;
@@ -32,6 +38,7 @@ class _MainScreenState extends State<MainScreen> {
 
   Timer? _debounce;
   SearchFilter _searchFilter = SearchFilter.players;
+  final ImagePicker _imagePicker = ImagePicker();
 
   // --- KORREKTUR: initState ruft jetzt _loadInitialData auf ---
   @override
@@ -211,10 +218,25 @@ class _MainScreenState extends State<MainScreen> {
     final dataManagement = context.read<DataManagement>();
     dataManagement.startAutoSync();
     final leagues = await dataManagement.supabaseService.getLeaguesForUser();
+    final profileData = await Supabase.instance.client
+        .from('profiles')
+        .select('avatar_url')
+        .eq('user_id', Supabase.instance.client.auth.currentUser!.id)
+        .maybeSingle();
+
+    final Map<int, String> leagueImageUrls = {};
+    for (final league in leagues) {
+      final dynamic settings = league['settings'];
+      if (settings is Map && settings['logo_url'] is String) {
+        leagueImageUrls[league['id'] as int] = settings['logo_url'] as String;
+      }
+    }
 
     if (mounted) {
       setState(() {
         _userLeagues = leagues;
+        _accountImageUrl = profileData?['avatar_url'] as String?;
+        _leagueImageUrls = leagueImageUrls;
         _isLoading = false;
       });
     }
@@ -227,9 +249,249 @@ class _MainScreenState extends State<MainScreen> {
     if (mounted) {
       setState(() {
         _userLeagues = leagues;
+        final Map<int, String> refreshedImageUrls = {};
+        for (final league in leagues) {
+          final dynamic settings = league['settings'];
+          if (settings is Map && settings['logo_url'] is String) {
+            refreshedImageUrls[league['id'] as int] = settings['logo_url'] as String;
+          }
+        }
+        _leagueImageUrls = refreshedImageUrls;
         _isLoading = false;
       });
     }
+  }
+
+  int? get _selectedLeagueId {
+    if (_selectedIndex <= 0) return null;
+    final leagueListIndex = _selectedIndex - 1;
+    if (leagueListIndex >= 0 && leagueListIndex < _userLeagues.length) {
+      return _userLeagues[leagueListIndex]['id'] as int;
+    }
+    return null;
+  }
+
+  String get _selectedLeagueName {
+    if (_selectedIndex == 0) return 'Premier League';
+    final leagueListIndex = _selectedIndex - 1;
+    if (leagueListIndex >= 0 && leagueListIndex < _userLeagues.length) {
+      return _userLeagues[leagueListIndex]['name'] as String;
+    }
+    return 'Liga';
+  }
+
+  Future<void> _pickAccountImage() async {
+    final picked = await _imagePicker.pickImage(source: ImageSource.gallery, imageQuality: 80);
+    if (picked == null) return;
+    final bytes = await picked.readAsBytes();
+    if (!mounted) return;
+
+    setState(() {
+      _accountImagePreview = bytes;
+    });
+
+    try {
+      final userId = Supabase.instance.client.auth.currentUser!.id;
+      final path = 'avatars/$userId.jpg';
+      await Supabase.instance.client.storage.from('spielerbilder').uploadBinary(
+        path,
+        bytes,
+        fileOptions: const FileOptions(cacheControl: '3600', upsert: true),
+      );
+      final publicUrl = Supabase.instance.client.storage.from('spielerbilder').getPublicUrl(path);
+      await Supabase.instance.client.from('profiles').update({'avatar_url': publicUrl}).eq('user_id', userId);
+
+      if (mounted) {
+        setState(() {
+          _accountImageUrl = publicUrl;
+        });
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Konnte Account-Bild nicht speichern: $e')),
+      );
+    }
+  }
+
+  Future<void> _pickLeagueImage() async {
+    final picked = await _imagePicker.pickImage(source: ImageSource.gallery, imageQuality: 80);
+    if (picked == null) return;
+    final bytes = await picked.readAsBytes();
+    if (!mounted) return;
+
+    final leagueId = _selectedLeagueId;
+    if (leagueId == null) {
+      setState(() {
+        _leagueImagePreviews[-1] = bytes;
+      });
+      return;
+    }
+
+    setState(() {
+      _leagueImagePreviews[leagueId] = bytes;
+    });
+
+    try {
+      final path = 'league_badges/$leagueId.jpg';
+      await Supabase.instance.client.storage.from('wappen').uploadBinary(
+        path,
+        bytes,
+        fileOptions: const FileOptions(cacheControl: '3600', upsert: true),
+      );
+      final publicUrl = Supabase.instance.client.storage.from('wappen').getPublicUrl(path);
+
+      final selectedLeague = _userLeagues.firstWhere((league) => league['id'] == leagueId);
+      final settings = (selectedLeague['settings'] is Map<String, dynamic>)
+          ? Map<String, dynamic>.from(selectedLeague['settings'])
+          : <String, dynamic>{};
+      settings['logo_url'] = publicUrl;
+
+      await Supabase.instance.client.from('leagues').update({'settings': settings}).eq('id', leagueId);
+
+      if (mounted) {
+        setState(() {
+          _leagueImageUrls[leagueId] = publicUrl;
+          selectedLeague['settings'] = settings;
+        });
+      }
+    } catch (e) {
+      if (!mounted) return;
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Konnte Liga-Bild nicht speichern: $e')),
+      );
+    }
+  }
+
+  void _openAccountSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) {
+        final authService = this.context.read<AuthService>();
+        final user = Supabase.instance.client.auth.currentUser;
+
+        return Padding(
+          padding: EdgeInsets.only(
+            left: 20,
+            right: 20,
+            top: 20,
+            bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildImagePreview(
+                fallbackIcon: Icons.person,
+                imageUrl: _accountImageUrl,
+                previewBytes: _accountImagePreview,
+                radius: 42,
+              ),
+              const SizedBox(height: 12),
+              Text(user?.email ?? 'Kein Account', style: const TextStyle(fontWeight: FontWeight.w600)),
+              const SizedBox(height: 4),
+              const Text('Profilbild ändern oder direkt abmelden.'),
+              const SizedBox(height: 12),
+              Wrap(
+                spacing: 8,
+                children: [
+                  FilledButton.icon(
+                    onPressed: () async {
+                      await _pickAccountImage();
+                      if (mounted) Navigator.pop(context);
+                    },
+                    icon: const Icon(Icons.image),
+                    label: const Text('Bild importieren'),
+                  ),
+                  OutlinedButton.icon(
+                    onPressed: () {
+                      authService.signOut();
+                      Navigator.pop(context);
+                    },
+                    icon: const Icon(Icons.logout),
+                    label: const Text('Abmelden'),
+                  ),
+                ],
+              ),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  void _openLeagueSheet() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      builder: (context) {
+        final leagueId = _selectedLeagueId;
+        final preview = leagueId == null ? _leagueImagePreviews[-1] : _leagueImagePreviews[leagueId];
+        final imageUrl = leagueId == null ? null : _leagueImageUrls[leagueId];
+
+        return Padding(
+          padding: EdgeInsets.only(
+            left: 20,
+            right: 20,
+            top: 20,
+            bottom: MediaQuery.of(context).viewInsets.bottom + 20,
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              _buildImagePreview(
+                fallbackIcon: Icons.shield,
+                imageUrl: imageUrl,
+                previewBytes: preview,
+                radius: 42,
+              ),
+              const SizedBox(height: 12),
+              Text(
+                _selectedLeagueName,
+                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+              const SizedBox(height: 4),
+              Text(
+                leagueId == null
+                    ? 'Dummy im Premier-League-Tab – Bild ist lokal auf diesem Gerät.'
+                    : 'Liga-ID: $leagueId • Badge wird in Supabase gespeichert.',
+              ),
+              const SizedBox(height: 12),
+              FilledButton.icon(
+                onPressed: () async {
+                  await _pickLeagueImage();
+                  if (mounted) Navigator.pop(context);
+                },
+                icon: const Icon(Icons.image_outlined),
+                label: Text(leagueId == null ? 'Dummy-Bild importieren' : 'Liga-Bild importieren'),
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        );
+      },
+    );
+  }
+
+  Widget _buildImagePreview({
+    required IconData fallbackIcon,
+    required String? imageUrl,
+    required Uint8List? previewBytes,
+    double radius = 18,
+  }) {
+    ImageProvider? provider;
+    if (previewBytes != null) {
+      provider = MemoryImage(previewBytes);
+    } else if (imageUrl != null && imageUrl.isNotEmpty) {
+      provider = NetworkImage(imageUrl);
+    }
+
+    return CircleAvatar(
+      radius: radius,
+      backgroundColor: Colors.grey.shade200,
+      backgroundImage: provider,
+      child: provider == null ? Icon(fallbackIcon, color: Colors.black54) : null,
+    );
   }
   // --- ENDE DER KORREKTUR ---
 
@@ -320,7 +582,6 @@ class _MainScreenState extends State<MainScreen> {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
-    final authService = context.read<AuthService>();
     final screenWidth = MediaQuery.of(context).size.width;
     final double plTabWidth = screenWidth / 4;
     const double actionTabWidth = 60.0;
@@ -360,8 +621,20 @@ class _MainScreenState extends State<MainScreen> {
 
     return Scaffold(
       appBar: AppBar(
-        // --- Suchleiste (wieder integriert) ---
-        title: SearchAnchor.bar(
+        titleSpacing: 0,
+        title: Row(
+          children: [
+            IconButton(
+              tooltip: 'Liga',
+              onPressed: _openLeagueSheet,
+              icon: _buildImagePreview(
+                fallbackIcon: Icons.shield,
+                imageUrl: _selectedLeagueId != null ? _leagueImageUrls[_selectedLeagueId!] : null,
+                previewBytes: _selectedLeagueId != null ? _leagueImagePreviews[_selectedLeagueId!] : _leagueImagePreviews[-1],
+              ),
+            ),
+            Expanded(
+              child: SearchAnchor.bar(
           suggestionsBuilder: (context, controller) {
             return [
               StatefulBuilder(
@@ -430,14 +703,19 @@ class _MainScreenState extends State<MainScreen> {
               ),
             ];
           },
+              ),
+            ),
+            IconButton(
+              tooltip: 'Account',
+              onPressed: _openAccountSheet,
+              icon: _buildImagePreview(
+                fallbackIcon: Icons.person,
+                imageUrl: _accountImageUrl,
+                previewBytes: _accountImagePreview,
+              ),
+            ),
+          ],
         ),
-        actions: [
-          IconButton(
-            icon: const Icon(Icons.logout),
-            tooltip: 'Abmelden',
-            onPressed: () => authService.signOut(),
-          ),
-        ],
       ),
       body: IndexedStack(
         index: _selectedIndex,
