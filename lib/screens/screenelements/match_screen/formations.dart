@@ -3,24 +3,31 @@ import 'package:flutter/material.dart';
 import 'package:premier_league/utils/color_helper.dart';
 import 'dart:ui' as ui;
 import 'dart:math';
+// Füge dieses Enum GANZ OBEN unter den Imports ein:
+enum AvatarDisplayMode {
+  matchday,
+  seasonTotal,
+  seasonAverage,
+  marketValue
+}
 
-// PlayerInfo-Modell bleibt unverändert
+// 1. UPDATE: PlayerInfo bekommt totalSeasonPoints
 class PlayerInfo {
   final int id;
   final String name;
   final String position;
   final String? profileImageUrl;
   final int rating;
+  final int totalSeasonPoints; // <--- NEU
   final int goals;
   final int maxRating;
   final int assists;
   final int ownGoals;
   final int? jerseyNumber;
-
-  // NEUE FELDER für Liste & Filter
   final String? teamImageUrl;
   final int? marketValue;
-  final String? teamName; // Für den Team-Filter
+  final String? teamName;
+  final int matchCount; // <--- NEU: Speichert die Anzahl der Matchratings
 
   const PlayerInfo({
     required this.id,
@@ -28,6 +35,7 @@ class PlayerInfo {
     required this.position,
     this.profileImageUrl,
     required this.rating,
+    this.totalSeasonPoints = 0, // <--- NEU (Standardwert 0)
     required this.goals,
     required this.assists,
     required this.ownGoals,
@@ -36,20 +44,22 @@ class PlayerInfo {
     this.teamImageUrl,
     this.marketValue,
     this.teamName,
+    this.matchCount = 0, // <--- NEU: Standardmäßig 0
   });
 }
 
+// 2. UPDATE: Die neue, smarte PlayerAvatar-Klasse
 class PlayerAvatar extends StatelessWidget {
   final PlayerInfo player;
   final Color teamColor;
   final double radius;
   final bool showHoverEffect;
   final bool showValidTargetEffect;
-
   final bool showDetails;
   final bool showPositions;
-  final bool isLocked; // NEU: Weiß jetzt, ob der Spieler gelockt ist
-
+  final bool isLocked;
+  final AvatarDisplayMode displayMode; // <--- NEU
+  final int currentRound;              // <--- NEU
 
   const PlayerAvatar({
     super.key,
@@ -60,33 +70,69 @@ class PlayerAvatar extends StatelessWidget {
     this.showValidTargetEffect = false,
     this.showDetails = true,
     this.showPositions = true,
-    this.isLocked = false, // Standardmäßig nicht gelockt
+    this.isLocked = false,
+    this.displayMode = AvatarDisplayMode.matchday, // Standard
+    this.currentRound = 1,                         // Standard
   });
+
+  String _getDisplayValue() {
+    if (player.id < 0) return "";
+    switch (displayMode) {
+      case AvatarDisplayMode.matchday:
+        return player.rating.toString();
+      case AvatarDisplayMode.seasonTotal:
+        return player.totalSeasonPoints.toString();
+      case AvatarDisplayMode.seasonAverage:
+        int avg = player.matchCount > 0 ? (player.totalSeasonPoints / player.matchCount).round() : 0;
+        return avg.toString();
+      case AvatarDisplayMode.marketValue:
+        int mv = player.marketValue ?? 0;
+        if (mv >= 1000000) {
+          double val = mv / 1000000;
+          return '${val == val.toInt() ? val.toInt() : val.toStringAsFixed(1)}M';
+        } else if (mv >= 1000) {
+          return '${(mv / 1000).toInt()}k';
+        }
+        return mv.toString();
+    }
+  }
+
+  int _getColorRatingValue() {
+    switch (displayMode) {
+      case AvatarDisplayMode.matchday: return player.rating;
+      case AvatarDisplayMode.seasonTotal: return player.totalSeasonPoints;
+      case AvatarDisplayMode.seasonAverage: return player.matchCount > 0 ? (player.totalSeasonPoints / player.matchCount).round() : 0;
+      case AvatarDisplayMode.marketValue: return player.marketValue ?? 0;
+    }
+  }
+
+  int _getCalculatedMaxScore() {
+    switch (displayMode) {
+      case AvatarDisplayMode.matchday:
+      case AvatarDisplayMode.seasonAverage: return 250;
+      case AvatarDisplayMode.seasonTotal:
+         //print(currentRound);
+        int max = (currentRound * 250 * 0.8).toInt();
+        return max < 1 ? 1 : max;
+      case AvatarDisplayMode.marketValue: return 50000000; // Ab 25 Mio gibt es die beste Farbe
+    }
+  }
 
   Widget _buildEventIcon(IconData icon, Color color, int count, double size) {
     if (count == 0) return const SizedBox.shrink();
     return Container(
       margin: const EdgeInsets.only(bottom: 2),
       padding: EdgeInsets.all(size * 0.1),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        shape: BoxShape.circle,
-        border: Border.all(color: Colors.grey.shade300, width: 0.5),
-        boxShadow: [
-          BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 2, offset: const Offset(0, 1))
-        ],
-      ),
+      decoration: BoxDecoration(color: Colors.white, shape: BoxShape.circle, border: Border.all(color: Colors.grey.shade300, width: 0.5), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 2, offset: const Offset(0, 1))]),
       child: Icon(icon, color: color, size: size * 0.9),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final bool isGoalkeeper = player.position.toUpperCase().contains('TW') ||
-        player.position.toUpperCase().contains('GK');
+    final bool isGoalkeeper = player.position.toUpperCase().contains('TW') || player.position.toUpperCase().contains('GK');
     final bool isPlaceholder = player.id < 0;
 
-    // --- Größen-Berechnung ---
     final double imageRadius = radius;
     final double whiteRingWidth = 1.0;
     final double colorRingWidth = isPlaceholder ? 1.0 : 1.8;
@@ -97,36 +143,33 @@ class PlayerAvatar extends StatelessWidget {
     final double nameFontSize = radius * 0.42;
     final double eventIconSize = radius * 0.45;
 
-    // NEU: Wenn gelockt, wird der äußere Ring grau
     Color outerColor = isGoalkeeper ? Colors.orange.shade700 : teamColor;
     if (isPlaceholder) outerColor = Colors.grey.shade400;
-
     double scale = 1.0;
-    if (showHoverEffect) {
-      scale = 1.2;
-      outerColor = Colors.green.shade600;
-    } else if (showValidTargetEffect) {
-      outerColor = Colors.yellow.shade700;
-    }
+    if (showHoverEffect) { scale = 1.2; outerColor = Colors.green.shade600; }
+    else if (showValidTargetEffect) { outerColor = Colors.yellow.shade700; }
 
-    // Positionen parsen
     List<String> positions = player.position.split(',').map((e) => e.trim()).toList();
-    if (positions.isEmpty || (positions.length == 1 && positions.first.isEmpty)) {
-      positions = [];
-    }
+    if (positions.isEmpty || (positions.length == 1 && positions.first.isEmpty)) positions = [];
 
-    // NEU: Das Profilbild (Wird grau, wenn gelockt)
     Widget profileImageWidget = CircleAvatar(
-      radius: imageRadius,
-      backgroundColor: Colors.grey.shade200,
-      backgroundImage: (player.profileImageUrl != null && !isPlaceholder)
-          ? NetworkImage(player.profileImageUrl!)
-          : null,
-      child: (player.profileImageUrl == null || isPlaceholder)
-          ? Icon(isPlaceholder ? Icons.add_rounded : Icons.person, color: Colors.grey.shade400, size: imageRadius * 1.2)
-          : null,
+      radius: imageRadius, backgroundColor: Colors.grey.shade200,
+      backgroundImage: (player.profileImageUrl != null && !isPlaceholder) ? NetworkImage(player.profileImageUrl!) : null,
+      child: (player.profileImageUrl == null || isPlaceholder) ? Icon(isPlaceholder ? Icons.add_rounded : Icons.person, color: Colors.grey.shade400, size: imageRadius * 1.2) : null,
     );
 
+    final String displayValue = _getDisplayValue();
+    final int colorRatingValue = _getColorRatingValue();
+    final int calculatedMaxScore = _getCalculatedMaxScore();
+
+    // --- NEU: Icon Bestimmung für die Pill ---
+    IconData? modeIcon;
+    String? modePrefix;
+    if (!isPlaceholder) {
+      if (displayMode == AvatarDisplayMode.seasonTotal) modeIcon = Icons.circle;
+      else if (displayMode == AvatarDisplayMode.seasonAverage) modePrefix = "Ø";
+      else if (displayMode == AvatarDisplayMode.marketValue) modeIcon = Icons.payments;
+    }
 
     return Transform.scale(
       scale: scale,
@@ -136,69 +179,33 @@ class PlayerAvatar extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Stack(
-              clipBehavior: Clip.none,
-              alignment: Alignment.center,
+              clipBehavior: Clip.none, alignment: Alignment.center,
               children: [
-                // 1. Schatten
-                Container(
-                  width: totalRadius * 2,
-                  height: totalRadius * 2,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 4, offset: const Offset(0, 2)),
-                    ],
-                  ),
-                ),
-
-                // 2. Kreise (Rahmen + Bild)
+                Container(width: totalRadius * 2, height: totalRadius * 2, decoration: BoxDecoration(shape: BoxShape.circle, boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 4, offset: const Offset(0, 2))])),
                 CircleAvatar(radius: totalRadius, backgroundColor: outerColor),
                 CircleAvatar(radius: imageRadius + whiteRingWidth, backgroundColor: Colors.white),
-                profileImageWidget, // Das gefilterte Bild
+                profileImageWidget,
 
-                // 3. Positions-Badges
                 if (!isPlaceholder && positions.isNotEmpty && showPositions)
                   ...List.generate(positions.length, (index) {
-                    const double startAngle = 225 * (pi / 180);
-                    const double stepAngle = 22 * (pi / 180);
+                    const double startAngle = 225 * (3.14159 / 180);
+                    const double stepAngle = 22 * (3.14159 / 180);
                     final double angle = startAngle - (index * stepAngle);
                     final double dist = totalRadius;
                     final double badgeSize = radius * 0.75;
-
-                    final double left = totalRadius + (dist * cos(angle)) - (badgeSize / 2);
-                    final double top = totalRadius + (dist * sin(angle) * -1 * -1) - (badgeSize / 2);
-
                     return Positioned(
-                      left: left,
-                      top: top,
+                      left: totalRadius + (dist * cos(angle)) - (badgeSize / 2), top: totalRadius + (dist * sin(angle) * -1 * -1) - (badgeSize / 2),
                       child: Container(
-                        width: badgeSize,
-                        height: badgeSize,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: teamColor,
-                          shape: BoxShape.circle,
-                          border: Border.all(color: Colors.white, width: 1.0),
-                          boxShadow: const [BoxShadow(color: Colors.black38, blurRadius: 1, offset: Offset(1, 1))],
-                        ),
-                        child: FittedBox(
-                          child: Padding(
-                            padding: const EdgeInsets.all(1.0),
-                            child: Text(
-                              positions[index],
-                              style: TextStyle(color: Colors.white, fontSize: posFontSize, fontWeight: FontWeight.bold),
-                            ),
-                          ),
-                        ),
+                        width: badgeSize, height: badgeSize, alignment: Alignment.center,
+                        decoration: BoxDecoration(color: teamColor, shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 1.0), boxShadow: const [BoxShadow(color: Colors.black38, blurRadius: 1, offset: Offset(1, 1))]),
+                        child: FittedBox(child: Padding(padding: const EdgeInsets.all(1.0), child: Text(positions[index], style: TextStyle(color: Colors.white, fontSize: posFontSize, fontWeight: FontWeight.bold)))),
                       ),
                     );
                   }),
 
-                // 4. Event Icons
                 if (!isPlaceholder && showDetails)
                   Positioned(
-                    top: 0,
-                    right: -radius * 0.5,
+                    top: 0, right: -radius * 0.5,
                     child: Column(
                       children: [
                         _buildEventIcon(Icons.sports_soccer, const Color(0xFF2E7D32), player.goals, eventIconSize),
@@ -208,67 +215,47 @@ class PlayerAvatar extends StatelessWidget {
                     ),
                   ),
 
-                // 5. Rating Pill
+                // --- NEU: Dynamische Pill mit Icon/Prefix ---
                 if (!isPlaceholder && showDetails)
                   Positioned(
                     bottom: -radius * 0.45,
                     child: Container(
-                      padding: EdgeInsets.symmetric(horizontal: radius * 0.3, vertical: 1),
+                      padding: EdgeInsets.symmetric(horizontal: radius * 0.4, vertical: 2),
                       decoration: BoxDecoration(
-                        color: getColorForRating(player.rating, player.maxRating),
-                        borderRadius: BorderRadius.circular(8),
-                        border: Border.all(color: Colors.white, width: 1.5),
-                        boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 2, offset: Offset(0, 1))],
+                        color: getColorForRating(colorRatingValue, calculatedMaxScore),
+                        borderRadius: BorderRadius.circular(10), border: Border.all(color: Colors.white, width: 1.5), boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 2, offset: Offset(0, 1))],
                       ),
-                      child: Text(
-                        player.rating.toString(),
-                        style: TextStyle(color: Colors.white, fontSize: ratingFontSize, fontWeight: FontWeight.w800),
+                      child: Row(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          if (modeIcon != null) ...[Icon(modeIcon, color: Colors.white, size: ratingFontSize * 1.1), SizedBox(width: ratingFontSize * 0.3)],
+                          if (modePrefix != null) ...[Text(modePrefix, style: TextStyle(color: Colors.white, fontSize: ratingFontSize, fontWeight: FontWeight.bold)), SizedBox(width: ratingFontSize * 0.3)],
+                          Text(displayValue, style: TextStyle(color: Colors.white, fontSize: displayValue.length > 3 ? ratingFontSize * 0.8 : ratingFontSize, fontWeight: FontWeight.w800)),
+                        ],
                       ),
                     ),
                   ),
 
-                // 6. NEU: Rotes Schloss-Symbol, wenn gelockt
                 if (isLocked && !isPlaceholder)
                   Positioned(
-                    top: 0,
-                    left: -radius * 0.3,
+                    top: 0, left: -radius * 0.3,
                     child: Container(
                       padding: EdgeInsets.all(radius * 0.1),
-                      decoration: const BoxDecoration(
-                        color: Colors.white,
-                        shape: BoxShape.circle,
-                        boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 2)],
-                      ),
+                      decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle, boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 2)]),
                       child: Icon(Icons.lock, color: Colors.redAccent, size: radius * 0.5),
                     ),
                   ),
               ],
             ),
 
-            // 7. Name
             if (showDetails) ...[
               SizedBox(height: radius * 0.35),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(isPlaceholder ? 0.8 : 0.95),
-                  borderRadius: BorderRadius.circular(4),
-                  boxShadow: isPlaceholder ? [] : [
-                    BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 2, offset: const Offset(0, 1))
-                  ],
-                ),
+                decoration: BoxDecoration(color: Colors.white.withOpacity(isPlaceholder ? 0.8 : 0.95), borderRadius: BorderRadius.circular(4), boxShadow: isPlaceholder ? [] : [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 2, offset: const Offset(0, 1))]),
                 child: FittedBox(
                   fit: BoxFit.scaleDown,
-                  child: Text(
-                    player.name.split(' ').last.toUpperCase(),
-                    style: TextStyle(
-                        color: isLocked ? Colors.grey.shade600 : Colors.grey.shade800,
-                        fontSize: nameFontSize,
-                        fontWeight: FontWeight.bold,
-                        letterSpacing: 0.3
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
+                  child: Text(player.name.split(' ').last.toUpperCase(), style: TextStyle(color: isLocked ? Colors.grey.shade600 : Colors.grey.shade800, fontSize: nameFontSize, fontWeight: FontWeight.bold, letterSpacing: 0.3), textAlign: TextAlign.center),
                 ),
               ),
             ]
@@ -292,6 +279,8 @@ class MatchFormationDisplay extends StatefulWidget {
   final void Function(PlayerInfo player)? onMoveToBench;
   final List<String> requiredPositions;
   final List<int> frozenPlayerIds; // NEU: Nimmt die Liste aus dem TeamScreen entgegen
+  final AvatarDisplayMode displayMode; // NEU
+  final int currentRound;
 
   const MatchFormationDisplay({
     super.key,
@@ -307,6 +296,8 @@ class MatchFormationDisplay extends StatefulWidget {
     this.onMoveToBench,
     this.requiredPositions = const [],
     this.frozenPlayerIds = const [], // NEU
+    this.displayMode = AvatarDisplayMode.matchday, // NEU
+    this.currentRound = 1,
   });
 
   @override
@@ -499,6 +490,8 @@ class _MatchFormationDisplayState extends State<MatchFormationDisplay> {
                                   teamColor: widget.homeColor,
                                   radius: radius,
                                   isLocked: isPlayerLocked, // NEU
+                                  displayMode: widget.displayMode,
+                                  currentRound: widget.currentRound,
                                 );
 
                                 return Padding(
@@ -576,6 +569,8 @@ class _MatchFormationDisplayState extends State<MatchFormationDisplay> {
                   radius: radius,
                   showHoverEffect: false, // Wird unten vom DragTarget gesteuert
                   showValidTargetEffect: isValidTarget,
+                  displayMode: widget.displayMode,
+                  currentRound: widget.currentRound,
                 ),
               );
 
@@ -606,6 +601,8 @@ class _MatchFormationDisplayState extends State<MatchFormationDisplay> {
                       showHoverEffect: isHovering,
                       showValidTargetEffect: isValidTarget,
                       isLocked: isPlayerLocked, // NEU übergeben
+                      displayMode: widget.displayMode,
+                      currentRound: widget.currentRound,
                     );
 
                     // NEU: Platzhalter ODER gelockter Spieler -> NICHT ziehbar!
@@ -618,7 +615,7 @@ class _MatchFormationDisplayState extends State<MatchFormationDisplay> {
                           color: Colors.transparent,
                           child: Opacity(
                             opacity: 0.9,
-                            child: PlayerAvatar(player: targetPlayer, teamColor: teamColor, radius: radius * 1.1),
+                            child: PlayerAvatar(player: targetPlayer, teamColor: teamColor, radius: radius * 1.1, displayMode: widget.displayMode, currentRound: widget.currentRound,),
                           ),
                         ),
                         childWhenDragging: Opacity(

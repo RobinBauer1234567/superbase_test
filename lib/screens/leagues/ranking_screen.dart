@@ -1,26 +1,32 @@
-// lib/screens/league_tabs/ranking_screen.dart
+// lib/screens/leagues/ranking_screen.dart
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:premier_league/viewmodels/data_viewmodel.dart';
-import 'package:flutter/material.dart';
-import 'package:premier_league/data_service.dart';
+import 'package:premier_league/utils/color_helper.dart';
 
+// Enum für den Spieltags-Status
+enum MatchdayPhase { before, inProgress, after }
 
 class RankingScreen extends StatefulWidget {
   final int leagueId;
-  // currentSeasonRound wurde hier aus dem Konstruktor entfernt!
-  const RankingScreen({Key? key, required this.leagueId}) : super(key: key);
+
+  const RankingScreen({super.key, required this.leagueId});
 
   @override
-  _RankingScreenState createState() => _RankingScreenState();
+  State<RankingScreen> createState() => _RankingScreenState();
 }
 
 class _RankingScreenState extends State<RankingScreen> {
-  bool isOverallRanking = true; // true = Gesamt, false = Spieltag
-  int selectedRound = 1;        // Startwert, wird gleich überschrieben
-  List<Map<String, dynamic>> rankingData = [];
-  bool isLoading = true;
-  final dataService = SupabaseService();
+  // Startwert ist erstmal unwichtig, da er in _initializeData sofort überschrieben wird
+  bool _isOverallRanking = true;
+  int _selectedRound = 1;
+  int _currentRound = 1;
+  int _latestActiveRound = 38;
+
+  List<Map<String, dynamic>> _rankingData = [];
+  List<Map<String, dynamic>> _allSpieltageData = [];
+  bool _isLoading = true;
+  int? _currentUserRank;
 
   @override
   void initState() {
@@ -28,136 +34,404 @@ class _RankingScreenState extends State<RankingScreen> {
     _initializeData();
   }
 
-  /// Kümmert sich um die korrekte Reihenfolge beim Laden
   Future<void> _initializeData() async {
-    setState(() => isLoading = true);
+    setState(() => _isLoading = true);
+    final dataManagement = Provider.of<DataManagement>(context, listen: false);
+    final service = dataManagement.supabaseService;
+    final seasonId = dataManagement.seasonId;
 
-    // 1. Aktuellen Spieltag abrufen
-    await _fetchCurrentRound();
-
-    // 2. Rangliste für diesen (oder alle) Spieltag(e) laden
-    await _loadRanking();
-  }
-
-  /// Holt den aktuellen Spieltag aus der Datenbank
-  Future<void> _fetchCurrentRound() async {
     try {
+      _currentRound = await service.getCurrentRound(seasonId);
+      _selectedRound = _currentRound;
 
-      final dataManagement = Provider.of<DataManagement>(context, listen: false);
-      final seasonId = dataManagement.seasonId;
+      // Alle Spieltage laden, um Datum und Max-Runde zu bestimmen
+      _allSpieltageData = List<Map<String, dynamic>>.from(
+        await service.fetchAllSpieltage(seasonId),
+      );
+      if (_allSpieltageData.isNotEmpty) {
+        int maxRound = 1;
+        for (var item in _allSpieltageData) {
+          final r = int.tryParse(item['round'].toString()) ?? 1;
+          if (r > maxRound) maxRound = r;
+        }
+        _latestActiveRound = maxRound;
+      }
 
-      selectedRound = await dataService.getCurrentRound(seasonId);
+      // --- NEU: Start-Ansicht dynamisch festlegen ---
+      final currentPhase = _getMatchdayPhase(_currentRound);
+      if (currentPhase == MatchdayPhase.inProgress) {
+        // Spieltag läuft -> Zeige als erstes direkt die Live-Spieltags-Punkte
+        _isOverallRanking = false;
+      } else {
+        // Spieltag ist noch nicht gestartet oder schon beendet -> Zeige Gesamt
+        _isOverallRanking = true;
+      }
+      // ----------------------------------------------
 
+      await _loadRanking();
     } catch (e) {
-      print('Fehler beim Laden des aktuellen Spieltags: $e');
-      selectedRound = 1; // Fallback
+      print('Fehler bei der Initialisierung des Rankings: $e');
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  /// Lädt das eigentliche Ranking (Gesamt oder für den ausgewählten Spieltag)
+  MatchdayPhase _getMatchdayPhase(int round) {
+    final roundData = _allSpieltageData.firstWhere(
+          (e) => e['round'] == round || e['round'] == round.toString(),
+      orElse: () => <String, dynamic>{},
+    );
+
+    if (roundData.isEmpty) return MatchdayPhase.after;
+
+    final startStr = roundData['matchday_start']?.toString();
+    final endStr = roundData['matchday_end']?.toString();
+
+    if (startStr == null || endStr == null) return MatchdayPhase.inProgress;
+
+    final start = DateTime.tryParse(startStr)?.toUtc();
+    final end = DateTime.tryParse(endStr)?.toUtc();
+
+    if (start == null || end == null) return MatchdayPhase.inProgress;
+
+    final now = DateTime.now().toUtc();
+    if (now.isBefore(start)) return MatchdayPhase.before;
+    if (now.isAfter(end)) return MatchdayPhase.after;
+    return MatchdayPhase.inProgress;
+  }
+
   Future<void> _loadRanking() async {
-    setState(() => isLoading = true);
+    setState(() => _isLoading = true);
+    final dataManagement = Provider.of<DataManagement>(context, listen: false);
+    final service = dataManagement.supabaseService;
+    final userId = service.supabase.auth.currentUser?.id;
 
     try {
-      if (isOverallRanking) {
-        rankingData = await dataService.fetchOverallRanking(widget.leagueId);
+      if (_isOverallRanking) {
+        _rankingData = await service.fetchOverallRanking(widget.leagueId);
       } else {
-        rankingData = await dataService.fetchMatchdayRanking(widget.leagueId, selectedRound);
+        _rankingData = await service.fetchMatchdayRanking(
+          widget.leagueId,
+          _selectedRound,
+        );
+      }
+
+      _currentUserRank = null;
+      for (int i = 0; i < _rankingData.length; i++) {
+        if (_rankingData[i]['user_id']?.toString() == userId) {
+          _currentUserRank = i + 1;
+          break;
+        }
       }
     } catch (e) {
       print('Fehler beim Laden der Rangliste: $e');
+      _rankingData = [];
     }
 
-    setState(() => isLoading = false);
+    if (mounted) setState(() => _isLoading = false);
+  }
+
+  Widget _buildMatchdaySelector() {
+    final primaryColor = Theme.of(context).primaryColor;
+
+    // --- NEU: Prüfen, ob wir gerade auf dem aktuellen Spieltag sind ---
+    final bool isCurrentRound = _selectedRound == _currentRound;
+    final bool highlightCurrent = !_isOverallRanking && isCurrentRound;
+
+    // 1. Platzierung berechnen (für Gesamt-Ansicht)
+    String rankText = "-";
+    Color rankColor = Colors.grey;
+    if (_currentUserRank != null) {
+      rankText = "Platz $_currentUserRank";
+      if (_currentUserRank == 1) {
+        rankColor = Colors.amber.shade600;
+      } else if (_currentUserRank! <= 3) {
+        rankColor = Colors.blueGrey;
+      } else {
+        rankColor = primaryColor;
+      }
+    }
+
+    // 2. Spieltags-Status berechnen (für Spieltag-Ansicht)
+    final phase = _getMatchdayPhase(_selectedRound);
+    String phaseText;
+    if (phase == MatchdayPhase.before) {
+      phaseText = 'Vor Matchday-Start';
+    } else if (phase == MatchdayPhase.inProgress) {
+      phaseText = 'Matchday läuft';
+    } else {
+      phaseText = 'Matchday beendet';
+    }
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
+        boxShadow: const [
+          BoxShadow(color: Colors.black12, blurRadius: 2, offset: Offset(0, 1)),
+        ],
+      ),
+      child: Row(
+        mainAxisAlignment: MainAxisAlignment.spaceBetween,
+        children: [
+          Row(
+            children: [
+              IconButton(
+                icon: const Icon(Icons.chevron_left),
+                onPressed:
+                (_isOverallRanking || _selectedRound <= 1)
+                    ? null
+                    : () {
+                  setState(() => _selectedRound--);
+                  _loadRanking();
+                },
+                color:
+                (_isOverallRanking || _selectedRound <= 1)
+                    ? Colors.grey.shade300
+                    : primaryColor,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+              ),
+              const SizedBox(width: 8),
+
+              GestureDetector(
+                onTap: () {
+                  setState(() {
+                    _isOverallRanking = !_isOverallRanking;
+                  });
+                  _loadRanking();
+                },
+                child: Container(
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 6,
+                  ),
+                  // --- NEU: Dynamische Umrandung und Hintergrundfarbe ---
+                  decoration: BoxDecoration(
+                    color: Colors.grey.shade100,
+                    borderRadius: BorderRadius.circular(8),
+                    border: Border.all(
+                      color: highlightCurrent ? Colors.green.shade300 : Colors.grey.shade300,
+                      width: highlightCurrent ? 1.5 : 1.0,
+                    ),
+                  ),
+                  child: Row(
+                    children: [
+                      Text(
+                        _isOverallRanking
+                            ? "Gesamt"
+                            : "Spieltag $_selectedRound",
+                        style: TextStyle(
+                          fontWeight: FontWeight.bold,
+                          fontSize: 16,
+                          color: Colors.black87,
+                        ),
+                      ),
+                      const SizedBox(width: 6),
+                      Icon(
+                        Icons.swap_horiz,
+                        size: 16,
+                        color: Colors.grey.shade600,
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+              const SizedBox(width: 8),
+
+              IconButton(
+                icon: const Icon(Icons.chevron_right),
+                onPressed:
+                (_isOverallRanking || _selectedRound >= _latestActiveRound)
+                    ? null
+                    : () {
+                  setState(() => _selectedRound++);
+                  _loadRanking();
+                },
+                color:
+                (_isOverallRanking || _selectedRound >= _latestActiveRound)
+                    ? Colors.grey.shade300
+                    : primaryColor,
+                padding: EdgeInsets.zero,
+                constraints: const BoxConstraints(),
+              ),
+            ],
+          ),
+          Row(
+            children: [
+              Container(
+                margin: const EdgeInsets.only(right: 8),
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(
+                  phaseText,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    color: Colors.grey.shade700,
+                    fontSize: 12,
+                  ),
+                ),
+              ),
+
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 12,
+                  vertical: 6,
+                ),
+                decoration: BoxDecoration(
+                  color: rankColor.withOpacity(0.15),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Icon(Icons.emoji_events, size: 16, color: rankColor),
+                    const SizedBox(width: 4),
+                    Text(
+                      rankText,
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: rankColor,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+        ],
+      ),
+    );
   }
 
   @override
+  @override
   Widget build(BuildContext context) {
+    final primaryColor = Theme.of(context).primaryColor;
+    final currentUserId = Provider.of<DataManagement>(context, listen: false)
+        .supabaseService.supabase.auth.currentUser?.id;
+
+    // Dynamischer Max-Score für die Farbberechnung der Punkte
+    final int maxScore = _isOverallRanking
+        ? (_currentRound * 250 * 0.5).toInt()
+        : 250;
+
     return Scaffold(
-      appBar: AppBar(title: Text('Rangliste')),
+      backgroundColor: Colors.white, // Sauberer weißer Hintergrund für "dezentes" Design
       body: Column(
         children: [
-          // 1. Der Toggle-Button (Gesamt / Spieltag)
-          Padding(
-            padding: const EdgeInsets.symmetric(vertical: 12.0),
-            child: Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                ChoiceChip(
-                  label: Text('Gesamt'),
-                  selected: isOverallRanking,
-                  onSelected: (val) {
-                    if (!isOverallRanking) {
-                      setState(() => isOverallRanking = true);
-                      _loadRanking();
-                    }
-                  },
-                ),
-                SizedBox(width: 10),
-                ChoiceChip(
-                  label: Text('Spieltag'),
-                  selected: !isOverallRanking,
-                  onSelected: (val) {
-                    if (isOverallRanking) {
-                      setState(() => isOverallRanking = false);
-                      _loadRanking();
-                    }
-                  },
-                ),
-              ],
-            ),
-          ),
+          _buildMatchdaySelector(),
 
-          // 2. Die Spieltags-Auswahl (nur sichtbar, wenn "Spieltag" aktiv ist)
-          if (!isOverallRanking)
-            Row(
-              mainAxisAlignment: MainAxisAlignment.center,
-              children: [
-                IconButton(
-                  icon: Icon(Icons.arrow_back_ios, size: 16),
-                  onPressed: selectedRound > 1 ? () {
-                    setState(() => selectedRound--);
-                    _loadRanking();
-                  } : null,
-                ),
-                Text(
-                    'Spieltag $selectedRound',
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)
-                ),
-                IconButton(
-                  icon: Icon(Icons.arrow_forward_ios, size: 16),
-                  onPressed: selectedRound < 34 ? () { // Maximal 34 Spieltage (bei Bundesliga)
-                    setState(() => selectedRound++);
-                    _loadRanking();
-                  } : null,
-                ),
-              ],
-            ),
-
-          Divider(),
-
-          // 3. Die Liste der Manager
           Expanded(
-            child: isLoading
-                ? Center(child: CircularProgressIndicator())
-                : rankingData.isEmpty
-                ? Center(child: Text('Noch keine Punkte vorhanden.'))
-                : ListView.builder(
-              itemCount: rankingData.length,
+            child: _isLoading
+                ? const Center(child: CircularProgressIndicator())
+                : _rankingData.isEmpty
+                ? Center(
+              child: Column(
+                mainAxisAlignment: MainAxisAlignment.center,
+                children: [
+                  Icon(Icons.leaderboard_outlined, size: 64, color: Colors.grey.shade300),
+                  const SizedBox(height: 16),
+                  Text('Noch keine Punkte vorhanden.', style: TextStyle(color: Colors.grey.shade500, fontSize: 16)),
+                ],
+              ),
+            )
+                : ListView.builder( // Wieder auf ListView.builder gewechselt
+              padding: const EdgeInsets.only(top: 8, bottom: 20),
+              itemCount: _rankingData.length,
               itemBuilder: (context, index) {
-                final user = rankingData[index];
-                return ListTile(
-                  leading: CircleAvatar(
-                    backgroundColor: Colors.blueAccent,
-                    child: Text(
-                      '${index + 1}',
-                      style: TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
-                    ),
+                final user = _rankingData[index];
+                final bool isCurrentUser = user['user_id']?.toString() == currentUserId;
+
+                // --- DATEN EXTRAHIEREN ---
+                // Wir versuchen username zu holen, ansonsten fallback auf team_name
+                final String displayName = user['username']?.toString() ?? user['manager_team_name']?.toString() ?? 'Manager';
+                final String avatarUrl = user['avatar_url']?.toString() ?? '';
+                final int points = (user['total_points'] as num?)?.toInt() ?? 0;
+
+                // Farbe der Punktepille berechnen
+                final Color pointsColor = getColorForRating(points, maxScore < 1 ? 1 : maxScore);
+
+                // Farbe für die Platzierung (Top 3)
+                Color rankColor = Colors.grey.shade600;
+                if (index == 0) rankColor = Colors.amber.shade500;
+                else if (index == 1) rankColor = Colors.blueGrey.shade400;
+                else if (index == 2) rankColor = Colors.brown.shade400;
+
+                return Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+                  decoration: BoxDecoration(
+                    // Der eigene Nutzer wird ganz leicht farblich hervorgehoben
+                    color: isCurrentUser ? primaryColor.withOpacity(0.05) : Colors.white,
+                    // Dezente Trennlinie unten
+                    border: Border(bottom: BorderSide(color: Colors.grey.shade200, width: 1)),
                   ),
-                  title: Text(user['manager_team_name'] ?? 'Unbekanntes Team'),
-                  trailing: Text(
-                      '${user['total_points']} Pkt',
-                      style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16)
+                  child: Row(
+                    children: [
+                      // 1. Platzierung (Zahl)
+                      SizedBox(
+                        width: 28,
+                        child: Text(
+                          '${index + 1}.',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                            color: rankColor,
+                          ),
+                        ),
+                      ),
+
+                      // 2. Profilbild
+                      CircleAvatar(
+                        radius: 20,
+                        backgroundColor: Colors.grey.shade100,
+                        backgroundImage: avatarUrl.isNotEmpty ? NetworkImage(avatarUrl) : null,
+                        child: avatarUrl.isEmpty
+                            ? Icon(Icons.person, color: Colors.grey.shade400, size: 24)
+                            : null,
+                      ),
+                      const SizedBox(width: 14),
+
+                      // 3. Nutzername
+                      Expanded(
+                        child: Text(
+                          displayName,
+                          style: TextStyle(
+                            fontWeight: isCurrentUser ? FontWeight.bold : FontWeight.w600,
+                            fontSize: 15,
+                            color: isCurrentUser ? primaryColor : Colors.black87,
+                          ),
+                          maxLines: 1,
+                          overflow: TextOverflow.ellipsis,
+                        ),
+                      ),
+
+                      // 4. Punkte-Pille (Farbig hinterlegt!)
+                      Container(
+                        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                        decoration: BoxDecoration(
+                          color: pointsColor,
+                          borderRadius: BorderRadius.circular(14),
+                          boxShadow: const [
+                            BoxShadow(color: Colors.black12, blurRadius: 2, offset: Offset(0, 1))
+                          ],
+                        ),
+                        child: Text(
+                          '$points Pkt',
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 13,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                    ],
                   ),
                 );
               },

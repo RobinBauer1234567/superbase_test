@@ -1847,7 +1847,7 @@ class SupabaseService {
             spieler:player_id (
               id, name, position, profilbild_url,
               team:team_id (name, image_url),
-              spieler_analytics (marktwert, gesamtstatistiken)
+              spieler_analytics (marktwert, gesamtstatistiken, anzahl_spiele)
             )
           ''')
           .eq('matchday_point_id', matchdayPointId)
@@ -1890,7 +1890,7 @@ class SupabaseService {
   Future<List<dynamic>> fetchAllSpieltage(int seasonId) async {
     final response = await supabase
         .from('spieltag')
-        .select('round, status, matchday_start')
+        .select('round, status, matchday_start, matchday_end')
         .eq('season_id', seasonId)
         .order('round', ascending: true);
     return response;

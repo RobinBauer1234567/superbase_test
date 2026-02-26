@@ -567,7 +567,7 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
           teamImageUrl: player['team_image_url'],
           marketValue: player['marktwert'],
           score: player['total_punkte'],
-          maxScore: _showGesamt ? (_spieltage.length * 250 * 0.8).toInt() : 250,
+          maxScore: _showGesamt ? (_spieltage.length * 250 * 0.5).toInt() : 250,
 
           // Neue Felder für PlayerListItem (falls benötigt)
           position: player['position'] ?? '',

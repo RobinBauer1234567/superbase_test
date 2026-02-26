@@ -43,8 +43,7 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
   DateTime? _matchdayStart;
   DateTime? _matchdayEnd;
   final Map<int, Map<String, dynamic>> _matchdayMetaByRound = {};
-  // --------------------------------
-
+  AvatarDisplayMode _selectedDisplayMode = AvatarDisplayMode.seasonTotal;
   MatchdayPhase get _matchdayPhase {
     final now = DateTime.now().toUtc();
     final start = _matchdayStart;
@@ -69,8 +68,6 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
     _initMatchdayData();
   }
 
-  // --- Initialisierung beim Starten des Screens ---
-// --- Initialisierung beim Starten des Screens ---
   Future<void> _initMatchdayData() async {
     setState(() => _isLoading = true);
     final dataManagement = Provider.of<DataManagement>(context, listen: false);
@@ -106,8 +103,7 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
     // Daten für den aktuellen Spieltag laden
     await _loadDataForRound(_selectedRound);
   }
-  // --- Wechseln zwischen den Spieltagen (Historie) ---
-  // --- Wechseln zwischen den Spieltagen (Historie) ---
+
   Future<void> _changeRound(int newRound) async {
     if (newRound < 1 || newRound > _latestActiveRound) return;
 
@@ -121,7 +117,6 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
     await _loadDataForRound(newRound);
   }
 
-  // --- DIE NEUE, SAUBERE LADE-LOGIK ---
   Future<void> _loadDataForRound(int round) async {
     setState(() => _isLoading = true);
     final dataManagement = Provider.of<DataManagement>(context, listen: false);
@@ -155,7 +150,6 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
         (roundMeta['matchday_end'] ?? '').toString(),
       )?.toUtc();
 
-      // --- DATEN VERARBEITEN ---
       String? savedFormationName = pointsData['formation'];
       bool isLocked = pointsData['is_locked'] ?? false;
       int totalPts = pointsData['total_points'] ?? 0;
@@ -178,25 +172,39 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
         if (playerLocked || _isViewingHistory) {
           frozenIds.add(pId);
         }
-
         final team = spieler['team'];
         final analytics = spieler['spieler_analytics'];
 
         int mw = 0;
+        int totalSeasonPoints = 0;
+        int matchesPlayed = 0; // <--- NEU: Variable für die Einsätze
+
         if (analytics is Map) {
           mw = _toInt(analytics['marktwert']);
+          final stats = analytics['gesamtstatistiken'];
+          matchesPlayed = _toInt(analytics['anzahl_spiele']);
+
+          if (stats is Map) {
+            totalSeasonPoints = _toInt(stats['gesamtpunkte']);
+          }
         } else if (analytics is List && analytics.isNotEmpty) {
           mw = _toInt(analytics[0]['marktwert']);
-        }
+          matchesPlayed = _toInt(analytics[0]['anzahl_spiele']);
 
+          final stats = analytics[0]['gesamtstatistiken'];
+          if (stats is Map) {
+            totalSeasonPoints = _toInt(stats['gesamtpunkte']);
+          }
+        }
         final playerInfo = PlayerInfo(
           id: pId,
           name: (spieler['name'] ?? 'Unbekannt').toString(),
           position: spieler['position'] ?? 'N/A',
           profileImageUrl: spieler['profilbild_url'],
           rating: rating,
+          totalSeasonPoints: totalSeasonPoints,
+          matchCount: matchesPlayed, // <--- NEU: Wir übergeben die Anzahl der Matchratings!
           goals: 0, assists: 0, ownGoals: 0,
-          maxRating: 2500,
           teamImageUrl: team != null ? team['image_url'] : null,
           marketValue: mw,
           teamName: team != null ? team['name'] : null,
@@ -259,7 +267,6 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
     }
   }
 
-  // --- SPEICHERN ---
   Future<void> _saveLineupToDb() async {
     final dataManagement = Provider.of<DataManagement>(context, listen: false);
     final service = dataManagement.supabaseService;
@@ -437,10 +444,46 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
     );
   }
 
+  int _getStartingElevenTotalPoints() {
+    int sum = 0;
+    for (var p in _fieldPlayers) {
+      if (p.id > 0) sum += p.totalSeasonPoints;
+    }
+    return sum;
+  }
+
+  int _getStartingElevenAveragePoints() {
+    int sum = 0;
+    for (var p in _fieldPlayers) {
+      if (p.id > 0 && p.matchCount > 0) {
+        sum += (p.totalSeasonPoints / p.matchCount).round();
+      }
+    }
+    return sum;
+  }
+
+  int _getStartingElevenMarketValue() {
+    int sum = 0;
+    for (var p in _fieldPlayers) {
+      if (p.id > 0) sum += (p.marketValue ?? 0);
+    }
+    return sum;
+  }
+
+  String _formatTeamMarketValue(int mv) {
+    if (mv == 0) return "0";
+    if (mv >= 1000000) {
+      double val = mv / 1000000;
+      return '${val == val.toInt() ? val.toInt() : val.toStringAsFixed(1)}M';
+    } else if (mv >= 1000) {
+      return '${(mv / 1000).toInt()}k';
+    }
+    return mv.toString();
+  }
   Widget _buildPlayerDialogItem(PlayerInfo player, PlayerInfo placeholder, double radius) {
     final bool isFrozen = _frozenPlayerIds.contains(player.id);
-
-    return InkWell(
+    final bool isBeforeMatchday = _matchdayPhase == MatchdayPhase.before;
+    final int displayPoints = isBeforeMatchday ? player.totalSeasonPoints : player.rating;    return InkWell(
       onTap: () {
         if (isFrozen) {
           ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
@@ -471,6 +514,8 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
                   teamColor: Theme.of(context).primaryColor,
                   radius: radius,
                   isLocked: isFrozen,
+                  displayMode: isBeforeMatchday ? AvatarDisplayMode.seasonTotal : AvatarDisplayMode.matchday,
+                  currentRound: _currentRound,
                 ),
               ),
               const SizedBox(width: 16),
@@ -492,10 +537,12 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
                           child: Text(player.position, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.blueGrey.shade700)),
                         ),
                         const SizedBox(width: 8),
-                        Text("${player.rating} Pkt", style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
+
+                        // --- NEU: Hier nutzen wir jetzt displayPoints statt player.rating ---
+                        Text("$displayPoints Pkt", style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
+
                       ],
-                    ),
-                  ],
+                    ),                  ],
                 ),
               ),
               Icon(
@@ -620,13 +667,11 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
     _substitutePlayers.sort((a, b) => _getPositionOrder(a.position).compareTo(_getPositionOrder(b.position)));
   }
 
-  // --- UI: SPIELTAGS-SELECTOR ---
   Widget _buildMatchdaySelector() {
     final phase = _matchdayPhase;
     final bool isCurrentRound = _selectedRound == _currentRound;
     final bool showOverallPoints = phase == MatchdayPhase.before;
     final int displayedPoints = showOverallPoints ? _overallTeamPoints : _matchdayPoints;
-    final String pointsLabel = showOverallPoints ? 'Gesamt' : 'Spieltag';
     final Color pointsColor = showOverallPoints
         ? Theme.of(context).primaryColor
         : getColorForRating(displayedPoints, 2500);
@@ -635,16 +680,18 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
       MatchdayPhase.inProgress => 'Matchday läuft',
       MatchdayPhase.after => 'Matchday beendet',
     };
-
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12), // Evtl Padding etwas anpassen
       decoration: BoxDecoration(
         color: Colors.white,
         border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
+
+        boxShadow: const [BoxShadow(color: Colors.black12, blurRadius: 2, offset: Offset(0, 1))],
+
       ),
       child: Row(
-        mainAxisAlignment: MainAxisAlignment.spaceBetween,
-        children: [
+          mainAxisAlignment: MainAxisAlignment.spaceBetween,
+          children: [
           Row(
             children: [
               IconButton(
@@ -652,29 +699,29 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
                 onPressed: _selectedRound > 1 ? () => _changeRound(_selectedRound - 1) : null,
                 color: _selectedRound > 1 ? Theme.of(context).primaryColor : Colors.grey,
               ),
-              Text(
-                "Spieltag $_selectedRound",
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-              ),
-              if (isCurrentRound)
-                Container(
-                  margin: const EdgeInsets.only(left: 8),
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.green.withOpacity(0.12),
-                    borderRadius: BorderRadius.circular(14),
-                    border: Border.all(color: Colors.green.shade400),
-                  ),
-                  child: const Text(
-                    'AKTUELL',
-                    style: TextStyle(
-                      color: Colors.green,
-                      fontWeight: FontWeight.bold,
-                      fontSize: 10,
-                      letterSpacing: 0.6,
-                    ),
-                  ),
+              Container(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 10,
+                  vertical: 6,
                 ),
+                decoration: BoxDecoration(
+                  color: Colors.grey.shade100,
+                  borderRadius: BorderRadius.circular(8),
+                  border: Border.all(color: (!isCurrentRound)?Colors.grey.shade300:Colors.green.shade300),
+                ),
+                child: Row(
+                  children: [
+                    Text(
+                          "Spieltag $_selectedRound",
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                    ),
+                  ],
+                ),
+              ),
+
               IconButton(
                 icon: const Icon(Icons.chevron_right),
                 onPressed: _selectedRound < _latestActiveRound ? () => _changeRound(_selectedRound + 1) : null,
@@ -700,17 +747,45 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
                   ),
                 ),
               ),
-              Container(
-                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                decoration: BoxDecoration(
-                  color: pointsColor.withOpacity(0.15),
-                  borderRadius: BorderRadius.circular(20),
-                ),
-                child: Text(
-                  "$displayedPoints Pkt · $pointsLabel",
-                  style: TextStyle(
-                    fontWeight: FontWeight.bold,
-                    color: pointsColor,
+              GestureDetector(
+                onTap: phase == MatchdayPhase.before ? () {
+                  setState(() {
+                    if (_selectedDisplayMode == AvatarDisplayMode.seasonTotal) {
+                      _selectedDisplayMode = AvatarDisplayMode.seasonAverage;
+                    } else if (_selectedDisplayMode == AvatarDisplayMode.seasonAverage) {
+                      _selectedDisplayMode = AvatarDisplayMode.marketValue;
+                    } else {
+                      _selectedDisplayMode = AvatarDisplayMode.seasonTotal;
+                    }
+                  });
+                } : null,
+                child: Container(
+                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+                  decoration: BoxDecoration(
+                    color: pointsColor.withOpacity(0.15),
+                    borderRadius: BorderRadius.circular(20),
+                    // Kleiner Rahmen zeigt an, dass es klickbar ist
+                    border: phase == MatchdayPhase.before ? Border.all(color: pointsColor.withOpacity(0.4)) : null,
+                  ),
+                  child: Row(
+                    children: [
+                      if (phase == MatchdayPhase.before) ...[
+                        if (_selectedDisplayMode == AvatarDisplayMode.seasonTotal) Icon(Icons.circle, size: 14, color: pointsColor),
+                        if (_selectedDisplayMode == AvatarDisplayMode.seasonAverage) Text("Ø", style: TextStyle(fontWeight: FontWeight.bold, color: pointsColor)),
+                        if (_selectedDisplayMode == AvatarDisplayMode.marketValue) Icon(Icons.payments, size: 14, color: pointsColor),
+                        const SizedBox(width: 6),
+                      ],
+                      Text(
+                        phase == MatchdayPhase.before
+                            ? (_selectedDisplayMode == AvatarDisplayMode.seasonTotal
+                            ? "${_getStartingElevenTotalPoints()} Pkt"
+                            : _selectedDisplayMode == AvatarDisplayMode.marketValue
+                            ? _formatTeamMarketValue(_getStartingElevenMarketValue())
+                            : "${_getStartingElevenAveragePoints()} Pkt")
+                            : "$displayedPoints Pkt · Spieltag",
+                        style: TextStyle(fontWeight: FontWeight.bold, color: pointsColor),
+                      ),
+                    ],
                   ),
                 ),
               ),
@@ -720,8 +795,6 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
       ),
     );
   }
-
-  
 
   Widget _buildFormationDropdown() {
     final sortedFormationKeys = _allFormations.keys.toList()..sort();
@@ -868,6 +941,8 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
             onMoveToBench: _handleMoveToBench,
             requiredPositions: currentRequiredPositions,
             frozenPlayerIds: _frozenPlayerIds,
+            currentRound: _currentRound,
+            displayMode: _matchdayPhase == MatchdayPhase.before ? _selectedDisplayMode : AvatarDisplayMode.matchday, // <--- NEU            currentRound: _currentRound,
           ),
         ),
       ],
