@@ -319,8 +319,8 @@ class _RankingScreenState extends State<RankingScreen> {
 
     // Dynamischer Max-Score für die Farbberechnung der Punkte
     final int maxScore = _isOverallRanking
-        ? (_currentRound * 250 * 0.5).toInt()
-        : 250;
+        ? (_currentRound * 2500).toInt()
+        : 2500;
 
     return Scaffold(
       backgroundColor: Colors.white, // Sauberer weißer Hintergrund für "dezentes" Design
@@ -364,14 +364,12 @@ class _RankingScreenState extends State<RankingScreen> {
                 else if (index == 1) rankColor = Colors.blueGrey.shade400;
                 else if (index == 2) rankColor = Colors.brown.shade400;
 
-                return Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
-                  decoration: BoxDecoration(
-                    // Der eigene Nutzer wird ganz leicht farblich hervorgehoben
-                    color: isCurrentUser ? primaryColor.withOpacity(0.05) : Colors.white,
-                    // Dezente Trennlinie unten
-                    border: Border(bottom: BorderSide(color: Colors.grey.shade200, width: 1)),
-                  ),
+                return Card(
+                  elevation: 2,
+                  margin: const EdgeInsets.only(bottom: 12),
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                child: Padding(
+                padding: const EdgeInsets.all(12.0),
                   child: Row(
                     children: [
                       // 1. Platzierung (Zahl)
@@ -416,23 +414,19 @@ class _RankingScreenState extends State<RankingScreen> {
                       Container(
                         padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
                         decoration: BoxDecoration(
-                          color: pointsColor,
-                          borderRadius: BorderRadius.circular(14),
-                          boxShadow: const [
-                            BoxShadow(color: Colors.black12, blurRadius: 2, offset: Offset(0, 1))
-                          ],
+                          color: pointsColor.withOpacity(0.15),
+                          borderRadius: BorderRadius.circular(20),
+                          // Kleiner Rahmen zeigt an, dass es klickbar ist
+                          border: Border.all(color: pointsColor.withOpacity(0.4)),
                         ),
                         child: Text(
                           '$points Pkt',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 13,
-                            color: Colors.white,
-                          ),
+                          style: TextStyle(fontWeight: FontWeight.bold, color: pointsColor),
                         ),
                       ),
                     ],
                   ),
+                ),
                 );
               },
             ),

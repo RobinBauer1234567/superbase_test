@@ -782,7 +782,7 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
                             : _selectedDisplayMode == AvatarDisplayMode.marketValue
                             ? _formatTeamMarketValue(_getStartingElevenMarketValue())
                             : "${_getStartingElevenAveragePoints()} Pkt")
-                            : "$displayedPoints Pkt · Spieltag",
+                            : "$displayedPoints Pkt",
                         style: TextStyle(fontWeight: FontWeight.bold, color: pointsColor),
                       ),
                     ],
