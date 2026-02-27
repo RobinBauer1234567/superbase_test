@@ -166,8 +166,8 @@ class _MatchesScreenState extends State<MatchesScreen> {
       itemBuilder: (context, index) {
         final spieltagNummer = spieltage[index];
         final spieleDesSpieltags = _spieleProSpieltag[spieltagNummer]!;
-
         return Column(
+
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             Padding(

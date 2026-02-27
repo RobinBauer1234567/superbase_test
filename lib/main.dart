@@ -39,6 +39,8 @@ void main() async {
   );
 }
 
+// lib/main.dart (Ausschnitt)
+
 class AppRoot extends StatelessWidget {
   const AppRoot({super.key});
 
@@ -55,6 +57,8 @@ class AppRoot extends StatelessWidget {
         theme: ThemeData(
           brightness: Brightness.light,
           primarySwatch: Colors.blue,
+          // ---> NEU: Setzt den Standard-Hintergrund für alle Scaffolds in der App
+          scaffoldBackgroundColor: Colors.grey.shade100,
         ),
         home: const AuthGate(),
         debugShowCheckedModeBanner: false,
@@ -62,7 +66,6 @@ class AppRoot extends StatelessWidget {
     );
   }
 }
-
 // Dieses Widget entscheidet, welche Seite beim Start angezeigt wird
 class AuthGate extends StatelessWidget {
   const AuthGate({super.key});
