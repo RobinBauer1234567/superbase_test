@@ -115,6 +115,7 @@ class _TeamScreenState extends State<TeamScreen> with SingleTickerProviderStateM
         topPlayersList.add({
           'id': player['id'],
           'name': player['name'],
+          'position': player['position'],
           'profilbild_url': player['profilbild_url'],
           'marktwert': _extractMarketValue(player['spieler_analytics'], seasonId), // Marktwert aus DB mappen
           'total_punkte': totalPoints,
