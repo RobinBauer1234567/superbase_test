@@ -20,6 +20,7 @@ class PlayerListItem extends StatelessWidget {
   final int assists;
   final int ownGoals;
   final Color? teamColor;
+  final bool isPlayed;
 
   const PlayerListItem({
     super.key,
@@ -37,6 +38,7 @@ class PlayerListItem extends StatelessWidget {
     this.assists = 0,
     this.ownGoals = 0,
     this.teamColor,
+    this.isPlayed = true,
   });
 
   String _formatMarketValue(int? value) {
@@ -58,6 +60,11 @@ class PlayerListItem extends StatelessWidget {
       ownGoals: ownGoals,
       maxRating: maxScore,
     );
+
+    final Color scoreColor = isPlayed
+        ? getColorForRating(score, maxScore)
+        : Colors.grey;
+    final String scoreText = isPlayed ? score.toString() : '-';
 
     return ListTile(
       onTap: onTap,
@@ -114,13 +121,14 @@ class PlayerListItem extends StatelessWidget {
             width: 40,
             padding: const EdgeInsets.symmetric(vertical: 4),
             decoration: BoxDecoration(
-              color: getColorForRating(score, maxScore),
+              color: scoreColor.withOpacity(0.1),
+              border: Border.all(color: scoreColor.withOpacity(0.3)),
               borderRadius: BorderRadius.circular(4),
             ),
             child: Text(
-              score.toString(),
+              scoreText,
               textAlign: TextAlign.center,
-              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
+              style: TextStyle(color: scoreColor, fontWeight: FontWeight.bold),
             ),
           ),
         ],
