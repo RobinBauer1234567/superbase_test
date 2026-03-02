@@ -432,7 +432,6 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
   }
 
   @override
-  @override
   Widget build(BuildContext context) {
     return Column(
       children: [
