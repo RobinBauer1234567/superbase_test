@@ -1,5 +1,6 @@
 // lib/screens/leagues/league_team_screen.dart
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:premier_league/viewmodels/data_viewmodel.dart';
 import 'package:premier_league/screens/screenelements/match_screen/formations.dart';
@@ -17,6 +18,8 @@ class LeagueTeamScreen extends StatefulWidget {
 }
 
 class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
+  final NumberFormat _pointsFormat = NumberFormat.decimalPattern('de_DE');
+
   bool _isLoading = true;
   bool _isListView = false;
 
@@ -34,8 +37,23 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
   int _selectedRound = 1;
   int _latestActiveRound = 1;
   int _matchdayPoints = 0;
+  int _overallTeamPoints = 0;
   bool _isViewingHistory = false;
-  // --------------------------------
+  int _currentRound = 1;
+  DateTime? _matchdayStart;
+  DateTime? _matchdayEnd;
+  final Map<int, Map<String, dynamic>> _matchdayMetaByRound = {};
+  AvatarDisplayMode _selectedDisplayMode = AvatarDisplayMode.seasonTotal;
+  MatchdayPhase get _matchdayPhase {
+    final now = DateTime.now().toUtc();
+    final start = _matchdayStart;
+    final end = _matchdayEnd;
+
+    if (start == null || end == null) return MatchdayPhase.inProgress;
+    if (now.isBefore(start)) return MatchdayPhase.before;
+    if (now.isAfter(end)) return MatchdayPhase.after;
+    return MatchdayPhase.inProgress;
+  }
 
   int _toInt(dynamic value, {int fallback = 0}) {
     if (value is int) return value;
@@ -50,19 +68,32 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
     _initMatchdayData();
   }
 
-  // --- Initialisierung beim Starten des Screens ---
-// --- Initialisierung beim Starten des Screens ---
   Future<void> _initMatchdayData() async {
     setState(() => _isLoading = true);
     final dataManagement = Provider.of<DataManagement>(context, listen: false);
     final seasonId = dataManagement.seasonId;
 
     // 1. Aktuellen Spieltag abfragen (hier starten wir standardmäßig)
-    final currentRound = await dataManagement.supabaseService.getCurrentRound(seasonId);
+    final currentRound = await dataManagement.supabaseService.getCurrentRound(
+      seasonId,
+    );
+    _currentRound = currentRound;
 
     // 2. NEU: Alle Spieltage abfragen, um das Maximum (z.B. 38) zu finden.
     // Dadurch darf der User auch nach rechts klicken, um für die Zukunft aufzustellen!
-    final allRounds = await dataManagement.supabaseService.fetchAllSpieltagIds(seasonId);
+    final allSpieltage = await dataManagement.supabaseService.fetchAllSpieltage(
+      seasonId,
+    );
+    for (final dynamic item in allSpieltage) {
+      if (item is! Map) continue;
+      final row = Map<String, dynamic>.from(item as Map);
+      final round = _toInt(row['round'], fallback: -1);
+      if (round > 0) {
+        _matchdayMetaByRound[round] = row;
+      }
+    }
+
+    final allRounds = _matchdayMetaByRound.keys.toList();
     int maxRound = currentRound;
     if (allRounds.isNotEmpty) {
       maxRound = allRounds.reduce((curr, next) => curr > next ? curr : next);
@@ -76,8 +107,7 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
     // Daten für den aktuellen Spieltag laden
     await _loadDataForRound(_selectedRound);
   }
-  // --- Wechseln zwischen den Spieltagen (Historie) ---
-  // --- Wechseln zwischen den Spieltagen (Historie) ---
+
   Future<void> _changeRound(int newRound) async {
     if (newRound < 1 || newRound > _latestActiveRound) return;
 
@@ -91,7 +121,6 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
     await _loadDataForRound(newRound);
   }
 
-  // --- DIE NEUE, SAUBERE LADE-LOGIK ---
   Future<void> _loadDataForRound(int round) async {
     setState(() => _isLoading = true);
     final dataManagement = Provider.of<DataManagement>(context, listen: false);
@@ -104,9 +133,9 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
 
       // 2. Snapshot abrufen ODER ERSTELLEN (Die Magie passiert hier im RPC!)
       final matchdayData = await service.fetchMatchdayData(
-          widget.leagueId,
-          seasonId,
-          round
+        widget.leagueId,
+        seasonId,
+        round,
       );
 
       if (matchdayData.isEmpty) {
@@ -117,12 +146,24 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
       final pointsData = matchdayData['points_data'] ?? {};
       final playersData = matchdayData['players'] as List<dynamic>? ?? [];
 
-      // --- DATEN VERARBEITEN ---
+      final roundMeta = _matchdayMetaByRound[round] ?? <String, dynamic>{};
+      final DateTime? matchdayStart =
+          DateTime.tryParse(
+            (roundMeta['matchday_start'] ?? '').toString(),
+          )?.toUtc();
+      final DateTime? matchdayEnd =
+          DateTime.tryParse(
+            (roundMeta['matchday_end'] ?? '').toString(),
+          )?.toUtc();
+
       String? savedFormationName = pointsData['formation'];
       bool isLocked = pointsData['is_locked'] ?? false;
       int totalPts = pointsData['total_points'] ?? 0;
 
-      List<PlayerInfo> field = List.generate(11, (index) => _createPlaceholder(index));
+      List<PlayerInfo> field = List.generate(
+        11,
+        (index) => _createPlaceholder(index),
+      );
       List<PlayerInfo> bench = [];
       List<int> frozenIds = [];
 
@@ -140,25 +181,42 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
         if (playerLocked || _isViewingHistory) {
           frozenIds.add(pId);
         }
-
         final team = spieler['team'];
         final analytics = spieler['spieler_analytics'];
 
         int mw = 0;
+        int totalSeasonPoints = 0;
+        int matchesPlayed = 0; // <--- NEU: Variable für die Einsätze
+
         if (analytics is Map) {
           mw = _toInt(analytics['marktwert']);
+          final stats = analytics['gesamtstatistiken'];
+          matchesPlayed = _toInt(analytics['anzahl_spiele']);
+
+          if (stats is Map) {
+            totalSeasonPoints = _toInt(stats['gesamtpunkte']);
+          }
         } else if (analytics is List && analytics.isNotEmpty) {
           mw = _toInt(analytics[0]['marktwert']);
-        }
+          matchesPlayed = _toInt(analytics[0]['anzahl_spiele']);
 
+          final stats = analytics[0]['gesamtstatistiken'];
+          if (stats is Map) {
+            totalSeasonPoints = _toInt(stats['gesamtpunkte']);
+          }
+        }
         final playerInfo = PlayerInfo(
           id: pId,
           name: (spieler['name'] ?? 'Unbekannt').toString(),
           position: spieler['position'] ?? 'N/A',
           profileImageUrl: spieler['profilbild_url'],
           rating: rating,
-          goals: 0, assists: 0, ownGoals: 0,
-          maxRating: 2500,
+          totalSeasonPoints: totalSeasonPoints,
+          matchCount:
+              matchesPlayed, // <--- NEU: Wir übergeben die Anzahl der Matchratings!
+          goals: 0,
+          assists: 0,
+          ownGoals: 0,
           teamImageUrl: team != null ? team['image_url'] : null,
           marketValue: mw,
           teamName: team != null ? team['name'] : null,
@@ -171,13 +229,37 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
         }
       }
 
-      bench.sort((a, b) => _getPositionOrder(a.position).compareTo(_getPositionOrder(b.position)));
+      bench.sort(
+        (a, b) => _getPositionOrder(
+          a.position,
+        ).compareTo(_getPositionOrder(b.position)),
+      );
 
       if (mounted) {
+        int teamTotalPoints = _overallTeamPoints;
+        try {
+          final ranking = await service.fetchOverallRanking(widget.leagueId);
+          final userId = service.supabase.auth.currentUser?.id;
+          if (userId != null) {
+            final currentUserRow = ranking
+                .cast<Map<String, dynamic>?>()
+                .firstWhere(
+                  (row) => row?['user_id']?.toString() == userId,
+                  orElse: () => null,
+                );
+            if (currentUserRow != null) {
+              teamTotalPoints = _toInt(currentUserRow['total_points']);
+            }
+          }
+        } catch (_) {
+          // Fallback: Bisherigen Wert behalten.
+        }
+
         setState(() {
           _allFormations = formations;
 
-          if (savedFormationName != null && _allFormations.containsKey(savedFormationName)) {
+          if (savedFormationName != null &&
+              _allFormations.containsKey(savedFormationName)) {
             _selectedFormationName = savedFormationName;
           } else if (_allFormations.isNotEmpty) {
             _selectedFormationName = '4-4-2'; // Standard-Fallback
@@ -190,6 +272,9 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
           _isFormationLocked = isLocked || _isViewingHistory;
           _frozenPlayerIds = frozenIds;
           _matchdayPoints = totalPts;
+          _overallTeamPoints = teamTotalPoints;
+          _matchdayStart = matchdayStart;
+          _matchdayEnd = matchdayEnd;
 
           _updatePlaceholderNames();
           _isLoading = false;
@@ -201,7 +286,6 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
     }
   }
 
-  // --- SPEICHERN ---
   Future<void> _saveLineupToDb() async {
     final dataManagement = Provider.of<DataManagement>(context, listen: false);
     final service = dataManagement.supabaseService;
@@ -220,11 +304,11 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
     }
 
     await service.saveTeamLineup(
-        widget.leagueId,
-        seasonId,
-        _selectedRound,
-        _selectedFormationName,
-        updates
+      widget.leagueId,
+      seasonId,
+      _selectedRound,
+      _selectedFormationName,
+      updates,
     );
     print("Aufstellung & Formation für Runde $_selectedRound gespeichert.");
   }
@@ -232,14 +316,17 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
   List<PlayerInfo> _getFilteredPlayers() {
     List<PlayerInfo> allPlayers = [
       ..._fieldPlayers.where((p) => p.id > 0),
-      ..._substitutePlayers
+      ..._substitutePlayers,
     ];
 
     if (_filterTeam != null) {
       allPlayers = allPlayers.where((p) => p.teamName == _filterTeam).toList();
     }
     if (_filterPosition != null) {
-      allPlayers = allPlayers.where((p) => p.position.contains(_filterPosition!)).toList();
+      allPlayers =
+          allPlayers
+              .where((p) => p.position.contains(_filterPosition!))
+              .toList();
     }
 
     allPlayers.sort((a, b) => b.rating.compareTo(a.rating));
@@ -247,14 +334,21 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
   }
 
   List<String> _getAvailableTeams() {
-    final all = [..._fieldPlayers.where((p) => p.id > 0), ..._substitutePlayers];
-    final teams = all.map((p) => p.teamName).whereType<String>().toSet().toList();
+    final all = [
+      ..._fieldPlayers.where((p) => p.id > 0),
+      ..._substitutePlayers,
+    ];
+    final teams =
+        all.map((p) => p.teamName).whereType<String>().toSet().toList();
     teams.sort();
     return teams;
   }
 
   List<String> _getAvailablePositions() {
-    final all = [..._fieldPlayers.where((p) => p.id > 0), ..._substitutePlayers];
+    final all = [
+      ..._fieldPlayers.where((p) => p.id > 0),
+      ..._substitutePlayers,
+    ];
     final positions = <String>{};
     for (var p in all) {
       p.position.split(',').forEach((pos) => positions.add(pos.trim()));
@@ -273,7 +367,10 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
           id: _fieldPlayers[i].id,
           name: positions[i],
           position: positions[i],
-          rating: 0, goals: 0, assists: 0, ownGoals: 0,
+          rating: 0,
+          goals: 0,
+          assists: 0,
+          ownGoals: 0,
           profileImageUrl: null,
         );
       }
@@ -281,41 +378,80 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
   }
 
   PlayerInfo _createPlaceholder(int index) {
-    if (index == 0) return const PlayerInfo(id: -1, name: "TW", position: "TW", rating: 0, goals: 0, assists: 0, ownGoals: 0);
-    return PlayerInfo(id: -1 - index, name: "POS", position: "Feld", rating: 0, goals: 0, assists: 0, ownGoals: 0);
+    if (index == 0)
+      return const PlayerInfo(
+        id: -1,
+        name: "TW",
+        position: "TW",
+        rating: 0,
+        goals: 0,
+        assists: 0,
+        ownGoals: 0,
+      );
+    return PlayerInfo(
+      id: -1 - index,
+      name: "POS",
+      position: "Feld",
+      rating: 0,
+      goals: 0,
+      assists: 0,
+      ownGoals: 0,
+    );
   }
 
   void _handlePlayerTap(int playerId, double radius) {
     if (playerId < 0) {
       if (_isViewingHistory) {
-        ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-          content: Text("Historische Aufstellungen können nicht bearbeitet werden."),
-          backgroundColor: Colors.red,
-        ));
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text(
+              "Historische Aufstellungen können nicht bearbeitet werden.",
+            ),
+            backgroundColor: Colors.red,
+          ),
+        );
         return;
       }
 
       final placeholder = _fieldPlayers.firstWhere(
-            (p) => p.id == playerId,
-        orElse: () => const PlayerInfo(id: -999, name: "?", position: "", rating: 0, goals: 0, assists: 0, ownGoals: 0),
+        (p) => p.id == playerId,
+        orElse:
+            () => const PlayerInfo(
+              id: -999,
+              name: "?",
+              position: "",
+              rating: 0,
+              goals: 0,
+              assists: 0,
+              ownGoals: 0,
+            ),
       );
 
       if (placeholder.id != -999) {
         _showAvailablePlayersDialog(placeholder, radius);
       }
     } else {
-      Navigator.push(context, MaterialPageRoute(builder: (context) => PlayerScreen(playerId: playerId)));
+      Navigator.push(
+        context,
+        MaterialPageRoute(
+          builder: (context) => PlayerScreen(playerId: playerId),
+        ),
+      );
     }
   }
 
-  void _showAvailablePlayersDialog(PlayerInfo placeholder, double sourceRadius) {
+  void _showAvailablePlayersDialog(
+    PlayerInfo placeholder,
+    double sourceRadius,
+  ) {
     if (_isViewingHistory) return;
 
     final String requiredPos = placeholder.position.toUpperCase();
-    final availablePlayers = _substitutePlayers.where((p) {
-      final String playerPos = p.position.toUpperCase();
-      return playerPos == requiredPos || playerPos.contains(requiredPos);
-    }).toList();
+    final availablePlayers =
+        _substitutePlayers.where((p) {
+          final String playerPos = p.position.toUpperCase();
+          return playerPos == requiredPos || playerPos.contains(requiredPos);
+        }).toList();
 
     availablePlayers.sort((a, b) => b.rating.compareTo(a.rating));
 
@@ -323,12 +459,17 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
       context: context,
       builder: (BuildContext context) {
         return Dialog(
-          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20.0)),
+          shape: RoundedRectangleBorder(
+            borderRadius: BorderRadius.circular(20.0),
+          ),
           elevation: 10,
           backgroundColor: Colors.white,
           insetPadding: const EdgeInsets.all(20),
           child: Container(
-            constraints: BoxConstraints(maxHeight: MediaQuery.of(context).size.height * 0.7, maxWidth: 400),
+            constraints: BoxConstraints(
+              maxHeight: MediaQuery.of(context).size.height * 0.7,
+              maxWidth: 400,
+            ),
             padding: const EdgeInsets.symmetric(vertical: 20, horizontal: 16),
             child: Column(
               mainAxisSize: MainAxisSize.min,
@@ -339,37 +480,71 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
                     Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
-                        Text("POSITION", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey.shade500, letterSpacing: 1.0)),
+                        Text(
+                          "POSITION",
+                          style: TextStyle(
+                            fontSize: 11,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.grey.shade500,
+                            letterSpacing: 1.0,
+                          ),
+                        ),
                         const SizedBox(height: 2),
-                        Text(placeholder.name, style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold, color: Colors.black87)),
+                        Text(
+                          placeholder.name,
+                          style: const TextStyle(
+                            fontSize: 20,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.black87,
+                          ),
+                        ),
                       ],
                     ),
-                    IconButton(icon: Icon(Icons.close, color: Colors.grey.shade400), onPressed: () => Navigator.of(context).pop()),
+                    IconButton(
+                      icon: Icon(Icons.close, color: Colors.grey.shade400),
+                      onPressed: () => Navigator.of(context).pop(),
+                    ),
                   ],
                 ),
                 const SizedBox(height: 16),
                 Divider(height: 1, color: Colors.grey.shade200),
                 const SizedBox(height: 16),
                 Flexible(
-                  child: availablePlayers.isEmpty
-                      ? Padding(
-                    padding: const EdgeInsets.symmetric(vertical: 32.0),
-                    child: Column(
-                      children: [
-                        Icon(Icons.person_off_rounded, size: 48, color: Colors.grey.shade300),
-                        const SizedBox(height: 12),
-                        Text("Keine passenden Spieler", style: TextStyle(color: Colors.grey.shade500, fontWeight: FontWeight.w500)),
-                      ],
-                    ),
-                  )
-                      : ListView.separated(
-                    shrinkWrap: true,
-                    itemCount: availablePlayers.length,
-                    separatorBuilder: (ctx, i) => const SizedBox(height: 12),
-                    itemBuilder: (ctx, index) {
-                      return _buildPlayerDialogItem(availablePlayers[index], placeholder, sourceRadius);
-                    },
-                  ),
+                  child:
+                      availablePlayers.isEmpty
+                          ? Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 32.0),
+                            child: Column(
+                              children: [
+                                Icon(
+                                  Icons.person_off_rounded,
+                                  size: 48,
+                                  color: Colors.grey.shade300,
+                                ),
+                                const SizedBox(height: 12),
+                                Text(
+                                  "Keine passenden Spieler",
+                                  style: TextStyle(
+                                    color: Colors.grey.shade500,
+                                    fontWeight: FontWeight.w500,
+                                  ),
+                                ),
+                              ],
+                            ),
+                          )
+                          : ListView.separated(
+                            shrinkWrap: true,
+                            itemCount: availablePlayers.length,
+                            separatorBuilder:
+                                (ctx, i) => const SizedBox(height: 12),
+                            itemBuilder: (ctx, index) {
+                              return _buildPlayerDialogItem(
+                                availablePlayers[index],
+                                placeholder,
+                                sourceRadius,
+                              );
+                            },
+                          ),
                 ),
               ],
             ),
@@ -379,16 +554,63 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
     );
   }
 
-  Widget _buildPlayerDialogItem(PlayerInfo player, PlayerInfo placeholder, double radius) {
-    final bool isFrozen = _frozenPlayerIds.contains(player.id);
+  int _getStartingElevenTotalPoints() {
+    int sum = 0;
+    for (var p in _fieldPlayers) {
+      if (p.id > 0) sum += p.totalSeasonPoints;
+    }
+    return sum;
+  }
 
+  int _getStartingElevenAveragePoints() {
+    int sum = 0;
+    for (var p in _fieldPlayers) {
+      if (p.id > 0 && p.matchCount > 0) {
+        sum += (p.totalSeasonPoints / p.matchCount).round();
+      }
+    }
+    return sum;
+  }
+
+  int _getStartingElevenMarketValue() {
+    int sum = 0;
+    for (var p in _fieldPlayers) {
+      if (p.id > 0) sum += (p.marketValue ?? 0);
+    }
+    return sum;
+  }
+
+  String _formatTeamMarketValue(int mv) {
+    if (mv == 0) return "0";
+    if (mv >= 1000000) {
+      double val = mv / 1000000;
+      return '${val == val.toInt() ? val.toInt() : val.toStringAsFixed(1)}M';
+    } else if (mv >= 1000) {
+      return '${(mv / 1000).toInt()}k';
+    }
+    return mv.toString();
+  }
+
+  Widget _buildPlayerDialogItem(
+    PlayerInfo player,
+    PlayerInfo placeholder,
+    double radius,
+  ) {
+    final bool isFrozen = _frozenPlayerIds.contains(player.id);
+    final bool isBeforeMatchday = _matchdayPhase == MatchdayPhase.before;
+    final int displayPoints =
+        isBeforeMatchday ? player.totalSeasonPoints : player.rating;
     return InkWell(
       onTap: () {
         if (isFrozen) {
-          ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
-            content: Text("Spieler kann nicht hinzugefügt werden, weil er bereits gespielt hat."),
-            backgroundColor: Colors.red,
-          ));
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text(
+                "Spieler kann nicht hinzugefügt werden, weil er bereits gespielt hat.",
+              ),
+              backgroundColor: Colors.red,
+            ),
+          );
         } else {
           _swapPlayer(placeholder, player);
           Navigator.pop(context);
@@ -413,6 +635,11 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
                   teamColor: Theme.of(context).primaryColor,
                   radius: radius,
                   isLocked: isFrozen,
+                  displayMode:
+                      isBeforeMatchday
+                          ? AvatarDisplayMode.seasonTotal
+                          : AvatarDisplayMode.matchday,
+                  currentRound: _currentRound,
                 ),
               ),
               const SizedBox(width: 16),
@@ -420,21 +647,47 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
                 child: Column(
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
-                    Text(player.name, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16), maxLines: 1, overflow: TextOverflow.ellipsis),
+                    Text(
+                      player.name,
+                      style: const TextStyle(
+                        fontWeight: FontWeight.bold,
+                        fontSize: 16,
+                      ),
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                    ),
                     const SizedBox(height: 4),
                     Row(
                       children: [
                         Container(
-                          padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                          padding: const EdgeInsets.symmetric(
+                            horizontal: 6,
+                            vertical: 2,
+                          ),
                           decoration: BoxDecoration(
                             color: Colors.blueGrey.shade50,
                             borderRadius: BorderRadius.circular(4),
                             border: Border.all(color: Colors.blueGrey.shade100),
                           ),
-                          child: Text(player.position, style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.blueGrey.shade700)),
+                          child: Text(
+                            player.position,
+                            style: TextStyle(
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold,
+                              color: Colors.blueGrey.shade700,
+                            ),
+                          ),
                         ),
                         const SizedBox(width: 8),
-                        Text("${player.rating} Pkt", style: TextStyle(color: Colors.grey.shade600, fontSize: 13)),
+
+                        // --- NEU: Hier nutzen wir jetzt displayPoints statt player.rating ---
+                        Text(
+                          "$displayPoints Pkt",
+                          style: TextStyle(
+                            color: Colors.grey.shade600,
+                            fontSize: 13,
+                          ),
+                        ),
                       ],
                     ),
                   ],
@@ -460,7 +713,11 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
         _fieldPlayers[index] = newPlayer;
         if (placeholder.id > 0) {
           _substitutePlayers.add(placeholder);
-          _substitutePlayers.sort((a, b) => _getPositionOrder(a.position).compareTo(_getPositionOrder(b.position)));
+          _substitutePlayers.sort(
+            (a, b) => _getPositionOrder(
+              a.position,
+            ).compareTo(_getPositionOrder(b.position)),
+          );
         }
       }
     });
@@ -471,9 +728,12 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
     if (position == null) return 99;
     final pos = position.toUpperCase();
     if (pos.contains('GK') || pos.contains('TW')) return 0;
-    if (pos.contains('IV') || pos.contains('RV') || pos.contains('LV')) return 2;
-    if (pos.contains('ZDM') || pos.contains('ZM') || pos.contains('ZOM')) return 3;
-    if (pos.contains('ST') || pos.contains('RF') || pos.contains('LF')) return 4;
+    if (pos.contains('IV') || pos.contains('RV') || pos.contains('LV'))
+      return 2;
+    if (pos.contains('ZDM') || pos.contains('ZM') || pos.contains('ZOM'))
+      return 3;
+    if (pos.contains('ST') || pos.contains('RF') || pos.contains('LF'))
+      return 4;
     return 5;
   }
 
@@ -482,16 +742,35 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
     if (positions == null || positions.length != 11) return;
     List<PlayerInfo> newField = [];
     for (int i = 0; i < 11; i++) {
-      newField.add(PlayerInfo(id: -1 - i, name: positions[i], position: positions[i], rating: 0, goals: 0, assists: 0, ownGoals: 0, profileImageUrl: null));
+      newField.add(
+        PlayerInfo(
+          id: -1 - i,
+          name: positions[i],
+          position: positions[i],
+          rating: 0,
+          goals: 0,
+          assists: 0,
+          ownGoals: 0,
+          profileImageUrl: null,
+        ),
+      );
     }
-    setState(() { _fieldPlayers = newField; });
+    setState(() {
+      _fieldPlayers = newField;
+    });
   }
 
   void _handlePlayerDrop(PlayerInfo fieldSlot, PlayerInfo incomingPlayer) {
     if (_isViewingHistory) return;
 
-    if (_frozenPlayerIds.contains(fieldSlot.id) || _frozenPlayerIds.contains(incomingPlayer.id)) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Spieler ist gelockt und kann nicht getauscht werden!"), backgroundColor: Colors.red));
+    if (_frozenPlayerIds.contains(fieldSlot.id) ||
+        _frozenPlayerIds.contains(incomingPlayer.id)) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Spieler ist gelockt und kann nicht getauscht werden!"),
+          backgroundColor: Colors.red,
+        ),
+      );
       return;
     }
 
@@ -503,11 +782,15 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
         cameFromBench = true;
         _substitutePlayers.removeWhere((p) => p.id == incomingPlayer.id);
       } else {
-        sourceFieldIndex = _fieldPlayers.indexWhere((p) => p.id == incomingPlayer.id);
+        sourceFieldIndex = _fieldPlayers.indexWhere(
+          (p) => p.id == incomingPlayer.id,
+        );
         if (sourceFieldIndex == -1) return;
       }
 
-      final int targetIndex = _fieldPlayers.indexWhere((p) => p.id == fieldSlot.id);
+      final int targetIndex = _fieldPlayers.indexWhere(
+        (p) => p.id == fieldSlot.id,
+      );
       if (targetIndex == -1) return;
       if (!cameFromBench && sourceFieldIndex == targetIndex) return;
 
@@ -519,10 +802,20 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
         _fieldPlayers[targetIndex] = incomingPlayer;
       } else {
         _fieldPlayers[targetIndex] = incomingPlayer;
-        final List<String> positions = _allFormations[_selectedFormationName] ?? [];
+        final List<String> positions =
+            _allFormations[_selectedFormationName] ?? [];
         if (sourceFieldIndex < positions.length) {
           final String roleName = positions[sourceFieldIndex];
-          _fieldPlayers[sourceFieldIndex] = PlayerInfo(id: -1 - sourceFieldIndex, name: roleName, position: roleName, rating: 0, goals: 0, assists: 0, ownGoals: 0, profileImageUrl: null);
+          _fieldPlayers[sourceFieldIndex] = PlayerInfo(
+            id: -1 - sourceFieldIndex,
+            name: roleName,
+            position: roleName,
+            rating: 0,
+            goals: 0,
+            assists: 0,
+            ownGoals: 0,
+            profileImageUrl: null,
+          );
         }
         if (fieldSlot.id > 0) {
           _substitutePlayers.add(fieldSlot);
@@ -537,17 +830,32 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
     if (_isViewingHistory) return;
 
     if (_frozenPlayerIds.contains(player.id)) {
-      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text("Spieler spielt bereits und kann nicht auf die Bank!"), backgroundColor: Colors.red));
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text("Spieler spielt bereits und kann nicht auf die Bank!"),
+          backgroundColor: Colors.red,
+        ),
+      );
       return;
     }
 
     setState(() {
       final int index = _fieldPlayers.indexWhere((p) => p.id == player.id);
       if (index != -1) {
-        final List<String> positions = _allFormations[_selectedFormationName] ?? [];
+        final List<String> positions =
+            _allFormations[_selectedFormationName] ?? [];
         if (index < positions.length) {
           final String roleName = positions[index];
-          _fieldPlayers[index] = PlayerInfo(id: -1 - index, name: roleName, position: roleName, rating: 0, goals: 0, assists: 0, ownGoals: 0, profileImageUrl: null);
+          _fieldPlayers[index] = PlayerInfo(
+            id: -1 - index,
+            name: roleName,
+            position: roleName,
+            rating: 0,
+            goals: 0,
+            assists: 0,
+            ownGoals: 0,
+            profileImageUrl: null,
+          );
         }
         if (!_substitutePlayers.any((p) => p.id == player.id)) {
           _substitutePlayers.add(player);
@@ -559,49 +867,222 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
   }
 
   void _sortBench() {
-    _substitutePlayers.sort((a, b) => _getPositionOrder(a.position).compareTo(_getPositionOrder(b.position)));
+    _substitutePlayers.sort(
+      (a, b) => _getPositionOrder(
+        a.position,
+      ).compareTo(_getPositionOrder(b.position)),
+    );
   }
 
-  // --- UI: SPIELTAGS-SELECTOR ---
   Widget _buildMatchdaySelector() {
+    final phase = _matchdayPhase;
+    final bool isCurrentRound = _selectedRound == _currentRound;
+    final bool showOverallPoints = phase == MatchdayPhase.before;
+    final int displayedPoints =
+        showOverallPoints ? _overallTeamPoints : _matchdayPoints;
+    final Color pointsColor =
+        showOverallPoints
+            ? Theme.of(context).primaryColor
+            : getColorForRating(displayedPoints, 2500);
+    final String phaseLabel = switch (phase) {
+      MatchdayPhase.before => 'nicht gestartet',
+      MatchdayPhase.inProgress => 'läuft',
+      MatchdayPhase.after => 'beendet',
+    };
     return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
       decoration: BoxDecoration(
         color: Colors.white,
         border: Border(bottom: BorderSide(color: Colors.grey.shade200)),
+        boxShadow: const [
+          BoxShadow(color: Colors.black12, blurRadius: 2, offset: Offset(0, 1)),
+        ],
       ),
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          Row(
-            children: [
-              IconButton(
-                icon: const Icon(Icons.chevron_left),
-                onPressed: _selectedRound > 1 ? () => _changeRound(_selectedRound - 1) : null,
-                color: _selectedRound > 1 ? Theme.of(context).primaryColor : Colors.grey,
+
+          // --- LINKE SEITE: Zwingend 45% des verfügbaren Platzes ---
+          Expanded(
+            flex: 50, // Definiert das feste Verhältnis
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerLeft,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  IconButton(
+                    icon: const Icon(Icons.chevron_left),
+                    onPressed:
+                        _selectedRound > 1
+                            ? () => _changeRound(_selectedRound - 1)
+                            : null,
+                    color:
+                        _selectedRound > 1
+                            ? Theme.of(context).primaryColor
+                            : Colors.grey,
+                  ),
+                  Container(
+                    width: 150,
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade100,
+                      borderRadius: BorderRadius.circular(8),
+                      border: Border.all(
+                        color:
+                            (!isCurrentRound)
+                                ? Colors.grey.shade300
+                                : Colors.green.shade300,
+                      ),
+                    ),
+                    child: Row(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Text(
+                          "Spieltag $_selectedRound",
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 16,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
+                  IconButton(
+                    icon: const Icon(Icons.chevron_right),
+                    onPressed:
+                        _selectedRound < _latestActiveRound
+                            ? () => _changeRound(_selectedRound + 1)
+                            : null,
+                    color:
+                        _selectedRound < _latestActiveRound
+                            ? Theme.of(context).primaryColor
+                            : Colors.grey,
+                  ),
+                ],
               ),
-              Text(
-                "Spieltag $_selectedRound",
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-              ),
-              IconButton(
-                icon: const Icon(Icons.chevron_right),
-                onPressed: _selectedRound < _latestActiveRound ? () => _changeRound(_selectedRound + 1) : null,
-                color: _selectedRound < _latestActiveRound ? Theme.of(context).primaryColor : Colors.grey,
-              ),
-            ],
-          ),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-            decoration: BoxDecoration(
-              color: Theme.of(context).primaryColor.withOpacity(0.1),
-              borderRadius: BorderRadius.circular(20),
             ),
-            child: Text(
-              "$_matchdayPoints Pkt",
-              style: TextStyle(
-                fontWeight: FontWeight.bold,
-                color: Theme.of(context).primaryColor,
+          ),
+
+          Expanded(
+            flex:
+                50, // Gibt der rechten Seite minimal mehr Raum für die Filter/Ansichten
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              alignment: Alignment.centerRight,
+              child: Row(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  Container(
+                    width: 115,
+                    margin: const EdgeInsets.only(right: 8),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 10,
+                      vertical: 6,
+                    ),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade100,
+                      borderRadius: BorderRadius.circular(20),
+                    ),
+                    child: Center(
+                      child: Text(
+                        phaseLabel,
+                        style: TextStyle(
+                          fontWeight: FontWeight.w600,
+                          color: Colors.grey.shade700,
+                          fontSize: 12,
+                        ),
+                      ),
+                    ),
+                  ),
+                  GestureDetector(
+                    onTap:
+                        phase == MatchdayPhase.before
+                            ? () {
+                              setState(() {
+                                if (_selectedDisplayMode ==
+                                    AvatarDisplayMode.seasonTotal) {
+                                  _selectedDisplayMode =
+                                      AvatarDisplayMode.seasonAverage;
+                                } else if (_selectedDisplayMode ==
+                                    AvatarDisplayMode.seasonAverage) {
+                                  _selectedDisplayMode =
+                                      AvatarDisplayMode.marketValue;
+                                } else {
+                                  _selectedDisplayMode =
+                                      AvatarDisplayMode.seasonTotal;
+                                }
+                              });
+                            }
+                            : null,
+                    child: Container(
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 12,
+                        vertical: 6,
+                      ),
+                      width: 120,
+                      decoration: BoxDecoration(
+                        color: pointsColor.withOpacity(0.15),
+                        borderRadius: BorderRadius.circular(20),
+                        // Kleiner Rahmen zeigt an, dass es klickbar ist
+                        border:
+                            phase == MatchdayPhase.before
+                                ? Border.all(
+                                  color: pointsColor.withOpacity(0.4),
+                                )
+                                : null,
+                      ),
+                      child: Row(
+                        mainAxisAlignment: MainAxisAlignment.center,
+                        children: [
+                          if (phase == MatchdayPhase.before) ...[
+                            if (_selectedDisplayMode ==
+                                AvatarDisplayMode.seasonTotal)
+                              Icon(Icons.circle, size: 14, color: pointsColor),
+                            if (_selectedDisplayMode ==
+                                AvatarDisplayMode.seasonAverage)
+                              Text(
+                                "Ø",
+                                style: TextStyle(
+                                  fontWeight: FontWeight.bold,
+                                  color: pointsColor,
+                                ),
+                              ),
+                            if (_selectedDisplayMode ==
+                                AvatarDisplayMode.marketValue)
+                              Icon(
+                                Icons.payments,
+                                size: 14,
+                                color: pointsColor,
+                              ),
+                            const SizedBox(width: 6),
+                          ],
+                          Text(
+                            phase == MatchdayPhase.before
+                                ? (_selectedDisplayMode ==
+                                        AvatarDisplayMode.seasonTotal
+                                    ? "${_getStartingElevenTotalPoints()} Pkt"
+                                    : _selectedDisplayMode ==
+                                        AvatarDisplayMode.marketValue
+                                    ? _formatTeamMarketValue(
+                                      _getStartingElevenMarketValue(),
+                                    )
+                                    : "${_getStartingElevenAveragePoints()} Pkt")
+                                : "$displayedPoints Pkt",
+                            style: TextStyle(
+                              fontWeight: FontWeight.bold,
+                              color: pointsColor,
+                            ),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ),
+                ],
               ),
             ),
           ),
@@ -624,28 +1105,45 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
             value: _selectedFormationName,
             isExpanded: true,
             icon: Icon(
-              _isFormationLocked ? Icons.lock : Icons.keyboard_arrow_down_rounded,
+              _isFormationLocked
+                  ? Icons.lock
+                  : Icons.keyboard_arrow_down_rounded,
               color: _isFormationLocked ? Colors.red : null,
             ),
-            onChanged: _isFormationLocked ? null : (String? newValue) {
-              if (newValue != null && newValue != _selectedFormationName) {
-                setState(() {
-                  _selectedFormationName = newValue;
-                  for (var player in _fieldPlayers) {
-                    if (player.id > 0) _substitutePlayers.add(player);
-                  }
-                  _substitutePlayers.sort((a, b) => _getPositionOrder(a.position).compareTo(_getPositionOrder(b.position)));
-                  _generateFieldPlaceholders();
-                });
-                _saveLineupToDb();
-              }
-            },
-            items: sortedFormationKeys.map((String value) {
-              return DropdownMenuItem<String>(
-                value: value,
-                child: Text('Formation: $value', style: TextStyle(fontWeight: FontWeight.bold, color: _isFormationLocked ? Colors.grey : Colors.black)),
-              );
-            }).toList(),
+            onChanged:
+                _isFormationLocked
+                    ? null
+                    : (String? newValue) {
+                      if (newValue != null &&
+                          newValue != _selectedFormationName) {
+                        setState(() {
+                          _selectedFormationName = newValue;
+                          for (var player in _fieldPlayers) {
+                            if (player.id > 0) _substitutePlayers.add(player);
+                          }
+                          _substitutePlayers.sort(
+                            (a, b) => _getPositionOrder(
+                              a.position,
+                            ).compareTo(_getPositionOrder(b.position)),
+                          );
+                          _generateFieldPlaceholders();
+                        });
+                        _saveLineupToDb();
+                      }
+                    },
+            items:
+                sortedFormationKeys.map((String value) {
+                  return DropdownMenuItem<String>(
+                    value: value,
+                    child: Text(
+                      'Formation: $value',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: _isFormationLocked ? Colors.grey : Colors.black,
+                      ),
+                    ),
+                  );
+                }).toList(),
           ),
         ),
       ),
@@ -660,13 +1158,35 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
       children: [
         Expanded(
           child: Card(
-            elevation: 2, shadowColor: Colors.black12, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), margin: EdgeInsets.zero,
+            elevation: 2,
+            shadowColor: Colors.black12,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            margin: EdgeInsets.zero,
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 4.0),
+              padding: const EdgeInsets.symmetric(
+                horizontal: 12.0,
+                vertical: 4.0,
+              ),
               child: DropdownButtonHideUnderline(
                 child: DropdownButton<String?>(
-                  value: _filterTeam, hint: const Text("Team", style: TextStyle(fontSize: 13)), isExpanded: true, icon: const Icon(Icons.keyboard_arrow_down_rounded),
-                  items: [const DropdownMenuItem(value: null, child: Text("Alle Teams")), ...teams.map((t) => DropdownMenuItem(value: t, child: Text(t, overflow: TextOverflow.ellipsis)))],
+                  value: _filterTeam,
+                  hint: const Text("Team", style: TextStyle(fontSize: 13)),
+                  isExpanded: true,
+                  icon: const Icon(Icons.keyboard_arrow_down_rounded),
+                  items: [
+                    const DropdownMenuItem(
+                      value: null,
+                      child: Text("Alle Teams"),
+                    ),
+                    ...teams.map(
+                      (t) => DropdownMenuItem(
+                        value: t,
+                        child: Text(t, overflow: TextOverflow.ellipsis),
+                      ),
+                    ),
+                  ],
                   onChanged: (val) => setState(() => _filterTeam = val),
                 ),
               ),
@@ -676,13 +1196,32 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
         const SizedBox(width: 8),
         Expanded(
           child: Card(
-            elevation: 2, shadowColor: Colors.black12, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), margin: EdgeInsets.zero,
+            elevation: 2,
+            shadowColor: Colors.black12,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(12),
+            ),
+            margin: EdgeInsets.zero,
             child: Padding(
-              padding: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 4.0),
+              padding: const EdgeInsets.symmetric(
+                horizontal: 12.0,
+                vertical: 4.0,
+              ),
               child: DropdownButtonHideUnderline(
                 child: DropdownButton<String?>(
-                  value: _filterPosition, hint: const Text("Pos", style: TextStyle(fontSize: 13)), isExpanded: true, icon: const Icon(Icons.keyboard_arrow_down_rounded),
-                  items: [const DropdownMenuItem(value: null, child: Text("Alle Pos")), ...positions.map((p) => DropdownMenuItem(value: p, child: Text(p)))],
+                  value: _filterPosition,
+                  hint: const Text("Pos", style: TextStyle(fontSize: 13)),
+                  isExpanded: true,
+                  icon: const Icon(Icons.keyboard_arrow_down_rounded),
+                  items: [
+                    const DropdownMenuItem(
+                      value: null,
+                      child: Text("Alle Pos"),
+                    ),
+                    ...positions.map(
+                      (p) => DropdownMenuItem(value: p, child: Text(p)),
+                    ),
+                  ],
                   onChanged: (val) => setState(() => _filterPosition = val),
                 ),
               ),
@@ -696,7 +1235,8 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
   Widget _buildTeamListView() {
     final players = _getFilteredPlayers();
     final primaryColor = Theme.of(context).primaryColor;
-    if (players.isEmpty) return const Center(child: Text("Keine Spieler gefunden"));
+    if (players.isEmpty)
+      return const Center(child: Text("Keine Spieler gefunden"));
 
     return ListView.builder(
       padding: const EdgeInsets.only(top: 8),
@@ -704,10 +1244,26 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
       itemBuilder: (context, index) {
         final player = players[index];
         return PlayerListItem(
-          rank: index + 1, profileImageUrl: player.profileImageUrl, playerName: player.name, teamImageUrl: player.teamImageUrl,
-          marketValue: player.marketValue, score: player.rating, maxScore: player.maxRating, position: player.position,
-          id: player.id, goals: player.goals, assists: player.assists, ownGoals: player.ownGoals, teamColor: primaryColor,
-          onTap: () => Navigator.push(context, MaterialPageRoute(builder: (_) => PlayerScreen(playerId: player.id))),
+          rank: index + 1,
+          profileImageUrl: player.profileImageUrl,
+          playerName: player.name,
+          teamImageUrl: player.teamImageUrl,
+          marketValue: player.marketValue,
+          score: player.rating,
+          maxScore: player.maxRating,
+          position: player.position,
+          id: player.id,
+          goals: player.goals,
+          assists: player.assists,
+          ownGoals: player.ownGoals,
+          teamColor: primaryColor,
+          onTap:
+              () => Navigator.push(
+                context,
+                MaterialPageRoute(
+                  builder: (_) => PlayerScreen(playerId: player.id),
+                ),
+              ),
         );
       },
     );
@@ -715,9 +1271,11 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading && _fieldPlayers.isEmpty) return const Center(child: CircularProgressIndicator());
+    if (_isLoading && _fieldPlayers.isEmpty)
+      return const Center(child: CircularProgressIndicator());
     final primaryColor = Theme.of(context).primaryColor;
-    final List<String> currentRequiredPositions = _allFormations[_selectedFormationName] ?? [];
+    final List<String> currentRequiredPositions =
+        _allFormations[_selectedFormationName] ?? [];
 
     return Column(
       children: [
@@ -727,12 +1285,24 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
           padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
           child: Row(
             children: [
-              Expanded(child: _isListView ? _buildFilterBar() : _buildFormationDropdown()),
+              Expanded(
+                child:
+                    _isListView ? _buildFilterBar() : _buildFormationDropdown(),
+              ),
               const SizedBox(width: 8),
               Card(
-                elevation: 2, shadowColor: Colors.black12, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)), margin: EdgeInsets.zero,
+                elevation: 2,
+                shadowColor: Colors.black12,
+                shape: RoundedRectangleBorder(
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                margin: EdgeInsets.zero,
                 child: IconButton(
-                  icon: Icon(_isListView ? Icons.sports_soccer : Icons.list_alt), color: primaryColor, tooltip: _isListView ? "Spielfeldansicht" : "Listenansicht",
+                  icon: Icon(
+                    _isListView ? Icons.sports_soccer : Icons.list_alt,
+                  ),
+                  color: primaryColor,
+                  tooltip: _isListView ? "Spielfeldansicht" : "Listenansicht",
                   onPressed: () => setState(() => _isListView = !_isListView),
                 ),
               ),
@@ -741,23 +1311,32 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
         ),
 
         Expanded(
-          child: _isLoading
-              ? const Center(child: CircularProgressIndicator())
-              : _isListView
-              ? _buildTeamListView()
-              : MatchFormationDisplay(
-            homeFormation: _selectedFormationName,
-            homePlayers: _fieldPlayers,
-            homeColor: primaryColor,
-            onPlayerTap: _handlePlayerTap,
-            substitutes: _substitutePlayers,
-            onPlayerDrop: _handlePlayerDrop,
-            onMoveToBench: _handleMoveToBench,
-            requiredPositions: currentRequiredPositions,
-            frozenPlayerIds: _frozenPlayerIds,
-          ),
+          child:
+              _isLoading
+                  ? const Center(child: CircularProgressIndicator())
+                  : _isListView
+                  ? _buildTeamListView()
+                  : MatchFormationDisplay(
+                    homeFormation: _selectedFormationName,
+                    homePlayers: _fieldPlayers,
+                    homeColor: primaryColor,
+                    onPlayerTap: _handlePlayerTap,
+                    substitutes: _substitutePlayers,
+                    onPlayerDrop: _handlePlayerDrop,
+                    onMoveToBench: _handleMoveToBench,
+                    requiredPositions: currentRequiredPositions,
+                    frozenPlayerIds: _frozenPlayerIds,
+                    currentRound: _currentRound,
+                    displayMode:
+                        _matchdayPhase == MatchdayPhase.before
+                            ? _selectedDisplayMode
+                            : AvatarDisplayMode
+                                .matchday, // <--- NEU            currentRound: _currentRound,
+                  ),
         ),
       ],
     );
   }
 }
+
+enum MatchdayPhase { before, inProgress, after }
