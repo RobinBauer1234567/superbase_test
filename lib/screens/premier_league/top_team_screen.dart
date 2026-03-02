@@ -7,6 +7,7 @@ import 'package:premier_league/viewmodels/data_viewmodel.dart';
 import 'package:premier_league/screens/player_screen.dart';
 import 'package:premier_league/screens/screenelements/player_list_item.dart';
 import 'package:premier_league/screens/screenelements/match_screen/formations.dart';
+import 'package:premier_league/utils/color_helper.dart';
 
 class TopTeamScreen extends StatefulWidget {
   const TopTeamScreen({super.key});
@@ -35,6 +36,22 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
   List<int> _spieltage = [];
   int? _selectedTeamId;
   String? _selectedPosition;
+
+  int _headerRatingValue() {
+    if (_showFormation) {
+      return (_bestFormation?['score'] as num?)?.toInt() ?? 0;
+    }
+    if (_topPlayers.isNotEmpty) {
+      return (_topPlayers.first['total_punkte'] as num?)?.toInt() ?? 0;
+    }
+    return 0;
+  }
+
+  int _headerRatingMax() {
+    return _showGesamt
+        ? (_spieltage.length * 250 * 0.8).toInt().clamp(1, 99999999)
+        : 2500;
+  }
 
   @override
   void didChangeDependencies() {
@@ -438,6 +455,9 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
   // --- DIE NEUE, KOMPAKTE KOPFLEISTE ---
   Widget _buildMatchdaySelector() {
     final primaryColor = Theme.of(context).primaryColor;
+    final int headerScore = _headerRatingValue();
+    final int headerMax = _headerRatingMax();
+    final Color headerScoreColor = getColorForRating(headerScore, headerMax);
 
     // Prüfen ob wir gerade den aktuellsten Spieltag anzeigen
     final bool isCurrentRound =
@@ -595,6 +615,37 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
+                  Container(
+                    margin: const EdgeInsets.only(right: 8),
+                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+                    decoration: BoxDecoration(
+                      color: headerScoreColor.withOpacity(0.1),
+                      border: Border.all(color: headerScoreColor.withOpacity(0.3)),
+                      borderRadius: BorderRadius.circular(12),
+                    ),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        Text(
+                          'PUNKTE',
+                          style: TextStyle(
+                            fontSize: 8,
+                            fontWeight: FontWeight.bold,
+                            color: headerScoreColor,
+                          ),
+                        ),
+                        Text(
+                          '$headerScore',
+                          style: TextStyle(
+                            fontWeight: FontWeight.bold,
+                            fontSize: 14,
+                            color: headerScoreColor,
+                          ),
+                        ),
+                      ],
+                    ),
+                  ),
+
                   _buildTeamPopup(),
                   _buildPositionPopup(),
 
