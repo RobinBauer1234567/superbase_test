@@ -4,6 +4,7 @@ import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:premier_league/viewmodels/data_viewmodel.dart';
 import 'package:premier_league/screens/screenelements/match_screen/formations.dart';
+import 'package:premier_league/screens/screenelements/matchday_team_shared.dart';
 import 'package:premier_league/screens/player_screen.dart';
 import 'package:premier_league/utils/color_helper.dart'; // Für die Rating-Farben
 import 'package:premier_league/screens/screenelements/player_list_item.dart';
@@ -55,13 +56,6 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
     return MatchdayPhase.inProgress;
   }
 
-  int _toInt(dynamic value, {int fallback = 0}) {
-    if (value is int) return value;
-    if (value is num) return value.toInt();
-    if (value is String) return int.tryParse(value) ?? fallback;
-    return fallback;
-  }
-
   @override
   void initState() {
     super.initState();
@@ -87,7 +81,7 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
     for (final dynamic item in allSpieltage) {
       if (item is! Map) continue;
       final row = Map<String, dynamic>.from(item as Map);
-      final round = _toInt(row['round'], fallback: -1);
+      final round = toInt(row['round'], fallback: -1);
       if (round > 0) {
         _matchdayMetaByRound[round] = row;
       }
@@ -144,7 +138,6 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
       }
 
       final pointsData = matchdayData['points_data'] ?? {};
-      final playersData = matchdayData['players'] as List<dynamic>? ?? [];
 
       final roundMeta = _matchdayMetaByRound[round] ?? <String, dynamic>{};
       final DateTime? matchdayStart =
@@ -159,81 +152,16 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
       String? savedFormationName = pointsData['formation'];
       bool isLocked = pointsData['is_locked'] ?? false;
       int totalPts = pointsData['total_points'] ?? 0;
+      final parsedData = parseMatchdayTeamData(matchdayData, formations);
+      final field = parsedData.fieldPlayers;
+      final bench = parsedData.substitutePlayers;
+      final frozenIds = List<int>.from(parsedData.frozenPlayerIds);
 
-      List<PlayerInfo> field = List.generate(
-        11,
-        (index) => _createPlaceholder(index),
-      );
-      List<PlayerInfo> bench = [];
-      List<int> frozenIds = [];
-
-      for (var pd in playersData) {
-        final spieler = pd['spieler'];
-        if (spieler == null) continue;
-
-        final int pId = _toInt(spieler['id'], fallback: -9999);
-        final int fIndex = _toInt(pd['formation_index'], fallback: 99);
-        final int rating = _toInt(pd['points'], fallback: 0);
-
-        // Spieler ist gelockt, wenn er selbst in der DB gelockt ist,
-        // der Spieltag gesperrt ist oder wir die Historie anschauen.
-        final bool playerLocked = pd['is_locked'] ?? false;
-        if (playerLocked || _isViewingHistory) {
-          frozenIds.add(pId);
-        }
-        final team = spieler['team'];
-        final analytics = spieler['spieler_analytics'];
-
-        int mw = 0;
-        int totalSeasonPoints = 0;
-        int matchesPlayed = 0; // <--- NEU: Variable für die Einsätze
-
-        if (analytics is Map) {
-          mw = _toInt(analytics['marktwert']);
-          final stats = analytics['gesamtstatistiken'];
-          matchesPlayed = _toInt(analytics['anzahl_spiele']);
-
-          if (stats is Map) {
-            totalSeasonPoints = _toInt(stats['gesamtpunkte']);
-          }
-        } else if (analytics is List && analytics.isNotEmpty) {
-          mw = _toInt(analytics[0]['marktwert']);
-          matchesPlayed = _toInt(analytics[0]['anzahl_spiele']);
-
-          final stats = analytics[0]['gesamtstatistiken'];
-          if (stats is Map) {
-            totalSeasonPoints = _toInt(stats['gesamtpunkte']);
-          }
-        }
-        final playerInfo = PlayerInfo(
-          id: pId,
-          name: (spieler['name'] ?? 'Unbekannt').toString(),
-          position: spieler['position'] ?? 'N/A',
-          profileImageUrl: spieler['profilbild_url'],
-          rating: rating,
-          totalSeasonPoints: totalSeasonPoints,
-          matchCount:
-              matchesPlayed, // <--- NEU: Wir übergeben die Anzahl der Matchratings!
-          goals: 0,
-          assists: 0,
-          ownGoals: 0,
-          teamImageUrl: team != null ? team['image_url'] : null,
-          marketValue: mw,
-          teamName: team != null ? team['name'] : null,
-        );
-
-        if (fIndex >= 0 && fIndex <= 10) {
-          field[fIndex] = playerInfo;
-        } else {
-          bench.add(playerInfo);
-        }
+      if (_isViewingHistory) {
+        frozenIds
+          ..addAll(field.where((p) => p.id > 0).map((p) => p.id))
+          ..addAll(bench.where((p) => p.id > 0).map((p) => p.id));
       }
-
-      bench.sort(
-        (a, b) => _getPositionOrder(
-          a.position,
-        ).compareTo(_getPositionOrder(b.position)),
-      );
 
       if (mounted) {
         int teamTotalPoints = _overallTeamPoints;
@@ -248,7 +176,7 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
                   orElse: () => null,
                 );
             if (currentUserRow != null) {
-              teamTotalPoints = _toInt(currentUserRow['total_points']);
+              teamTotalPoints = toInt(currentUserRow['total_points']);
             }
           }
         } catch (_) {
@@ -270,7 +198,7 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
 
           // In der Historie ist IMMER alles komplett gesperrt
           _isFormationLocked = isLocked || _isViewingHistory;
-          _frozenPlayerIds = frozenIds;
+          _frozenPlayerIds = frozenIds.toSet().toList();
           _matchdayPoints = totalPts;
           _overallTeamPoints = teamTotalPoints;
           _matchdayStart = matchdayStart;
@@ -375,28 +303,6 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
         );
       }
     }
-  }
-
-  PlayerInfo _createPlaceholder(int index) {
-    if (index == 0)
-      return const PlayerInfo(
-        id: -1,
-        name: "TW",
-        position: "TW",
-        rating: 0,
-        goals: 0,
-        assists: 0,
-        ownGoals: 0,
-      );
-    return PlayerInfo(
-      id: -1 - index,
-      name: "POS",
-      position: "Feld",
-      rating: 0,
-      goals: 0,
-      assists: 0,
-      ownGoals: 0,
-    );
   }
 
   void _handlePlayerTap(int playerId, double radius) {
@@ -714,27 +620,13 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
         if (placeholder.id > 0) {
           _substitutePlayers.add(placeholder);
           _substitutePlayers.sort(
-            (a, b) => _getPositionOrder(
-              a.position,
-            ).compareTo(_getPositionOrder(b.position)),
+            (a, b) =>
+                getPositionOrder(a.position).compareTo(getPositionOrder(b.position)),
           );
         }
       }
     });
     _saveLineupToDb();
-  }
-
-  int _getPositionOrder(String? position) {
-    if (position == null) return 99;
-    final pos = position.toUpperCase();
-    if (pos.contains('GK') || pos.contains('TW')) return 0;
-    if (pos.contains('IV') || pos.contains('RV') || pos.contains('LV'))
-      return 2;
-    if (pos.contains('ZDM') || pos.contains('ZM') || pos.contains('ZOM'))
-      return 3;
-    if (pos.contains('ST') || pos.contains('RF') || pos.contains('LF'))
-      return 4;
-    return 5;
   }
 
   void _generateFieldPlaceholders() {
@@ -868,9 +760,7 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
 
   void _sortBench() {
     _substitutePlayers.sort(
-      (a, b) => _getPositionOrder(
-        a.position,
-      ).compareTo(_getPositionOrder(b.position)),
+      (a, b) => getPositionOrder(a.position).compareTo(getPositionOrder(b.position)),
     );
   }
 
@@ -1122,9 +1012,9 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
                             if (player.id > 0) _substitutePlayers.add(player);
                           }
                           _substitutePlayers.sort(
-                            (a, b) => _getPositionOrder(
+                            (a, b) => getPositionOrder(
                               a.position,
-                            ).compareTo(_getPositionOrder(b.position)),
+                            ).compareTo(getPositionOrder(b.position)),
                           );
                           _generateFieldPlaceholders();
                         });
