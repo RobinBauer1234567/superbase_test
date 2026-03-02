@@ -83,8 +83,9 @@ class _MatchdayTeamOverlayState extends State<MatchdayTeamOverlay> {
     bool hasTeam = _currentMatchdayData != null && _currentMatchdayData!['players'] != null && (_currentMatchdayData!['players'] as List).isNotEmpty;
 
     final int totalPoints = _currentMatchdayData?['points_data']?['total_points'] ?? 0;
-    // NEU: Farbe basierend auf den Punkten berechnen
-    final pointsColor = getColorForRating(totalPoints, 2500);
+    final bool isLocked = _currentMatchdayData?['points_data']?['is_locked'] == true;
+    final pointsColor = isLocked ? getColorForRating(totalPoints, 2500) : Colors.grey;
+    final pointsText = isLocked ? '$totalPoints' : '-';
 
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(24)),
@@ -124,7 +125,7 @@ class _MatchdayTeamOverlayState extends State<MatchdayTeamOverlay> {
                       mainAxisSize: MainAxisSize.min,
                       children: [
                         Text("PUNKTE", style: TextStyle(fontSize: 8, fontWeight: FontWeight.bold, color: pointsColor)),
-                        Text('$totalPoints', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: pointsColor)),
+                        Text(pointsText, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: pointsColor)),
                       ],
                     ),
                   ),

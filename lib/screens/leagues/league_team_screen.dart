@@ -1146,6 +1146,7 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
           goals: player.goals,
           assists: player.assists,
           ownGoals: player.ownGoals,
+          isPlayed: _matchdayPhase != MatchdayPhase.before && _frozenPlayerIds.contains(player.id),
           teamColor: primaryColor,
           onTap:
               () => Navigator.push(

@@ -532,7 +532,9 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                         final round = matchday['round'];
                         final rank = matchday['rank'] ?? 0;
                         final statusText = matchday['spieltag']?['status'] ?? '';
-                        final ptsColor = getColorForRating(points, 2500);
+                        final bool isPlayed = statusText.toString().toLowerCase() != 'nicht gestartet';
+                        final ptsColor = isPlayed ? getColorForRating(points, 2500) : Colors.grey;
+                        final ptsText = isPlayed ? '$points' : '-';
                         final rankColor = rank == 1 ? Colors.amber : (rank == 2 ? Colors.blueGrey : (rank == 3 ? Colors.brown : Colors.grey));
 
                         return Padding(
@@ -566,7 +568,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                                     child: Column(
                                       children: [
                                         Text("PUNKTE", style: TextStyle(fontSize: 8, fontWeight: FontWeight.bold, color: ptsColor)),
-                                        Text('$points', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: ptsColor)),
+                                        Text(ptsText, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: ptsColor)),
                                       ],
                                     ),
                                   ),
@@ -594,6 +596,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
 
         // NEU: Punktzahl auslesen
         final int totalPoints = _currentMatchdayData?['points_data']?['total_points'] ?? 0;
+        final bool isLocked = _currentMatchdayData?['points_data']?['is_locked'] == true;
 
         final bool showLeagueRow = _tabController.index != 0 && _userLeagues.isNotEmpty;
         final double bottomHeight = showLeagueRow ? 104.0 : 48.0;
@@ -602,7 +605,8 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
 
         final double screenHeight = MediaQuery.of(context).size.height;
         final double availablePitchHeight = screenHeight - collapsedAppBarHeight - 64.0 - 24.0;
-        final pointsColor = getColorForRating(totalPoints, 2500); // NEU: Farbe berechnen
+        final pointsColor = isLocked ? getColorForRating(totalPoints, 2500) : Colors.grey;
+        final pointsText = isLocked ? '$totalPoints' : '-';
 
         return CustomScrollView(
           key: const PageStorageKey<String>('teamTab'),
@@ -637,7 +641,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Text("PUNKTE", style: TextStyle(fontSize: 8, fontWeight: FontWeight.bold, color: pointsColor)),
-                                Text('$totalPoints', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: pointsColor)),
+                                Text(pointsText, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: pointsColor)),
                               ],
                             ),
                           ),
