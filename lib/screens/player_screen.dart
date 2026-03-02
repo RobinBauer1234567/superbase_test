@@ -662,27 +662,25 @@ class MatchRatingRow extends StatelessWidget {
                         ],
                       ),
                       const SizedBox(height: 4),
-                      // *** START ÄNDERUNG: Punkte-Box ausblenden ***
-                      Opacity(
-                        opacity: isNotStarted ? 0.0 : 1.0, // Verstecken, wenn nicht gestartet
-                        child: Container(
-                          width: 40,
-                          padding: const EdgeInsets.symmetric(vertical: 4),
-                          decoration: BoxDecoration(
-                            color: getColorForRating(punkte, 250),
-                            borderRadius: BorderRadius.circular(4),
+                      Container(
+                        width: 40,
+                        padding: const EdgeInsets.symmetric(vertical: 4),
+                        decoration: BoxDecoration(
+                          color: (isNotStarted ? Colors.grey : getColorForRating(punkte, 250)).withOpacity(0.1),
+                          border: Border.all(
+                            color: (isNotStarted ? Colors.grey : getColorForRating(punkte, 250)).withOpacity(0.3),
                           ),
-                          child: Text(
-                            punkte.toString(),
-                            textAlign: TextAlign.center,
-                            style: const TextStyle(
-                              color: Colors.white,
-                              fontWeight: FontWeight.bold,
-                            ),
+                          borderRadius: BorderRadius.circular(4),
+                        ),
+                        child: Text(
+                          isNotStarted ? '-' : punkte.toString(),
+                          textAlign: TextAlign.center,
+                          style: TextStyle(
+                            color: isNotStarted ? Colors.grey : getColorForRating(punkte, 250),
+                            fontWeight: FontWeight.bold,
                           ),
                         ),
                       ),
-                      // *** ENDE ÄNDERUNGEN ***
                     ],
                   ),
                 ),
