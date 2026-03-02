@@ -560,30 +560,16 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                                       ],
                                     ),
                                   ),
-                                  GestureDetector(
-                                    onTap: () {
-                                      if (_selectedLeagueId == null) return;
-                                      showDialog(
-                                        context: context,
-                                        builder: (context) => MatchdayTeamOverlay(
-                                          leagueId: _selectedLeagueId!,
-                                          userId: _effectiveUserId,
-                                          userName: _username,
-                                          round: round,
-                                        ),
-                                      );
-                                    },
-                                    child: Container(
-                                      padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                      decoration: BoxDecoration(
-                                        color: ptsColor.withOpacity(0.1), border: Border.all(color: ptsColor.withOpacity(0.3)), borderRadius: BorderRadius.circular(12),
-                                      ),
-                                      child: Column(
-                                        children: [
-                                          Text("PUNKTE", style: TextStyle(fontSize: 8, fontWeight: FontWeight.bold, color: ptsColor)),
-                                          Text(ptsText, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: ptsColor)),
-                                        ],
-                                      ),
+                                  Container(
+                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                    decoration: BoxDecoration(
+                                      color: ptsColor.withOpacity(0.1), border: Border.all(color: ptsColor.withOpacity(0.3)), borderRadius: BorderRadius.circular(12),
+                                    ),
+                                    child: Column(
+                                      children: [
+                                        Text("PUNKTE", style: TextStyle(fontSize: 8, fontWeight: FontWeight.bold, color: ptsColor)),
+                                        Text(ptsText, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: ptsColor)),
+                                      ],
                                     ),
                                   ),
                                 ],
