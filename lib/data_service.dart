@@ -1811,14 +1811,13 @@ class SupabaseService {
     }
   }
 
-  Future<Map<String, dynamic>> fetchMatchdayData(int leagueId, int seasonId, int round) async {
-    final userId = supabase.auth.currentUser!.id;
-
+  Future<Map<String, dynamic>> fetchMatchdayData(int leagueId, int seasonId, int round, {String? userId}) async {
+    final targetUserId = userId ?? supabase.auth.currentUser!.id;
     try {
       // 1. Snapshot initialisieren (macht nichts, falls er schon existiert)
       await supabase.rpc('initialize_matchday_snapshot', params: {
         'p_league_id': leagueId,
-        'p_user_id': userId,
+        'p_user_id': targetUserId,
         'p_season_id': seasonId,
         'p_round': round,
       });
@@ -1828,7 +1827,7 @@ class SupabaseService {
           .from('user_matchday_points')
           .select()
           .eq('league_id', leagueId)
-          .eq('user_id', userId)
+          .eq('user_id', targetUserId)
           .eq('round', round)
           .maybeSingle();
 
