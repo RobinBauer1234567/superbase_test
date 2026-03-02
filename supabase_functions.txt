@@ -131,17 +131,17 @@
     "schema_name": "public",
     "function_name": "get_ranking_matchday",
     "args": "p_league_id bigint, p_round integer",
-    "returns": "TABLE(user_id uuid, manager_team_name text, total_points integer)",
+    "returns": "TABLE(user_id uuid, manager_team_name text, username text, avatar_url text, total_points integer)",
     "security_definer": true,
-    "definition": "CREATE OR REPLACE FUNCTION public.get_ranking_matchday(p_league_id bigint, p_round integer)\n RETURNS TABLE(user_id uuid, manager_team_name text, total_points integer)\n LANGUAGE plpgsql\n SECURITY DEFINER\nAS $function$\r\nBEGIN\r\n    RETURN QUERY\r\n    SELECT \r\n        lm.user_id,\r\n        lm.manager_team_name,\r\n        COALESCE(ump.total_points, 0) AS total_points\r\n    FROM public.league_members lm\r\n    LEFT JOIN public.user_matchday_points ump \r\n        ON lm.user_id = ump.user_id \r\n        AND lm.league_id = ump.league_id \r\n        AND ump.round = p_round\r\n    WHERE lm.league_id = p_league_id\r\n    ORDER BY total_points DESC;\r\nEND;\r\n$function$\n"
+    "definition": "CREATE OR REPLACE FUNCTION public.get_ranking_matchday(p_league_id bigint, p_round integer)\n RETURNS TABLE(user_id uuid, manager_team_name text, username text, avatar_url text, total_points integer)\n LANGUAGE plpgsql\n SECURITY DEFINER\nAS $function$\r\nBEGIN\r\n    RETURN QUERY\r\n    SELECT \r\n        lm.user_id,\r\n        lm.manager_team_name,\r\n        p.username,      -- NEU hinzugefügt\r\n        p.avatar_url,    -- NEU hinzugefügt\r\n        COALESCE(ump.total_points, 0) AS total_points\r\n    FROM public.league_members lm\r\n    LEFT JOIN public.profiles p ON lm.user_id = p.user_id -- NEU: JOIN mit profiles\r\n    LEFT JOIN public.user_matchday_points ump \r\n        ON lm.user_id = ump.user_id \r\n        AND lm.league_id = ump.league_id \r\n        AND ump.round = p_round\r\n    WHERE lm.league_id = p_league_id\r\n    ORDER BY total_points DESC;\r\nEND;\r\n$function$\n"
   },
   {
     "schema_name": "public",
     "function_name": "get_ranking_overall",
     "args": "p_league_id bigint",
-    "returns": "TABLE(user_id uuid, manager_team_name text, total_points bigint)",
+    "returns": "TABLE(user_id uuid, manager_team_name text, username text, avatar_url text, total_points bigint)",
     "security_definer": true,
-    "definition": "CREATE OR REPLACE FUNCTION public.get_ranking_overall(p_league_id bigint)\n RETURNS TABLE(user_id uuid, manager_team_name text, total_points bigint)\n LANGUAGE plpgsql\n SECURITY DEFINER\nAS $function$\r\nBEGIN\r\n    RETURN QUERY\r\n    SELECT \r\n        lm.user_id,\r\n        lm.manager_team_name,\r\n        COALESCE(SUM(ump.total_points), 0)::bigint AS total_points\r\n    FROM public.league_members lm\r\n    LEFT JOIN public.user_matchday_points ump \r\n        ON lm.user_id = ump.user_id AND lm.league_id = ump.league_id\r\n    WHERE lm.league_id = p_league_id\r\n    GROUP BY lm.user_id, lm.manager_team_name\r\n    ORDER BY total_points DESC;\r\nEND;\r\n$function$\n"
+    "definition": "CREATE OR REPLACE FUNCTION public.get_ranking_overall(p_league_id bigint)\n RETURNS TABLE(user_id uuid, manager_team_name text, username text, avatar_url text, total_points bigint)\n LANGUAGE plpgsql\n SECURITY DEFINER\nAS $function$\r\nBEGIN\r\n    RETURN QUERY\r\n    SELECT \r\n        lm.user_id,\r\n        lm.manager_team_name,\r\n        p.username,      -- NEU hinzugefügt\r\n        p.avatar_url,    -- NEU hinzugefügt\r\n        COALESCE(SUM(ump.total_points), 0)::bigint AS total_points\r\n    FROM public.league_members lm\r\n    LEFT JOIN public.profiles p ON lm.user_id = p.user_id -- NEU: JOIN mit profiles\r\n    LEFT JOIN public.user_matchday_points ump \r\n        ON lm.user_id = ump.user_id AND lm.league_id = ump.league_id\r\n    WHERE lm.league_id = p_league_id\r\n    GROUP BY lm.user_id, lm.manager_team_name, p.username, p.avatar_url\r\n    ORDER BY total_points DESC;\r\nEND;\r\n$function$\n"
   },
   {
     "schema_name": "public",
@@ -158,6 +158,14 @@
     "returns": "trigger",
     "security_definer": true,
     "definition": "CREATE OR REPLACE FUNCTION public.handle_new_listing()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\nAS $function$\r\nDECLARE\r\n    v_player_name text;\r\n    v_seller_name text;\r\nBEGIN\r\n    -- Spielername holen\r\n    SELECT name INTO v_player_name FROM spieler WHERE id = NEW.player_id;\r\n    -- Verkäufername holen\r\n    SELECT username INTO v_seller_name FROM profiles WHERE user_id = NEW.seller_id;\r\n\r\n    INSERT INTO league_activities (league_id, type, content)\r\n    VALUES (\r\n        NEW.league_id, \r\n        'LISTING', \r\n        jsonb_build_object(\r\n            'player_name', v_player_name, \r\n            'seller_name', v_seller_name,\r\n            'price', COALESCE(NEW.buy_now_price, NEW.min_bid_price)\r\n        )\r\n    );\r\n    RETURN NEW;\r\nEND;\r\n$function$\n"
+  },
+  {
+    "schema_name": "public",
+    "function_name": "handle_new_user",
+    "args": "",
+    "returns": "trigger",
+    "security_definer": true,
+    "definition": "CREATE OR REPLACE FUNCTION public.handle_new_user()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\nAS $function$\r\nBEGIN\r\n  INSERT INTO public.profiles (user_id, username, avatar_url)\r\n  VALUES (\r\n    NEW.id, \r\n    -- Versuche den Username aus den User_Metadata zu holen, sonst Fallback auf E-Mail\r\n    COALESCE(NEW.raw_user_meta_data->>'username', split_part(NEW.email, '@', 1)),\r\n    NEW.raw_user_meta_data->>'avatar_url'\r\n  );\r\n  RETURN NEW;\r\nEND;\r\n$function$\n"
   },
   {
     "schema_name": "public",
@@ -233,6 +241,14 @@
   },
   {
     "schema_name": "public",
+    "function_name": "log_marktwert_history",
+    "args": "",
+    "returns": "trigger",
+    "security_definer": true,
+    "definition": "CREATE OR REPLACE FUNCTION public.log_marktwert_history()\n RETURNS trigger\n LANGUAGE plpgsql\n SECURITY DEFINER\nAS $function$\r\nBEGIN\r\n    -- Wir speichern nur, wenn sich der Marktwert TATSÄCHLICH verändert hat,\r\n    -- oder wenn der Datensatz ganz neu angelegt wird (INSERT).\r\n    IF (TG_OP = 'INSERT') OR (TG_OP = 'UPDATE' AND NEW.marktwert IS DISTINCT FROM OLD.marktwert) THEN\r\n        \r\n        INSERT INTO public.marktwert_historie (spieler_id, season_id, marktwert, datum)\r\n        VALUES (NEW.spieler_id, NEW.season_id, NEW.marktwert, CURRENT_DATE)\r\n        -- Falls am selben Tag schon ein Update lief (z.B. durch manuellen Test), überschreiben wir es einfach\r\n        ON CONFLICT (spieler_id, season_id, datum) \r\n        DO UPDATE SET marktwert = EXCLUDED.marktwert;\r\n        \r\n    END IF;\r\n    \r\n    RETURN NEW;\r\nEND;\r\n$function$\n"
+  },
+  {
+    "schema_name": "public",
     "function_name": "mark_schedule_updated",
     "args": "p_season_id bigint",
     "returns": "void",
@@ -293,7 +309,7 @@
     "args": "p_league_id bigint, p_season_id bigint, p_round integer, p_formation text, p_updates jsonb",
     "returns": "void",
     "security_definer": true,
-    "definition": "CREATE OR REPLACE FUNCTION public.save_lineup(p_league_id bigint, p_season_id bigint, p_round integer, p_formation text, p_updates jsonb)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\nAS $function$\r\nDECLARE\r\n  v_user_id uuid := auth.uid();\r\n  v_point_id bigint;\r\n  v_item JSONB;\r\nBEGIN\r\n  -- Snapshot für diesen ausgewählten Spieltag holen oder erstellen\r\n  SELECT id INTO v_point_id FROM public.user_matchday_points \r\n  WHERE user_id = v_user_id AND league_id = p_league_id AND season_id = p_season_id AND round = p_round;\r\n\r\n  IF v_point_id IS NULL THEN\r\n      INSERT INTO public.user_matchday_points (user_id, league_id, season_id, round, formation)\r\n      VALUES (v_user_id, p_league_id, p_season_id, p_round, p_formation)\r\n      RETURNING id INTO v_point_id;\r\n  ELSE\r\n      -- Wenn er schon da ist, updaten wir die gewählte Formation\r\n      UPDATE public.user_matchday_points SET formation = p_formation WHERE id = v_point_id;\r\n  END IF;\r\n\r\n  -- Bisherige Aufstellung aus diesem Snapshot radikal löschen\r\n  DELETE FROM public.user_matchday_players WHERE matchday_point_id = v_point_id;\r\n\r\n  -- Neue Aufstellung in den Snapshot schreiben\r\n  FOR v_item IN SELECT * FROM jsonb_array_elements(p_updates) \r\n  LOOP\r\n    INSERT INTO public.user_matchday_players (matchday_point_id, player_id, formation_index)\r\n    VALUES (v_point_id, (v_item->>'player_id')::int, (v_item->>'index')::int);\r\n  END LOOP;\r\nEND;\r\n$function$\n"
+    "definition": "CREATE OR REPLACE FUNCTION public.save_lineup(p_league_id bigint, p_season_id bigint, p_round integer, p_formation text, p_updates jsonb)\n RETURNS void\n LANGUAGE plpgsql\n SECURITY DEFINER\nAS $function$\r\nDECLARE\r\n  v_user_id uuid := auth.uid();\r\n  v_point_id bigint;\r\n  v_item JSONB;\r\nBEGIN\r\n  -- 1. Snapshot für diesen ausgewählten Spieltag holen oder erstellen\r\n  SELECT id INTO v_point_id FROM public.user_matchday_points \r\n  WHERE user_id = v_user_id AND league_id = p_league_id AND season_id = p_season_id AND round = p_round;\r\n\r\n  IF v_point_id IS NULL THEN\r\n      INSERT INTO public.user_matchday_points (user_id, league_id, season_id, round, formation)\r\n      VALUES (v_user_id, p_league_id, p_season_id, p_round, p_formation)\r\n      RETURNING id INTO v_point_id;\r\n  ELSE\r\n      -- Wenn er schon da ist, updaten wir die gewählte Formation\r\n      UPDATE public.user_matchday_points SET formation = p_formation WHERE id = v_point_id;\r\n  END IF;\r\n\r\n  -- ACHTUNG: Hier wurde vorher alles per DELETE gelöscht! Das machen wir nicht mehr.\r\n\r\n  -- 2. Nur die Indizes der ungelockten Spieler aktualisieren\r\n  FOR v_item IN SELECT * FROM jsonb_array_elements(p_updates) \r\n  LOOP\r\n    -- Prüfen, ob der Spieler für diesen Spieltag bereits im Snapshot existiert\r\n    IF EXISTS (SELECT 1 FROM public.user_matchday_players WHERE matchday_point_id = v_point_id AND player_id = (v_item->>'player_id')::int) THEN\r\n        \r\n        -- UPDATE: Ändert den Index nur, wenn der Spieler NICHT gelockt ist!\r\n        UPDATE public.user_matchday_players\r\n        SET formation_index = (v_item->>'index')::int\r\n        WHERE matchday_point_id = v_point_id \r\n          AND player_id = (v_item->>'player_id')::int\r\n          AND is_locked = false;\r\n          \r\n    ELSE\r\n        -- INSERT: Falls der Spieler noch gar nicht im Snapshot war (z.B. weil er gerade erst gekauft wurde)\r\n        INSERT INTO public.user_matchday_players (matchday_point_id, player_id, formation_index, is_locked)\r\n        VALUES (v_point_id, (v_item->>'player_id')::int, (v_item->>'index')::int, false);\r\n    END IF;\r\n    \r\n  END LOOP;\r\n  \r\n  -- 3. (Optional aber empfohlen) Punkte der Startelf neu kalkulieren\r\n  -- Falls durch den Wechsel ungelockter Spieler jemand anderes in die Startelf rückt,\r\n  -- sollten die Gesamtpunkte im Header aktualisiert werden.\r\n  UPDATE public.user_matchday_points\r\n  SET total_points = (\r\n      SELECT COALESCE(SUM(points), 0)\r\n      FROM public.user_matchday_players\r\n      WHERE matchday_point_id = v_point_id\r\n        AND formation_index <= 10\r\n  )\r\n  WHERE id = v_point_id;\r\n\r\nEND;\r\n$function$\n"
   },
   {
     "schema_name": "public",

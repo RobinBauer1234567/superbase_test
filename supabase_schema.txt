@@ -83,6 +83,16 @@ CREATE TABLE public.leagues (
   CONSTRAINT leagues_pkey PRIMARY KEY (id),
   CONSTRAINT leagues_admin_id_fkey FOREIGN KEY (admin_id) REFERENCES public.profiles(user_id)
 );
+CREATE TABLE public.marktwert_historie (
+  id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
+  spieler_id integer NOT NULL,
+  season_id bigint NOT NULL,
+  marktwert integer NOT NULL,
+  datum date NOT NULL DEFAULT CURRENT_DATE,
+  CONSTRAINT marktwert_historie_pkey PRIMARY KEY (id),
+  CONSTRAINT marktwert_historie_spieler_id_fkey FOREIGN KEY (spieler_id) REFERENCES public.spieler(id),
+  CONSTRAINT marktwert_historie_season_id_fkey FOREIGN KEY (season_id) REFERENCES public.season(id)
+);
 CREATE TABLE public.matchrating (
   id bigint NOT NULL,
   spieler_id integer,

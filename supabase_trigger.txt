@@ -97,6 +97,14 @@
   },
   {
     "schema_name": "public",
+    "table_name": "spieler_analytics",
+    "trigger_name": "trigger_log_marktwert",
+    "trigger_status": "enabled",
+    "trigger_function_name": "log_marktwert_history",
+    "trigger_def": "CREATE TRIGGER trigger_log_marktwert AFTER INSERT OR UPDATE OF marktwert ON spieler_analytics FOR EACH ROW EXECUTE FUNCTION log_marktwert_history()"
+  },
+  {
+    "schema_name": "public",
     "table_name": "transfer_market",
     "trigger_name": "on_transfer_listing",
     "trigger_status": "enabled",
