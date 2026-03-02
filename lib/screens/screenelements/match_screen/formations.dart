@@ -231,19 +231,19 @@ class PlayerAvatar extends StatelessWidget {
                     child: Container(
                       padding: EdgeInsets.symmetric(horizontal: radius * 0.4, vertical: 2),
                       decoration: BoxDecoration(
-                        color: pillColor, // <--- HIER: pillColor statt getColorForRating
+                        color: pillColor.withOpacity(0.1),
                         borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: Colors.white, width: 1.5),
+                        border: Border.all(color: pillColor.withOpacity(0.3), width: 1.5),
                         boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 2, offset: Offset(0, 1))],
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          if (modeIcon != null) ...[Icon(modeIcon, color: Colors.white, size: ratingFontSize * 1.1), SizedBox(width: ratingFontSize * 0.3)],
-                          if (modePrefix != null) ...[Text(modePrefix, style: TextStyle(color: Colors.white, fontSize: ratingFontSize, fontWeight: FontWeight.bold)), SizedBox(width: ratingFontSize * 0.3)],
+                          if (modeIcon != null) ...[Icon(modeIcon, color: pillColor, size: ratingFontSize * 1.1), SizedBox(width: ratingFontSize * 0.3)],
+                          if (modePrefix != null) ...[Text(modePrefix, style: TextStyle(color: pillColor, fontSize: ratingFontSize, fontWeight: FontWeight.bold)), SizedBox(width: ratingFontSize * 0.3)],
                           Text(
                               finalDisplayValue, // <--- HIER: finalDisplayValue statt displayValue
-                              style: TextStyle(color: Colors.white, fontSize: finalDisplayValue.length > 3 ? ratingFontSize * 0.8 : ratingFontSize, fontWeight: FontWeight.w800)
+                              style: TextStyle(color: pillColor, fontSize: finalDisplayValue.length > 3 ? ratingFontSize * 0.8 : ratingFontSize, fontWeight: FontWeight.w800)
                           ),
                         ],
                       ),
