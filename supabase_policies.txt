@@ -51,6 +51,16 @@
   },
   {
     "schemaname": "public",
+    "tablename": "profiles",
+    "policyname": "Users can update their own profile",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "UPDATE",
+    "qual": "(auth.uid() = user_id)",
+    "with_check": null
+  },
+  {
+    "schemaname": "public",
     "tablename": "season_players",
     "policyname": "season_players_insert_authenticated",
     "permissive": "PERMISSIVE",
