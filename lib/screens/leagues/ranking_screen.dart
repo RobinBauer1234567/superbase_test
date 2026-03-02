@@ -3,6 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:premier_league/viewmodels/data_viewmodel.dart';
 import 'package:premier_league/utils/color_helper.dart';
+import 'package:premier_league/screens/User/profile_screen.dart';
+import 'package:premier_league/screens/leagues/matchday_team_overlay.dart';
 
 // Enum für den Spieltags-Status
 enum MatchdayPhase { before, inProgress, after }
@@ -429,119 +431,158 @@ class _RankingScreenState extends State<RankingScreen> {
                             borderRadius: BorderRadius.circular(16),
                           ),
                           color: Colors.white,
-                          child: Padding(
-                            padding: const EdgeInsets.all(12.0),
-                            child: Row(
-                              children: [
-                                // 1. PLATZIERUNG IM FARBIGEN CONTAINER (Analog zum ActivityFeed Icon)
-                                Container(
-                                  width: 40,
-                                  height: 40,
-                                  decoration: BoxDecoration(
-                                    color: rankAccentColor.withOpacity(0.1),
-                                    shape: BoxShape.circle,
-                                  ),
-                                  child: Center(
-                                    child: Text(
-                                      '${index + 1}',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 16,
-                                        color: rankAccentColor,
+                          // NEU: InkWell umrandet das Padding, macht es klickbar und gibt einen Touch-Effekt
+                          child: InkWell(
+                            borderRadius: BorderRadius.circular(
+                              16,
+                            ), // Damit der Touch-Effekt nicht über die runden Ecken malt
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder:
+                                      (context) => ProfileScreen(
+                                        userId:
+                                            user['user_id'], // Die ID des Managers aus der Ranking-Liste
+                                        initialLeagueId:
+                                            widget
+                                                .leagueId, // Deine aktuelle Liga (damit der Tab direkt stimmt)
+                                      ),
+                                ),
+                              );
+                            },
+                            child: Padding(
+                              padding: const EdgeInsets.all(12.0),
+                              child: Row(
+                                children: [
+                                  // 1. PLATZIERUNG IM FARBIGEN CONTAINER
+                                  Container(
+                                    width: 40,
+                                    height: 40,
+                                    decoration: BoxDecoration(
+                                      color: rankAccentColor.withOpacity(0.1),
+                                      shape: BoxShape.circle,
+                                    ),
+                                    child: Center(
+                                      child: Text(
+                                        '${index + 1}',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 16,
+                                          color: rankAccentColor,
+                                        ),
                                       ),
                                     ),
                                   ),
-                                ),
-                                const SizedBox(width: 16),
+                                  const SizedBox(width: 16),
 
-                                // 2. PROFILBILD
-                                CircleAvatar(
-                                  radius: 20,
-                                  backgroundColor: Colors.grey.shade200,
-                                  backgroundImage:
-                                      avatarUrl.isNotEmpty
-                                          ? NetworkImage(avatarUrl)
-                                          : null,
-                                  child:
-                                      avatarUrl.isEmpty
-                                          ? Icon(
-                                            Icons.person,
-                                            color: Colors.grey.shade400,
-                                            size: 24,
-                                          )
-                                          : null,
-                                ),
-                                const SizedBox(width: 16),
+                                  // 2. PROFILBILD
+                                  CircleAvatar(
+                                    radius: 20,
+                                    backgroundColor: Colors.grey.shade200,
+                                    backgroundImage:
+                                        avatarUrl.isNotEmpty
+                                            ? NetworkImage(avatarUrl)
+                                            : null,
+                                    child:
+                                        avatarUrl.isEmpty
+                                            ? Icon(
+                                              Icons.person,
+                                              color: Colors.grey.shade400,
+                                              size: 24,
+                                            )
+                                            : null,
+                                  ),
+                                  const SizedBox(width: 16),
 
-                                // 3. NAME & STATUS
-                                Expanded(
-                                  child: Column(
-                                    crossAxisAlignment:
-                                        CrossAxisAlignment.start,
-                                    children: [
-                                      Text(
-                                        displayName,
-                                        style: TextStyle(
-                                          fontWeight:
-                                              isCurrentUser
-                                                  ? FontWeight.bold
-                                                  : FontWeight.w600,
-                                          fontSize: 15,
-                                          color:
-                                              isCurrentUser
-                                                  ? primaryColor
-                                                  : Colors.black87,
-                                        ),
-                                        maxLines: 1,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                      if (isCurrentUser)
+                                  // 3. NAME & STATUS
+                                  Expanded(
+                                    child: Column(
+                                      crossAxisAlignment:
+                                          CrossAxisAlignment.start,
+                                      children: [
                                         Text(
-                                          "Das bist du",
+                                          displayName,
                                           style: TextStyle(
-                                            fontSize: 11,
-                                            color: Colors.grey.shade500,
+                                            fontWeight:
+                                                isCurrentUser
+                                                    ? FontWeight.bold
+                                                    : FontWeight.w600,
+                                            fontSize: 15,
+                                            color:
+                                                isCurrentUser
+                                                    ? primaryColor
+                                                    : Colors.black87,
                                           ),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
                                         ),
-                                    ],
-                                  ),
-                                ),
-
-                                // 4. PUNKTE-PILLE (Design aus dem Transfermarkt übernommen)
-                                Container(
-                                  padding: const EdgeInsets.symmetric(
-                                    horizontal: 12,
-                                    vertical: 8,
-                                  ),
-                                  decoration: BoxDecoration(
-                                    color: pointsColor.withOpacity(0.1),
-                                    border: Border.all(
-                                      color: pointsColor.withOpacity(0.3),
+                                        if (isCurrentUser)
+                                          Text(
+                                            "Das bist du",
+                                            style: TextStyle(
+                                              fontSize: 11,
+                                              color: Colors.grey.shade500,
+                                            ),
+                                          ),
+                                      ],
                                     ),
-                                    borderRadius: BorderRadius.circular(12),
                                   ),
-                                  child: Column(
-                                    children: [
-                                      Text(
-                                        "PUNKTE",
-                                        style: TextStyle(
-                                          fontSize: 8,
-                                          fontWeight: FontWeight.bold,
-                                          color: pointsColor,
-                                        ),
+
+                                  // ... (Der obere Teil deines Rankings: Platzierung, Bild, Name bleibt unverändert) ...
+
+                                  // 4. PUNKTE-PILLE (Jetzt klickbar für das Overlay)
+                                  // 4. PUNKTE-PILLE (Jetzt klickbar für das mittige Overlay)
+                                  GestureDetector(
+                                    onTap: () {
+                                      // NEU: showDialog statt showModalBottomSheet
+                                      showDialog(
+                                        context: context,
+                                        builder:
+                                            (context) => MatchdayTeamOverlay(
+                                              leagueId: widget.leagueId,
+                                              userId: user['user_id'],
+                                              userName: displayName,
+                                              round: _selectedRound,
+                                            ),
+                                      );
+                                    },
+                                    child: Container(
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 12,
+                                        vertical: 8,
                                       ),
-                                      Text(
-                                        '$points',
-                                        style: TextStyle(
-                                          fontWeight: FontWeight.bold,
-                                          fontSize: 14,
-                                          color: pointsColor,
+                                      decoration: BoxDecoration(
+                                        color: pointsColor.withOpacity(0.1),
+                                        border: Border.all(
+                                          color: pointsColor.withOpacity(0.3),
                                         ),
+                                        borderRadius: BorderRadius.circular(12),
                                       ),
-                                    ],
+                                      child: Column(
+                                        children: [
+                                          Text(
+                                            "PUNKTE",
+                                            style: TextStyle(
+                                              fontSize: 8,
+                                              fontWeight: FontWeight.bold,
+                                              color: pointsColor,
+                                            ),
+                                          ),
+                                          Text(
+                                            '$points',
+                                            style: TextStyle(
+                                              fontWeight: FontWeight.bold,
+                                              fontSize: 14,
+                                              color: pointsColor,
+                                            ),
+                                          ),
+                                        ],
+                                      ),
+                                    ),
                                   ),
-                                ),
-                              ],
+                                ],
+                              ),
                             ),
                           ),
                         );

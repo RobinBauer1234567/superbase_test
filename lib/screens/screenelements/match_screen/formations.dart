@@ -118,6 +118,7 @@ class PlayerAvatar extends StatelessWidget {
     }
   }
 
+
   Widget _buildEventIcon(IconData icon, Color color, int count, double size) {
     if (count == 0) return const SizedBox.shrink();
     return Container(
@@ -157,10 +158,17 @@ class PlayerAvatar extends StatelessWidget {
       backgroundImage: (player.profileImageUrl != null && !isPlaceholder) ? NetworkImage(player.profileImageUrl!) : null,
       child: (player.profileImageUrl == null || isPlaceholder) ? Icon(isPlaceholder ? Icons.add_rounded : Icons.person, color: Colors.grey.shade400, size: imageRadius * 1.2) : null,
     );
-
     final String displayValue = _getDisplayValue();
     final int colorRatingValue = _getColorRatingValue();
     final int calculatedMaxScore = _getCalculatedMaxScore();
+
+    // --- NEU: Logik für noch nicht gespielte Spieler ---
+    // Gilt nur im Matchday-Modus für echte Spieler, die nicht gelockt sind.
+    final bool isUnplayed = displayMode == AvatarDisplayMode.matchday && !isLocked && !isPlaceholder;
+    final String finalDisplayValue = isUnplayed ? "-" : displayValue;
+    final Color pillColor = isUnplayed
+        ? Colors.grey.shade500
+        : getColorForRating(colorRatingValue, calculatedMaxScore);
 
     // --- NEU: Icon Bestimmung für die Pill ---
     IconData? modeIcon;
@@ -216,21 +224,27 @@ class PlayerAvatar extends StatelessWidget {
                   ),
 
                 // --- NEU: Dynamische Pill mit Icon/Prefix ---
+                // --- NEU: Dynamische Pill mit Icon/Prefix ---
                 if (!isPlaceholder && showDetails)
                   Positioned(
                     bottom: -radius * 0.45,
                     child: Container(
                       padding: EdgeInsets.symmetric(horizontal: radius * 0.4, vertical: 2),
                       decoration: BoxDecoration(
-                        color: getColorForRating(colorRatingValue, calculatedMaxScore),
-                        borderRadius: BorderRadius.circular(10), border: Border.all(color: Colors.white, width: 1.5), boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 2, offset: Offset(0, 1))],
+                        color: pillColor, // <--- HIER: pillColor statt getColorForRating
+                        borderRadius: BorderRadius.circular(10),
+                        border: Border.all(color: Colors.white, width: 1.5),
+                        boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 2, offset: Offset(0, 1))],
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
                           if (modeIcon != null) ...[Icon(modeIcon, color: Colors.white, size: ratingFontSize * 1.1), SizedBox(width: ratingFontSize * 0.3)],
                           if (modePrefix != null) ...[Text(modePrefix, style: TextStyle(color: Colors.white, fontSize: ratingFontSize, fontWeight: FontWeight.bold)), SizedBox(width: ratingFontSize * 0.3)],
-                          Text(displayValue, style: TextStyle(color: Colors.white, fontSize: displayValue.length > 3 ? ratingFontSize * 0.8 : ratingFontSize, fontWeight: FontWeight.w800)),
+                          Text(
+                              finalDisplayValue, // <--- HIER: finalDisplayValue statt displayValue
+                              style: TextStyle(color: Colors.white, fontSize: finalDisplayValue.length > 3 ? ratingFontSize * 0.8 : ratingFontSize, fontWeight: FontWeight.w800)
+                          ),
                         ],
                       ),
                     ),
@@ -281,6 +295,7 @@ class MatchFormationDisplay extends StatefulWidget {
   final List<int> frozenPlayerIds; // NEU: Nimmt die Liste aus dem TeamScreen entgegen
   final AvatarDisplayMode displayMode; // NEU
   final int currentRound;
+  final bool isReadOnly; // <--- NEU HINZUFÜGEN
 
   const MatchFormationDisplay({
     super.key,
@@ -298,6 +313,7 @@ class MatchFormationDisplay extends StatefulWidget {
     this.frozenPlayerIds = const [], // NEU
     this.displayMode = AvatarDisplayMode.matchday, // NEU
     this.currentRound = 1,
+    this.isReadOnly = false, // <--- NEU HINZUFÜGEN (Standard ist false)
   });
 
   @override
@@ -496,8 +512,8 @@ class _MatchFormationDisplayState extends State<MatchFormationDisplay> {
 
                                 return Padding(
                                   padding: EdgeInsets.only(right: radius * 0.2),
-                                  // NEU: Wenn gelockt, dann nur Klickbar, nicht Draggable
-                                  child: isPlayerLocked
+                                  // NEU: Wenn gelockt ODER ReadOnly, dann nur Klickbar, nicht Draggable
+                                  child: (isPlayerLocked || widget.isReadOnly) // <--- HIER widget.isReadOnly ERGÄNZEN
                                       ? GestureDetector(
                                     onTap: () => widget.onPlayerTap(player.id, radius),
                                     child: displayWidget,
@@ -542,7 +558,6 @@ class _MatchFormationDisplayState extends State<MatchFormationDisplay> {
   Widget _buildPlayerLine(BuildContext context, List<PlayerInfo> players, double lineYPosition, Color teamColor, void Function(int, double) onPlayerTap, double radius, bool isAwayTeam) {
     final playerCount = players.length;
     final orderedPlayers = isAwayTeam ? players : players.reversed.toList();
-
     return Positioned.fill(
       child: LayoutBuilder(
         builder: (context, constraints) {
@@ -605,9 +620,7 @@ class _MatchFormationDisplayState extends State<MatchFormationDisplay> {
                       currentRound: widget.currentRound,
                     );
 
-                    // NEU: Platzhalter ODER gelockter Spieler -> NICHT ziehbar!
-                    if (targetPlayer.id > 0 && !isPlayerLocked) {
-                      // Echter, ungelockter Spieler -> Ziehbar (Draggable)
+                    if (targetPlayer.id > 0 && !isPlayerLocked && !widget.isReadOnly) {
                       return LongPressDraggable<PlayerInfo>(
                         data: targetPlayer,
                         delay: const Duration(milliseconds: 100),

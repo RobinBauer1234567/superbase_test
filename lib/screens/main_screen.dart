@@ -14,6 +14,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:premier_league/screens/player_screen.dart';
 import 'package:premier_league/screens/team_screen.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:premier_league/screens/User/profile_screen.dart'; // NEU hinzufügen
 
 enum SearchFilter { players, teams }
 
@@ -280,40 +281,6 @@ class _MainScreenState extends State<MainScreen> {
     return 'Liga';
   }
 
-  Future<void> _pickAccountImage() async {
-    final picked = await _imagePicker.pickImage(source: ImageSource.gallery, imageQuality: 80);
-    if (picked == null) return;
-    final bytes = await picked.readAsBytes();
-    if (!mounted) return;
-
-    setState(() {
-      _accountImagePreview = bytes;
-    });
-
-    try {
-      final userId = Supabase.instance.client.auth.currentUser!.id;
-      final path = 'avatars/$userId.jpg';
-      await Supabase.instance.client.storage.from('spielerbilder').uploadBinary(
-        path,
-        bytes,
-        fileOptions: const FileOptions(cacheControl: '3600', upsert: true),
-      );
-      final publicUrl = Supabase.instance.client.storage.from('spielerbilder').getPublicUrl(path);
-      await Supabase.instance.client.from('profiles').update({'avatar_url': publicUrl}).eq('user_id', userId);
-
-      if (mounted) {
-        setState(() {
-          _accountImageUrl = publicUrl;
-        });
-      }
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Konnte Account-Bild nicht speichern: $e')),
-      );
-    }
-  }
-
   Future<void> _pickLeagueImage() async {
     final picked = await _imagePicker.pickImage(source: ImageSource.gallery, imageQuality: 80);
     if (picked == null) return;
@@ -363,62 +330,6 @@ class _MainScreenState extends State<MainScreen> {
     }
   }
 
-  void _openAccountSheet() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      builder: (context) {
-        final authService = this.context.read<AuthService>();
-        final user = Supabase.instance.client.auth.currentUser;
-
-        return Padding(
-          padding: EdgeInsets.only(
-            left: 20,
-            right: 20,
-            top: 20,
-            bottom: MediaQuery.of(context).viewInsets.bottom + 20,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _buildImagePreview(
-                fallbackIcon: Icons.person,
-                imageUrl: _accountImageUrl,
-                previewBytes: _accountImagePreview,
-                radius: 42,
-              ),
-              const SizedBox(height: 12),
-              Text(user?.email ?? 'Kein Account', style: const TextStyle(fontWeight: FontWeight.w600)),
-              const SizedBox(height: 4),
-              const Text('Profilbild ändern oder direkt abmelden.'),
-              const SizedBox(height: 12),
-              Wrap(
-                spacing: 8,
-                children: [
-                  FilledButton.icon(
-                    onPressed: () async {
-                      await _pickAccountImage();
-                      if (mounted) Navigator.pop(context);
-                    },
-                    icon: const Icon(Icons.image),
-                    label: const Text('Bild importieren'),
-                  ),
-                  OutlinedButton.icon(
-                    onPressed: () {
-                      authService.signOut();
-                      Navigator.pop(context);
-                    },
-                    icon: const Icon(Icons.logout),
-                    label: const Text('Abmelden'),
-                  ),
-                ],
-              ),
-            ],
-          ),
-        );
-      },
-    );
-  }
 
   void _openLeagueSheet() {
     showModalBottomSheet(
@@ -705,16 +616,26 @@ class _MainScreenState extends State<MainScreen> {
           },
               ),
             ),
+// (Suche im AppBar-Teil von _MainScreenState)
             IconButton(
               tooltip: 'Account',
-              onPressed: _openAccountSheet,
+              onPressed: () {
+                // Navigiert zum Profil-Screen.
+                // .then() sorgt dafür, dass sich das kleine Profilbild oben rechts aktualisiert,
+                // falls der User es im Profil-Screen geändert hat.
+                Navigator.push(
+                  context,
+                  MaterialPageRoute(builder: (context) => const ProfileScreen()),
+                ).then((_) {
+                  _loadInitialData();
+                });
+              },
               icon: _buildImagePreview(
                 fallbackIcon: Icons.person,
                 imageUrl: _accountImageUrl,
-                previewBytes: _accountImagePreview,
+                previewBytes: null, // previewBytes gibt es hier nicht mehr
               ),
-            ),
-          ],
+            ),          ],
         ),
       ),
       body: IndexedStack(

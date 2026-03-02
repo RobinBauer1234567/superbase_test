@@ -1,7 +1,7 @@
 // lib/auth_service.dart
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-
+import 'dart:typed_data'; // WICHTIG für Uint8List
 class AuthService with ChangeNotifier {
   final SupabaseClient _supabase = Supabase.instance.client;
   User? _user;
@@ -55,7 +55,42 @@ class AuthService with ChangeNotifier {
       _showErrorDialog(context, 'Ein unerwarteter Fehler ist aufgetreten.');
     }
   }
+  Future<String?> updateProfilePicture(Uint8List imageBytes) async {
+    final userId = currentUser?.id;
+    if (userId == null) {
+      throw Exception('Nicht eingeloggt. Bitte melde dich erneut an.');
+    }
 
+    // Da der Bucket schon 'avatars' heißt, nennen wir die Datei einfach <user_id>.jpg
+    final path = '$userId.jpg';
+
+    try {
+      // 1. Bild in den neuen Supabase Storage Bucket 'avatars' hochladen
+      await _supabase.storage.from('avatars').uploadBinary(
+        path,
+        imageBytes,
+        fileOptions: const FileOptions(
+          cacheControl: '3600',
+          upsert: true, // WICHTIG: Überschreibt das alte Bild, falls vorhanden!
+        ),
+      );
+
+      // 2. Die öffentliche URL des Bildes abrufen
+      final publicUrl = _supabase.storage.from('avatars').getPublicUrl(path);
+
+      // 3. Die URL in der 'profiles'-Tabelle aktualisieren
+      await _supabase.from('profiles').update({
+        'avatar_url': publicUrl
+      }).eq('user_id', userId);
+
+      // 4. Den neuen Link zurückgeben
+      return publicUrl;
+
+    } catch (e) {
+      print('Fehler beim Profilbild-Upload: $e');
+      throw Exception('Das Profilbild konnte nicht gespeichert werden.');
+    }
+  }
   Future<void> signOut() async {
     await _supabase.auth.signOut();
   }
