@@ -736,6 +736,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                             currentRound: _currentRound,
                             displayMode: AvatarDisplayMode.matchday,
                             isReadOnly: true,
+                            hideUnlockedMatchdayRating: true,
                             onPlayerTap: (playerId, radius) {
                               if (playerId > 0) {
                                 Navigator.push(context, MaterialPageRoute(builder: (_) => PlayerScreen(playerId: playerId)));

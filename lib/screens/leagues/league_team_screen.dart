@@ -1223,6 +1223,7 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
                             ? _selectedDisplayMode
                             : AvatarDisplayMode
                                 .matchday, // <--- NEU            currentRound: _currentRound,
+                    hideUnlockedMatchdayRating: true,
                   ),
         ),
       ],
