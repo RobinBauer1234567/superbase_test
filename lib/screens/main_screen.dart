@@ -16,6 +16,7 @@ import 'package:premier_league/screens/team_screen.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:premier_league/screens/User/profile_screen.dart'; // NEU hinzufügen
 import 'package:premier_league/screens/leagues/league_settings_screen.dart';
+import 'package:premier_league/screens/screenelements/league_logo.dart';
 
 enum SearchFilter { players, teams }
 
@@ -228,9 +229,9 @@ class _MainScreenState extends State<MainScreen> {
 
     final Map<int, String> leagueImageUrls = {};
     for (final league in leagues) {
-      final dynamic settings = league['settings'];
-      if (settings is Map && settings['logo_url'] is String) {
-        leagueImageUrls[league['id'] as int] = settings['logo_url'] as String;
+      final imageUrl = league['image_url'] as String?;
+      if (imageUrl != null && imageUrl.isNotEmpty) {
+        leagueImageUrls[league['id'] as int] = imageUrl;
       }
     }
 
@@ -253,9 +254,9 @@ class _MainScreenState extends State<MainScreen> {
         _userLeagues = leagues;
         final Map<int, String> refreshedImageUrls = {};
         for (final league in leagues) {
-          final dynamic settings = league['settings'];
-          if (settings is Map && settings['logo_url'] is String) {
-            refreshedImageUrls[league['id'] as int] = settings['logo_url'] as String;
+          final imageUrl = league['image_url'] as String?;
+          if (imageUrl != null && imageUrl.isNotEmpty) {
+            refreshedImageUrls[league['id'] as int] = imageUrl;
           }
         }
         _leagueImageUrls = refreshedImageUrls;
@@ -398,7 +399,13 @@ class _MainScreenState extends State<MainScreen> {
           league: league
       ));
 
-      navItems.add(NavItem(icon: const Icon(Icons.groups), label: league['name'], isDraggable: true));
+      navItems.add(
+        NavItem(
+          icon: LeagueLogo(imageUrl: _leagueImageUrls[league['id'] as int], radius: 12),
+          label: league['name'],
+          isDraggable: true,
+        ),
+      );
     }
     if (_userLeagues.length > 3) {
       final isMoreTabSelected = _selectedIndex == (1 + visibleLeagueCount);
@@ -423,17 +430,24 @@ class _MainScreenState extends State<MainScreen> {
         title: Row(
           children: [
 // Beispiel-Aufruf aus der AppBar deines League Hubs:
-            IconButton(
-              icon: const Icon(Icons.settings),
-              onPressed: () {
-                if (_selectedLeagueId != 0)
-                  Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                    builder: (context) => LeagueSettingsScreen(leagueId: _selectedLeagueId),
-                  ),
-                );
-              },
+            Padding(
+              padding: const EdgeInsets.only(left: 4, right: 8),
+              child: IconButton(
+                icon: LeagueLogo(
+                  imageUrl: _leagueImageUrls[_selectedLeagueId],
+                  radius: 14,
+                ),
+                onPressed: () {
+                  if (_selectedLeagueId != 0) {
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => LeagueSettingsScreen(leagueId: _selectedLeagueId),
+                      ),
+                    );
+                  }
+                },
+              ),
             ),
             Expanded(
               child: SearchAnchor.bar(

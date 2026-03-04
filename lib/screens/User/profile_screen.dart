@@ -12,6 +12,7 @@ import 'package:premier_league/screens/screenelements/match_screen/formations.da
 import 'package:premier_league/screens/screenelements/matchday_team_shared.dart';
 import 'package:premier_league/screens/player_screen.dart';
 import 'package:premier_league/screens/leagues/matchday_team_overlay.dart';
+import 'package:premier_league/screens/screenelements/league_logo.dart';
 
 class ProfileScreen extends StatefulWidget {
   // NEU: Optionale Parameter, um fremde Profile und eine bestimmte Liga direkt zu öffnen
@@ -110,12 +111,13 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       }
 
       // Ligen für diese User-ID holen
-      final leaguesRes = await supabase.from('league_members').select('league_id, leagues(name)').eq('user_id', _effectiveUserId);
+      final leaguesRes = await supabase.from('league_members').select('league_id, leagues(name, image_url)').eq('user_id', _effectiveUserId);
 
       List<Map<String, dynamic>> leaguesWithRanks = [];
       for (var l in leaguesRes) {
         final int leagueId = l['league_id'];
         final String leagueName = l['leagues']['name'];
+        final String? leagueImageUrl = l['leagues']['image_url'] as String?;
         final rankingRes = await supabase.rpc('get_ranking_overall', params: {'p_league_id': leagueId});
         final rankingList = List<Map<String, dynamic>>.from(rankingRes);
 
@@ -128,7 +130,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
             break;
           }
         }
-        leaguesWithRanks.add({'league_id': leagueId, 'name': leagueName, 'rank': rank, 'points': totalPoints});
+        leaguesWithRanks.add({'league_id': leagueId, 'name': leagueName, 'image_url': leagueImageUrl, 'rank': rank, 'points': totalPoints});
       }
 
       leaguesWithRanks.sort((a, b) => b['points'].compareTo(a['points']));
@@ -444,6 +446,8 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
         orElse: () => _userLeagues.isNotEmpty ? _userLeagues.first : {'name': 'Liga wählen'}
     );
 
+    final selectedLeagueImageUrl = selectedLeague['image_url'] as String?;
+
     return InkWell(
       onTap: () {
         _previousTabIndex = _tabController.index;
@@ -458,10 +462,9 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
         ),
         child: Row(
           children: [
-            CircleAvatar(
+            LeagueLogo(
+              imageUrl: selectedLeagueImageUrl,
               radius: 16,
-              backgroundColor: primaryColor.withOpacity(0.1),
-              child: Icon(Icons.emoji_events, size: 18, color: primaryColor),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -500,6 +503,8 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                       final bool isSelected = league['league_id'] == _selectedLeagueId;
                       Color rankColor = rank == 1 ? Colors.amber : (rank == 2 ? Colors.blueGrey : (rank == 3 ? Colors.brown : Colors.grey));
 
+                      final String? leagueImageUrl = league['image_url'] as String?;
+
                       return Card(
                         elevation: isSelected ? 2 : 1,
                         margin: const EdgeInsets.only(bottom: 12),
@@ -510,10 +515,34 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                         color: Colors.white,
                         child: ListTile(
                           contentPadding: const EdgeInsets.all(12),
-                          leading: Container(
-                            width: 40, height: 40,
-                            decoration: BoxDecoration(color: rankColor.withOpacity(0.1), shape: BoxShape.circle),
-                            child: Center(child: Text('$rank', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: rankColor))),
+                          leading: Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              LeagueLogo(imageUrl: leagueImageUrl, radius: 20),
+                              Positioned(
+                                right: -4,
+                                bottom: -4,
+                                child: Container(
+                                  width: 20,
+                                  height: 20,
+                                  decoration: BoxDecoration(
+                                    color: rankColor,
+                                    shape: BoxShape.circle,
+                                    border: Border.all(color: Colors.white, width: 2),
+                                  ),
+                                  child: Center(
+                                    child: Text(
+                                      '$rank',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 10,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                           title: Text(league['name'], style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                           subtitle: Text("Punkte gesamt: ${league['points']}"),
