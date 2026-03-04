@@ -58,6 +58,7 @@ class PlayerAvatar extends StatelessWidget {
   final bool showDetails;
   final bool showPositions;
   final bool isLocked;
+  final bool hideUnlockedMatchdayRating;
   final AvatarDisplayMode displayMode; // <--- NEU
   final int currentRound;              // <--- NEU
 
@@ -71,6 +72,7 @@ class PlayerAvatar extends StatelessWidget {
     this.showDetails = true,
     this.showPositions = true,
     this.isLocked = false,
+    this.hideUnlockedMatchdayRating = false,
     this.displayMode = AvatarDisplayMode.matchday, // Standard
     this.currentRound = 1,                         // Standard
   });
@@ -162,8 +164,15 @@ class PlayerAvatar extends StatelessWidget {
     final int colorRatingValue = _getColorRatingValue();
     final int calculatedMaxScore = _getCalculatedMaxScore();
 
-    final String finalDisplayValue = displayValue;
-    final Color pillColor = getColorForRating(colorRatingValue, calculatedMaxScore);
+    final bool showLockedMatchdayRating =
+        !hideUnlockedMatchdayRating ||
+        displayMode != AvatarDisplayMode.matchday ||
+        isLocked;
+    final String finalDisplayValue =
+        showLockedMatchdayRating ? displayValue : '-';
+    final Color pillColor = showLockedMatchdayRating
+        ? getColorForRating(colorRatingValue, calculatedMaxScore)
+        : Colors.grey;
 
     // --- NEU: Icon Bestimmung für die Pill ---
     IconData? modeIcon;
@@ -294,6 +303,7 @@ class MatchFormationDisplay extends StatefulWidget {
   final AvatarDisplayMode displayMode; // NEU
   final int currentRound;
   final bool isReadOnly; // <--- NEU HINZUFÜGEN
+  final bool hideUnlockedMatchdayRating;
 
   const MatchFormationDisplay({
     super.key,
@@ -312,6 +322,7 @@ class MatchFormationDisplay extends StatefulWidget {
     this.displayMode = AvatarDisplayMode.matchday, // NEU
     this.currentRound = 1,
     this.isReadOnly = false, // <--- NEU HINZUFÜGEN (Standard ist false)
+    this.hideUnlockedMatchdayRating = false,
   });
 
   @override
@@ -506,6 +517,7 @@ class _MatchFormationDisplayState extends State<MatchFormationDisplay> {
                                   isLocked: isPlayerLocked, // NEU
                                   displayMode: widget.displayMode,
                                   currentRound: widget.currentRound,
+                                  hideUnlockedMatchdayRating: widget.hideUnlockedMatchdayRating,
                                 );
 
                                 return Padding(
@@ -584,6 +596,7 @@ class _MatchFormationDisplayState extends State<MatchFormationDisplay> {
                   showValidTargetEffect: isValidTarget,
                   displayMode: widget.displayMode,
                   currentRound: widget.currentRound,
+                  hideUnlockedMatchdayRating: widget.hideUnlockedMatchdayRating,
                 ),
               );
 
@@ -616,6 +629,7 @@ class _MatchFormationDisplayState extends State<MatchFormationDisplay> {
                       isLocked: isPlayerLocked, // NEU übergeben
                       displayMode: widget.displayMode,
                       currentRound: widget.currentRound,
+                      hideUnlockedMatchdayRating: widget.hideUnlockedMatchdayRating,
                     );
 
                     if (targetPlayer.id > 0 && !isPlayerLocked && !widget.isReadOnly) {
