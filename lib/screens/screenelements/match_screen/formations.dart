@@ -162,13 +162,8 @@ class PlayerAvatar extends StatelessWidget {
     final int colorRatingValue = _getColorRatingValue();
     final int calculatedMaxScore = _getCalculatedMaxScore();
 
-    // --- NEU: Logik für noch nicht gespielte Spieler ---
-    // Gilt nur im Matchday-Modus für echte Spieler, die nicht gelockt sind.
-    final bool isUnplayed = displayMode == AvatarDisplayMode.matchday && !isLocked && !isPlaceholder;
-    final String finalDisplayValue = isUnplayed ? "-" : displayValue;
-    final Color pillColor = isUnplayed
-        ? Colors.grey.shade500
-        : getColorForRating(colorRatingValue, calculatedMaxScore);
+    final String finalDisplayValue = displayValue;
+    final Color pillColor = getColorForRating(colorRatingValue, calculatedMaxScore);
 
     // --- NEU: Icon Bestimmung für die Pill ---
     IconData? modeIcon;
