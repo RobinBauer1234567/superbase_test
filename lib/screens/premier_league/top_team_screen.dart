@@ -616,32 +616,21 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
                 children: [
                   Container(
                     margin: const EdgeInsets.only(right: 8),
-                    padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-                    decoration: BoxDecoration(
-                      color: headerScoreColor.withOpacity(0.1),
-                      border: Border.all(color: headerScoreColor.withOpacity(0.3)),
-                      borderRadius: BorderRadius.circular(12),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 12,
+                      vertical: 6,
                     ),
-                    child: Column(
-                      mainAxisSize: MainAxisSize.min,
-                      children: [
-                        Text(
-                          'PUNKTE',
-                          style: TextStyle(
-                            fontSize: 8,
-                            fontWeight: FontWeight.bold,
-                            color: headerScoreColor,
-                          ),
-                        ),
-                        Text(
-                          '$headerScore',
-                          style: TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 14,
-                            color: headerScoreColor,
-                          ),
-                        ),
-                      ],
+                    decoration: BoxDecoration(
+                      color: headerScoreColor.withOpacity(0.15),
+                      borderRadius: BorderRadius.circular(20),
+                      border: Border.all(color: headerScoreColor.withOpacity(0.4)),
+                    ),
+                    child: Text(
+                      '$headerScore Pkt',
+                      style: TextStyle(
+                        fontWeight: FontWeight.bold,
+                        color: headerScoreColor,
+                      ),
                     ),
                   ),
 
