@@ -115,6 +115,8 @@ class _TeamScreenState extends State<TeamScreen> with SingleTickerProviderStateM
         topPlayersList.add({
           'id': player['id'],
           'name': player['name'],
+          // Position explizit mitgeben, damit im Kader-Tab kein N/A angezeigt wird.
+          'position': player['position'],
           'profilbild_url': player['profilbild_url'],
           'marktwert': _extractMarketValue(player['spieler_analytics'], seasonId), // Marktwert aus DB mappen
           'total_punkte': totalPoints,

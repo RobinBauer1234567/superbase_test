@@ -409,11 +409,17 @@ class _RankingScreenState extends State<RankingScreen> {
                             user['avatar_url']?.toString() ?? '';
                         final int points =
                             (user['total_points'] as num?)?.toInt() ?? 0;
-
-                        final Color pointsColor = getColorForRating(
-                          points,
-                          maxScore < 1 ? 1 : maxScore,
-                        );
+                        final bool isNotStartedRound =
+                            !_isOverallRanking &&
+                            _getMatchdayPhase(_selectedRound) == MatchdayPhase.before;
+                        final Color pointsColor = isNotStartedRound
+                            ? Colors.grey
+                            : getColorForRating(
+                                points,
+                                maxScore < 1 ? 1 : maxScore,
+                              );
+                        final String pointsText =
+                            isNotStartedRound ? '-' : '$points';
 
                         // Farbschema für Top 3 analog zum ActivityFeed (Akzentfarben)
                         Color rankAccentColor = Colors.grey;
@@ -570,7 +576,7 @@ class _RankingScreenState extends State<RankingScreen> {
                                             ),
                                           ),
                                           Text(
-                                            '$points',
+                                            pointsText,
                                             style: TextStyle(
                                               fontWeight: FontWeight.bold,
                                               fontSize: 14,
