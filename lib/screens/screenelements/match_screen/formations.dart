@@ -164,7 +164,11 @@ class PlayerAvatar extends StatelessWidget {
 
     // --- NEU: Logik für noch nicht gespielte Spieler ---
     // Gilt nur im Matchday-Modus für echte Spieler, die nicht gelockt sind.
-    final bool isUnplayed = displayMode == AvatarDisplayMode.matchday && !isLocked && !isPlaceholder;
+    final bool isUnplayed =
+        displayMode == AvatarDisplayMode.matchday &&
+        !isLocked &&
+        !isPlaceholder &&
+        player.rating <= 0;
     final String finalDisplayValue = isUnplayed ? "-" : displayValue;
     final Color pillColor = isUnplayed
         ? Colors.grey.shade500
@@ -231,9 +235,9 @@ class PlayerAvatar extends StatelessWidget {
                     child: Container(
                       padding: EdgeInsets.symmetric(horizontal: radius * 0.4, vertical: 2),
                       decoration: BoxDecoration(
-                        color: pillColor.withOpacity(0.1),
+                        color: Colors.white.withOpacity(0.96),
                         borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: pillColor.withOpacity(0.3), width: 1.5),
+                        border: Border.all(color: pillColor.withOpacity(0.65), width: 1.5),
                         boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 2, offset: Offset(0, 1))],
                       ),
                       child: Row(
