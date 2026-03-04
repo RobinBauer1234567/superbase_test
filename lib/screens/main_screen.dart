@@ -27,6 +27,9 @@ class MainScreen extends StatefulWidget {
 }
 
 class _MainScreenState extends State<MainScreen> {
+  static const double _topBarImageRadius = 20;
+  static const double _bottomNavLeagueLogoRadius = 14;
+
   int _selectedIndex = 0;
   List<Map<String, dynamic>> _userLeagues = [];
   bool _isLoading = true;
@@ -383,14 +386,12 @@ class _MainScreenState extends State<MainScreen> {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
-    final screenWidth = MediaQuery.of(context).size.width;
-    final double plTabWidth = screenWidth / 4;
-    const double actionTabWidth = 60.0;
+    const double actionTabWidth = 64.0;
 
     // --- Dynamischer Aufbau (unverändert) ---
     final List<Widget> screens = [ const PremierLeagueScreen() ];
     final List<NavItem> navItems = [
-      NavItem(icon: const Icon(Icons.sports_soccer), label: 'PL', fixedWidth: plTabWidth)
+      NavItem(icon: const Icon(Icons.sports_soccer), label: 'PL')
     ];
     final int visibleLeagueCount = min(_userLeagues.length, 3);
     for (int i = 0; i < visibleLeagueCount; i++) {
@@ -402,7 +403,7 @@ class _MainScreenState extends State<MainScreen> {
 
       navItems.add(
         NavItem(
-          icon: LeagueLogo(imageUrl: _leagueImageUrls[league['id'] as int], radius: 15),
+          icon: LeagueLogo(imageUrl: _leagueImageUrls[league['id'] as int], radius: _bottomNavLeagueLogoRadius),
           label: league['name'],
           isDraggable: true,
         ),
@@ -435,7 +436,7 @@ class _MainScreenState extends State<MainScreen> {
               child: IconButton(
                 icon: LeagueLogo(
                   imageUrl: _leagueImageUrls[_selectedLeagueId],
-                  radius: 22,
+                  radius: _topBarImageRadius,
                 ),
                 onPressed: () {
                   if (_selectedLeagueId != 0) {
@@ -535,6 +536,7 @@ class _MainScreenState extends State<MainScreen> {
                 fallbackIcon: Icons.person,
                 imageUrl: _accountImageUrl,
                 previewBytes: null, // previewBytes gibt es hier nicht mehr
+                radius: _topBarImageRadius,
               ),
             ),          ],
         ),

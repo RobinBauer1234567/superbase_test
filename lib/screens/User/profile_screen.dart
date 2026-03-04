@@ -1,5 +1,6 @@
 // lib/screens/profile_screen.dart
 import 'dart:typed_data';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
@@ -26,6 +27,10 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProviderStateMixin {
+  static const double _headerImageRadius = 50;
+  static const double _collapsedImageRadius = 18;
+  static const double _imageEditButtonSize = 28;
+
   final supabase = Supabase.instance.client;
   final ImagePicker _imagePicker = ImagePicker();
 
@@ -296,9 +301,10 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                     final double collapsedHeight = kToolbarHeight + bottomHeight + safeAreaTop;
                     final double expandedHeight = 320.0;
                     final double currentHeight = constraints.maxHeight;
-                    final double avatarRadius = (screenWidth * 0.14).clamp(40.0, 56.0);
-                    final double cameraButtonSize = (avatarRadius * 0.52).clamp(20.0, 30.0);
+                    final double avatarRadius = (screenWidth * 0.14).clamp(40.0, _headerImageRadius);
+                    final double cameraButtonSize = (avatarRadius * 0.56).clamp(22.0, _imageEditButtonSize);
                     final double cameraIconSize = (cameraButtonSize * 0.58).clamp(14.0, 18.0);
+                    final double cameraCenterOffset = avatarRadius + (avatarRadius / math.sqrt2) - (cameraButtonSize / 2);
 
                     double fade = 1.0;
                     if (expandedHeight > collapsedHeight) {
@@ -329,15 +335,14 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                                           backgroundImage: _getAvatarProvider(),
                                           child: _getAvatarProvider() == null ? Icon(Icons.person, size: avatarRadius, color: Colors.grey) : null,
                                         ),
-                                        // Kamera-Icon nur bei eigenem Profil
                                         if (_isCurrentUser)
-                                          Container(
-                                            decoration: BoxDecoration(color: primaryColor, shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 3)),
-                                            child: IconButton(
-                                              icon: Icon(Icons.camera_alt, color: Colors.white, size: cameraIconSize),
-                                              padding: EdgeInsets.all((cameraButtonSize * 0.22).clamp(4.0, 7.0)),
-                                              constraints: const BoxConstraints(),
-                                              visualDensity: VisualDensity.compact,
+                                          Positioned(
+                                            left: cameraCenterOffset,
+                                            top: cameraCenterOffset,
+                                            child: _buildEditImageButton(
+                                              primaryColor: primaryColor,
+                                              buttonSize: cameraButtonSize,
+                                              iconSize: cameraIconSize,
                                               onPressed: _pickNewProfileImage,
                                             ),
                                           ),
@@ -366,10 +371,10 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                                 child: Row(
                                   children: [
                                     CircleAvatar(
-                                      radius: 18,
+                                      radius: _collapsedImageRadius,
                                       backgroundColor: Colors.grey.shade200,
                                       backgroundImage: _getAvatarProvider(),
-                                      child: _getAvatarProvider() == null ? const Icon(Icons.person, size: 18, color: Colors.grey) : null,
+                                      child: _getAvatarProvider() == null ? const Icon(Icons.person, size: _collapsedImageRadius, color: Colors.grey) : null,
                                     ),
                                     const SizedBox(width: 12),
                                     Expanded(
@@ -436,6 +441,30 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildEditImageButton({
+    required Color primaryColor,
+    required double buttonSize,
+    required double iconSize,
+    required VoidCallback onPressed,
+  }) {
+    return Container(
+      width: buttonSize,
+      height: buttonSize,
+      decoration: BoxDecoration(
+        color: primaryColor,
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.white, width: 3),
+      ),
+      child: IconButton(
+        icon: Icon(Icons.camera_alt, color: Colors.white, size: iconSize),
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(),
+        visualDensity: VisualDensity.compact,
+        onPressed: onPressed,
       ),
     );
   }

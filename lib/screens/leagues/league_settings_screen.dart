@@ -1,5 +1,6 @@
 // lib/screens/leagues/league_settings_screen.dart
 import 'dart:typed_data';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -15,6 +16,10 @@ class LeagueSettingsScreen extends StatefulWidget {
 }
 
 class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with SingleTickerProviderStateMixin {
+  static const double _headerImageRadius = 50;
+  static const double _collapsedImageRadius = 18;
+  static const double _imageEditButtonSize = 28;
+
   final supabase = Supabase.instance.client;
   final ImagePicker _imagePicker = ImagePicker();
 
@@ -225,9 +230,14 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Single
                 flexibleSpace: LayoutBuilder(
                   builder: (BuildContext context, BoxConstraints constraints) {
                     final double safeAreaTop = MediaQuery.of(context).padding.top;
+                    final double screenWidth = MediaQuery.of(context).size.width;
                     final double collapsedHeight = kToolbarHeight + bottomHeight + safeAreaTop;
                     final double expandedHeight = 280.0;
                     final double currentHeight = constraints.maxHeight;
+                    final double leagueImageRadius = (screenWidth * 0.14).clamp(40.0, _headerImageRadius);
+                    final double cameraButtonSize = (leagueImageRadius * 0.56).clamp(22.0, _imageEditButtonSize);
+                    final double cameraIconSize = (cameraButtonSize * 0.58).clamp(14.0, 18.0);
+                    final double cameraCenterOffset = leagueImageRadius + (leagueImageRadius / math.sqrt2) - (cameraButtonSize / 2);
 
                     double fade = 1.0;
                     if (expandedHeight > collapsedHeight) {
@@ -254,21 +264,21 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Single
                                       alignment: Alignment.bottomRight,
                                       children: [
                                         CircleAvatar(
-                                          radius: 50,
+                                          radius: leagueImageRadius,
                                           backgroundColor: primaryColor.withOpacity(0.1),
                                           backgroundImage: _getLeagueImageProvider(),
                                           child: _getLeagueImageProvider() == null
-                                              ? Icon(Icons.emoji_events, size: 50, color: primaryColor)
+                                              ? Icon(Icons.emoji_events, size: leagueImageRadius, color: primaryColor)
                                               : null,
                                         ),
-                                        // Kamera-Button nur für den Admin sichtbar
                                         if (_isAdmin)
-                                          Container(
-                                            decoration: BoxDecoration(color: primaryColor, shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 3)),
-                                            child: IconButton(
-                                              icon: const Icon(Icons.camera_alt, color: Colors.white, size: 18),
-                                              padding: const EdgeInsets.all(6),
-                                              constraints: const BoxConstraints(),
+                                          Positioned(
+                                            left: cameraCenterOffset,
+                                            top: cameraCenterOffset,
+                                            child: _buildEditImageButton(
+                                              primaryColor: primaryColor,
+                                              buttonSize: cameraButtonSize,
+                                              iconSize: cameraIconSize,
                                               onPressed: _pickNewLeagueImage,
                                             ),
                                           ),
@@ -303,11 +313,11 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Single
                                 child: Row(
                                   children: [
                                     CircleAvatar(
-                                      radius: 18,
+                                      radius: _collapsedImageRadius,
                                       backgroundColor: primaryColor.withOpacity(0.1),
                                       backgroundImage: _getLeagueImageProvider(),
                                       child: _getLeagueImageProvider() == null
-                                          ? Icon(Icons.emoji_events, size: 18, color: primaryColor)
+                                          ? Icon(Icons.emoji_events, size: _collapsedImageRadius, color: primaryColor)
                                           : null,
                                     ),
                                     const SizedBox(width: 12),
@@ -367,6 +377,30 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Single
             ],
           ),
         ),
+      ),
+    );
+  }
+
+  Widget _buildEditImageButton({
+    required Color primaryColor,
+    required double buttonSize,
+    required double iconSize,
+    required VoidCallback onPressed,
+  }) {
+    return Container(
+      width: buttonSize,
+      height: buttonSize,
+      decoration: BoxDecoration(
+        color: primaryColor,
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.white, width: 3),
+      ),
+      child: IconButton(
+        icon: Icon(Icons.camera_alt, color: Colors.white, size: iconSize),
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(),
+        visualDensity: VisualDensity.compact,
+        onPressed: onPressed,
       ),
     );
   }
