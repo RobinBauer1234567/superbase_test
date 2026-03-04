@@ -898,21 +898,34 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
                           return Container(
                             padding: const EdgeInsets.symmetric(
                               horizontal: 12,
-                              vertical: 6,
+                              vertical: 8,
                             ),
                             decoration: BoxDecoration(
-                              color: formationColor.withOpacity(0.15),
-                              borderRadius: BorderRadius.circular(20),
+                              color: formationColor.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(12),
                               border: Border.all(
-                                color: formationColor.withOpacity(0.4),
+                                color: formationColor.withOpacity(0.3),
                               ),
                             ),
-                            child: Text(
-                              '$formationScore Pkt',
-                              style: TextStyle(
-                                fontWeight: FontWeight.bold,
-                                color: formationColor,
-                              ),
+                            child: Column(
+                              children: [
+                                Text(
+                                  'PUNKTE',
+                                  style: TextStyle(
+                                    fontSize: 8,
+                                    fontWeight: FontWeight.bold,
+                                    color: formationColor,
+                                  ),
+                                ),
+                                Text(
+                                  formationScore.toString(),
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 14,
+                                    color: formationColor,
+                                  ),
+                                ),
+                              ],
                             ),
                           );
                         },

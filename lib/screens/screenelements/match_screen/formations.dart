@@ -226,7 +226,10 @@ class PlayerAvatar extends StatelessWidget {
                     child: Container(
                       padding: EdgeInsets.symmetric(horizontal: radius * 0.4, vertical: 2),
                       decoration: BoxDecoration(
-                        color: Colors.white.withOpacity(0.96),
+                        color: Color.alphaBlend(
+                          pillColor.withOpacity(0.12),
+                          Colors.white.withOpacity(0.96),
+                        ),
                         borderRadius: BorderRadius.circular(10),
                         border: Border.all(color: pillColor.withOpacity(0.65), width: 1.5),
                         boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 2, offset: Offset(0, 1))],
