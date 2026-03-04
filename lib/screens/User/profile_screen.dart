@@ -165,9 +165,35 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       final dataManagement = context.read<DataManagement>();
       final seasonId = dataManagement.seasonId;
 
-      final matchdaysRes = await supabase.from('user_matchday_points').select('round, total_points, is_locked, spieltag(status)').eq('user_id', _effectiveUserId).eq('league_id', _selectedLeagueId!).order('round', ascending: false);
+      final allMatchdaysRes = await supabase
+          .from('spieltag')
+          .select('round, status')
+          .eq('season_id', seasonId)
+          .order('round', ascending: false);
 
-      final rankingFutures = matchdaysRes.map((md) async {
+      final userMatchdayPointsRes = await supabase
+          .from('user_matchday_points')
+          .select('round, total_points, is_locked')
+          .eq('user_id', _effectiveUserId)
+          .eq('league_id', _selectedLeagueId!);
+
+      final Map<int, Map<String, dynamic>> userMatchdayPointsByRound = {
+        for (final md in userMatchdayPointsRes)
+          (md['round'] as int): Map<String, dynamic>.from(md),
+      };
+
+      final mergedMatchdays = allMatchdaysRes.map((spieltag) {
+        final round = spieltag['round'] as int;
+        final userData = userMatchdayPointsByRound[round];
+        return {
+          'round': round,
+          'total_points': userData?['total_points'] ?? 0,
+          'is_locked': userData?['is_locked'] ?? false,
+          'spieltag': {'status': spieltag['status'] ?? ''},
+        };
+      }).toList();
+
+      final rankingFutures = mergedMatchdays.map((md) async {
         final rankingRes = await supabase.rpc('get_ranking_matchday', params: {'p_league_id': _selectedLeagueId, 'p_round': md['round']});
         final rankingList = List<Map<String, dynamic>>.from(rankingRes);
         int rank = 0;
@@ -264,9 +290,13 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                 flexibleSpace: LayoutBuilder(
                   builder: (BuildContext context, BoxConstraints constraints) {
                     final double safeAreaTop = MediaQuery.of(context).padding.top;
+                    final double screenWidth = MediaQuery.of(context).size.width;
                     final double collapsedHeight = kToolbarHeight + bottomHeight + safeAreaTop;
                     final double expandedHeight = 320.0;
                     final double currentHeight = constraints.maxHeight;
+                    final double avatarRadius = (screenWidth * 0.14).clamp(40.0, 56.0);
+                    final double cameraButtonSize = (avatarRadius * 0.52).clamp(20.0, 30.0);
+                    final double cameraIconSize = (cameraButtonSize * 0.58).clamp(14.0, 18.0);
 
                     double fade = 1.0;
                     if (expandedHeight > collapsedHeight) {
@@ -292,19 +322,20 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                                       alignment: Alignment.bottomRight,
                                       children: [
                                         CircleAvatar(
-                                          radius: 50,
+                                          radius: avatarRadius,
                                           backgroundColor: Colors.grey.shade200,
                                           backgroundImage: _getAvatarProvider(),
-                                          child: _getAvatarProvider() == null ? const Icon(Icons.person, size: 50, color: Colors.grey) : null,
+                                          child: _getAvatarProvider() == null ? Icon(Icons.person, size: avatarRadius, color: Colors.grey) : null,
                                         ),
                                         // Kamera-Icon nur bei eigenem Profil
                                         if (_isCurrentUser)
                                           Container(
                                             decoration: BoxDecoration(color: primaryColor, shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 3)),
                                             child: IconButton(
-                                              icon: const Icon(Icons.camera_alt, color: Colors.white, size: 18),
-                                              padding: const EdgeInsets.all(6),
+                                              icon: Icon(Icons.camera_alt, color: Colors.white, size: cameraIconSize),
+                                              padding: EdgeInsets.all((cameraButtonSize * 0.22).clamp(4.0, 7.0)),
                                               constraints: const BoxConstraints(),
+                                              visualDensity: VisualDensity.compact,
                                               onPressed: _pickNewProfileImage,
                                             ),
                                           ),
