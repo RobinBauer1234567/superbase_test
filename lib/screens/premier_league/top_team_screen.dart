@@ -37,16 +37,6 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
   int? _selectedTeamId;
   String? _selectedPosition;
 
-  int _headerRatingValue() {
-    if (_showFormation) {
-      return (_bestFormation?['score'] as num?)?.toInt() ?? 0;
-    }
-    if (_topPlayers.isNotEmpty) {
-      return (_topPlayers.first['total_punkte'] as num?)?.toInt() ?? 0;
-    }
-    return 0;
-  }
-
   int _headerRatingMax() {
     return _showGesamt
         ? (_spieltage.length * 250 * 0.8).toInt().clamp(1, 99999999)
@@ -454,10 +444,6 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
   // --- DIE NEUE, KOMPAKTE KOPFLEISTE ---
   Widget _buildMatchdaySelector() {
     final primaryColor = Theme.of(context).primaryColor;
-    final int headerScore = _headerRatingValue();
-    final int headerMax = _headerRatingMax();
-    final Color headerScoreColor = getColorForRating(headerScore, headerMax);
-
     // Prüfen ob wir gerade den aktuellsten Spieltag anzeigen
     final bool isCurrentRound =
         _spieltage.isNotEmpty && _selectedSpieltag == _spieltage.last;
@@ -614,26 +600,6 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
               child: Row(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  Container(
-                    margin: const EdgeInsets.only(right: 8),
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 12,
-                      vertical: 6,
-                    ),
-                    decoration: BoxDecoration(
-                      color: headerScoreColor.withOpacity(0.15),
-                      borderRadius: BorderRadius.circular(20),
-                      border: Border.all(color: headerScoreColor.withOpacity(0.4)),
-                    ),
-                    child: Text(
-                      '$headerScore Pkt',
-                      style: TextStyle(
-                        fontWeight: FontWeight.bold,
-                        color: headerScoreColor,
-                      ),
-                    ),
-                  ),
-
                   _buildTeamPopup(),
                   _buildPositionPopup(),
 
@@ -899,22 +865,59 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
               ),
               child: Column(
                 children: [
-                  DropdownButton<String>(
-                    value: _selectedFormationName,
-                    isExpanded: true,
-                    items:
-                        sortedFormationKeys.map((String value) {
-                          return DropdownMenuItem<String>(
-                            value: value,
-                            child: Text('Formation: $value'),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: DropdownButton<String>(
+                          value: _selectedFormationName,
+                          isExpanded: true,
+                          items:
+                              sortedFormationKeys.map((String value) {
+                                return DropdownMenuItem<String>(
+                                  value: value,
+                                  child: Text('Formation: $value'),
+                                );
+                              }).toList(),
+                          onChanged: (String? newValue) {
+                            if (newValue != null &&
+                                newValue != _selectedFormationName) {
+                              _calculateTeamForSelectedFormation(newValue);
+                            }
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Builder(
+                        builder: (context) {
+                          final int formationScore =
+                              (_bestFormation?['score'] as num?)?.toInt() ?? 0;
+                          final int formationMax = _headerRatingMax();
+                          final Color formationColor =
+                              getColorForRating(formationScore, formationMax);
+
+                          return Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 6,
+                            ),
+                            decoration: BoxDecoration(
+                              color: formationColor.withOpacity(0.15),
+                              borderRadius: BorderRadius.circular(20),
+                              border: Border.all(
+                                color: formationColor.withOpacity(0.4),
+                              ),
+                            ),
+                            child: Text(
+                              '$formationScore Pkt',
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                color: formationColor,
+                              ),
+                            ),
                           );
-                        }).toList(),
-                    onChanged: (String? newValue) {
-                      if (newValue != null &&
-                          newValue != _selectedFormationName) {
-                        _calculateTeamForSelectedFormation(newValue);
-                      }
-                    },
+                        },
+                      ),
+                    ],
                   ),
                 ],
               ),
