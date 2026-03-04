@@ -212,6 +212,7 @@ class _MainScreenState extends State<MainScreen> {
     // 4. Neue Reihenfolge speichern
     context.read<DataManagement>().supabaseService.updateUserLeagueOrder(_userLeagues);
   }
+
   Future<void> _loadInitialData() async {
     // Warten auf den ersten Frame, damit der context verfügbar ist
     await WidgetsBinding.instance.endOfFrame;
@@ -278,7 +279,7 @@ class _MainScreenState extends State<MainScreen> {
     required IconData fallbackIcon,
     required String? imageUrl,
     required Uint8List? previewBytes,
-    double radius = 18,
+    double radius = 22,
   }) {
     ImageProvider? provider;
     if (previewBytes != null) {
@@ -401,7 +402,7 @@ class _MainScreenState extends State<MainScreen> {
 
       navItems.add(
         NavItem(
-          icon: LeagueLogo(imageUrl: _leagueImageUrls[league['id'] as int], radius: 12),
+          icon: LeagueLogo(imageUrl: _leagueImageUrls[league['id'] as int], radius: 15),
           label: league['name'],
           isDraggable: true,
         ),
@@ -429,13 +430,12 @@ class _MainScreenState extends State<MainScreen> {
         titleSpacing: 0,
         title: Row(
           children: [
-// Beispiel-Aufruf aus der AppBar deines League Hubs:
             Padding(
               padding: const EdgeInsets.only(left: 4, right: 8),
               child: IconButton(
                 icon: LeagueLogo(
                   imageUrl: _leagueImageUrls[_selectedLeagueId],
-                  radius: 14,
+                  radius: 22,
                 ),
                 onPressed: () {
                   if (_selectedLeagueId != 0) {
@@ -524,9 +524,6 @@ class _MainScreenState extends State<MainScreen> {
             IconButton(
               tooltip: 'Account',
               onPressed: () {
-                // Navigiert zum Profil-Screen.
-                // .then() sorgt dafür, dass sich das kleine Profilbild oben rechts aktualisiert,
-                // falls der User es im Profil-Screen geändert hat.
                 Navigator.push(
                   context,
                   MaterialPageRoute(builder: (context) => const ProfileScreen()),
@@ -549,17 +546,14 @@ class _MainScreenState extends State<MainScreen> {
       bottomNavigationBar: DraggableNavBar(
         items: navItems,
         currentIndex: _selectedIndex,
-        onTap: (index) async { // HIER async hinzufügen
+        onTap: (index) async {
           if (_userLeagues.length > 3 && index == 4) return;
 
           if (index == navItems.length - 1) {
-            // "Hinzufügen" wurde geklickt -> LeagueHubScreen öffnen
-            // Wir warten auf das Ergebnis (die ID der neuen Liga)
             final newLeagueId = await Navigator.of(context).push(
                 MaterialPageRoute(builder: (_) => const LeagueHubScreen())
             );
 
-            // Wenn wir eine ID zurückbekommen, rufen wir unsere Logik auf
             if (newLeagueId != null && newLeagueId is int) {
               await _handleNewLeague(newLeagueId);
             } else {
