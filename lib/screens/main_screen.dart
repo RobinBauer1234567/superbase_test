@@ -15,6 +15,7 @@ import 'package:premier_league/screens/player_screen.dart';
 import 'package:premier_league/screens/team_screen.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:premier_league/screens/User/profile_screen.dart'; // NEU hinzufügen
+import 'package:premier_league/screens/leagues/league_settings_screen.dart';
 
 enum SearchFilter { players, teams }
 
@@ -263,125 +264,13 @@ class _MainScreenState extends State<MainScreen> {
     }
   }
 
-  int? get _selectedLeagueId {
-    if (_selectedIndex <= 0) return null;
+  int get _selectedLeagueId {
+    if (_selectedIndex <= 0) return 0;
     final leagueListIndex = _selectedIndex - 1;
     if (leagueListIndex >= 0 && leagueListIndex < _userLeagues.length) {
       return _userLeagues[leagueListIndex]['id'] as int;
     }
-    return null;
-  }
-
-  String get _selectedLeagueName {
-    if (_selectedIndex == 0) return 'Premier League';
-    final leagueListIndex = _selectedIndex - 1;
-    if (leagueListIndex >= 0 && leagueListIndex < _userLeagues.length) {
-      return _userLeagues[leagueListIndex]['name'] as String;
-    }
-    return 'Liga';
-  }
-
-  Future<void> _pickLeagueImage() async {
-    final picked = await _imagePicker.pickImage(source: ImageSource.gallery, imageQuality: 80);
-    if (picked == null) return;
-    final bytes = await picked.readAsBytes();
-    if (!mounted) return;
-
-    final leagueId = _selectedLeagueId;
-    if (leagueId == null) {
-      setState(() {
-        _leagueImagePreviews[-1] = bytes;
-      });
-      return;
-    }
-
-    setState(() {
-      _leagueImagePreviews[leagueId] = bytes;
-    });
-
-    try {
-      final path = 'league_badges/$leagueId.jpg';
-      await Supabase.instance.client.storage.from('wappen').uploadBinary(
-        path,
-        bytes,
-        fileOptions: const FileOptions(cacheControl: '3600', upsert: true),
-      );
-      final publicUrl = Supabase.instance.client.storage.from('wappen').getPublicUrl(path);
-
-      final selectedLeague = _userLeagues.firstWhere((league) => league['id'] == leagueId);
-      final settings = (selectedLeague['settings'] is Map<String, dynamic>)
-          ? Map<String, dynamic>.from(selectedLeague['settings'])
-          : <String, dynamic>{};
-      settings['logo_url'] = publicUrl;
-
-      await Supabase.instance.client.from('leagues').update({'settings': settings}).eq('id', leagueId);
-
-      if (mounted) {
-        setState(() {
-          _leagueImageUrls[leagueId] = publicUrl;
-          selectedLeague['settings'] = settings;
-        });
-      }
-    } catch (e) {
-      if (!mounted) return;
-      ScaffoldMessenger.of(context).showSnackBar(
-        SnackBar(content: Text('Konnte Liga-Bild nicht speichern: $e')),
-      );
-    }
-  }
-
-
-  void _openLeagueSheet() {
-    showModalBottomSheet(
-      context: context,
-      isScrollControlled: true,
-      builder: (context) {
-        final leagueId = _selectedLeagueId;
-        final preview = leagueId == null ? _leagueImagePreviews[-1] : _leagueImagePreviews[leagueId];
-        final imageUrl = leagueId == null ? null : _leagueImageUrls[leagueId];
-
-        return Padding(
-          padding: EdgeInsets.only(
-            left: 20,
-            right: 20,
-            top: 20,
-            bottom: MediaQuery.of(context).viewInsets.bottom + 20,
-          ),
-          child: Column(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              _buildImagePreview(
-                fallbackIcon: Icons.shield,
-                imageUrl: imageUrl,
-                previewBytes: preview,
-                radius: 42,
-              ),
-              const SizedBox(height: 12),
-              Text(
-                _selectedLeagueName,
-                style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
-              const SizedBox(height: 4),
-              Text(
-                leagueId == null
-                    ? 'Dummy im Premier-League-Tab – Bild ist lokal auf diesem Gerät.'
-                    : 'Liga-ID: $leagueId • Badge wird in Supabase gespeichert.',
-              ),
-              const SizedBox(height: 12),
-              FilledButton.icon(
-                onPressed: () async {
-                  await _pickLeagueImage();
-                  if (mounted) Navigator.pop(context);
-                },
-                icon: const Icon(Icons.image_outlined),
-                label: Text(leagueId == null ? 'Dummy-Bild importieren' : 'Liga-Bild importieren'),
-              ),
-              const SizedBox(height: 8),
-            ],
-          ),
-        );
-      },
-    );
+    return 0;
   }
 
   Widget _buildImagePreview({
@@ -404,7 +293,6 @@ class _MainScreenState extends State<MainScreen> {
       child: provider == null ? Icon(fallbackIcon, color: Colors.black54) : null,
     );
   }
-  // --- ENDE DER KORREKTUR ---
 
   void _onReorder(int oldItemIndex, int newItemIndex) {
     final oldLeagueIndex = oldItemIndex - 1;
@@ -423,7 +311,7 @@ class _MainScreenState extends State<MainScreen> {
 
     context.read<DataManagement>().supabaseService.updateUserLeagueOrder(_userLeagues);
   }
-  // --- Suchfunktion (wieder vollständig integriert) ---
+
   Future<List<Widget>> _fetchSuggestions(String query, SearchFilter filter) async {
     final dataManagement = Provider.of<DataManagement>(context, listen: false);
     final seasonId = dataManagement.seasonId;
@@ -528,21 +416,24 @@ class _MainScreenState extends State<MainScreen> {
     }
     navItems.add(NavItem(icon: const Icon(Icons.add), label: 'Hinzufügen', fixedWidth: actionTabWidth));
     screens.add(const LeagueHubScreen());
-    // --- Ende Dynamischer Aufbau ---
 
     return Scaffold(
       appBar: AppBar(
         titleSpacing: 0,
         title: Row(
           children: [
+// Beispiel-Aufruf aus der AppBar deines League Hubs:
             IconButton(
-              tooltip: 'Liga',
-              onPressed: _openLeagueSheet,
-              icon: _buildImagePreview(
-                fallbackIcon: Icons.shield,
-                imageUrl: _selectedLeagueId != null ? _leagueImageUrls[_selectedLeagueId!] : null,
-                previewBytes: _selectedLeagueId != null ? _leagueImagePreviews[_selectedLeagueId!] : _leagueImagePreviews[-1],
-              ),
+              icon: const Icon(Icons.settings),
+              onPressed: () {
+                if (_selectedLeagueId != 0)
+                  Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (context) => LeagueSettingsScreen(leagueId: _selectedLeagueId),
+                  ),
+                );
+              },
             ),
             Expanded(
               child: SearchAnchor.bar(
@@ -616,7 +507,6 @@ class _MainScreenState extends State<MainScreen> {
           },
               ),
             ),
-// (Suche im AppBar-Teil von _MainScreenState)
             IconButton(
               tooltip: 'Account',
               onPressed: () {
