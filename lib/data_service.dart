@@ -1990,4 +1990,30 @@ class SupabaseService {
       print("Fehler beim Speichern der Aufstellung RPC: $e");
     }
   }
+
+  Future<List<Map<String, dynamic>>> getTransferBids(int transferId) async {
+    // Holt die Gebote und die Namen der Bieter in zwei sicheren Schritten
+    final bidsRes = await supabase
+        .from('transfer_bids')
+        .select()
+        .eq('transfer_id', transferId)
+        .order('amount', ascending: false);
+
+    if (bidsRes.isEmpty) return [];
+
+    final userIds = bidsRes.map((b) => b['bidder_id']).toList();
+    final profilesRes = await supabase
+        .from('profiles')
+        .select('user_id, username, avatar_url')
+        .inFilter('user_id', userIds);
+
+    // Mappen der User-Infos an die Gebote
+    for (var bid in bidsRes) {
+      final profile = profilesRes.firstWhere((p) => p['user_id'] == bid['bidder_id'], orElse: () => {});
+      bid['username'] = profile['username'] ?? 'Unbekannt';
+      bid['avatar_url'] = profile['avatar_url'];
+    }
+
+    return List<Map<String, dynamic>>.from(bidsRes);
+  }
 }

@@ -5,7 +5,7 @@ import 'package:premier_league/utils/color_helper.dart';
 import 'package:premier_league/screens/screenelements/match_screen/formations.dart';
 
 class PlayerListItem extends StatelessWidget {
-  final int rank;
+  final int? rank;
   final String? profileImageUrl;
   final String playerName;
   final String? teamImageUrl;
@@ -24,7 +24,7 @@ class PlayerListItem extends StatelessWidget {
 
   const PlayerListItem({
     super.key,
-    required this.rank,
+    this.rank,
     this.profileImageUrl,
     required this.playerName,
     this.teamImageUrl,
@@ -75,16 +75,16 @@ class PlayerListItem extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min, // WICHTIG
           children: [
-            SizedBox(
-              width: 25,
-              child: Text(
-                '$rank.',
-                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.grey),
+            if (rank != null) // <-- Nur anzeigen, wenn rank übergeben wurde
+              SizedBox(
+                width: 25,
+                child: Text(
+                  '$rank.',
+                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.grey),
+                ),
               ),
-            ),
-            const SizedBox(width: 4),
+            if (rank != null) const SizedBox(width: 4),
 
-            // KORREKTUR: Kompakter Avatar ohne Name/Rating
             PlayerAvatar(
               player: playerInfo,
               teamColor: teamColor ?? Colors.blueGrey,
