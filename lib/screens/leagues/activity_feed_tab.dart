@@ -116,11 +116,10 @@ class ActivityFeedTab extends StatelessWidget {
           ),
         );
         break;
-
       case 'LISTING':
       case 'TRANSFER':
         final isListing = activity.type == 'LISTING';
-        final transferType = activity.content['transfer_type'] ?? 'TRANSFER'; // SOFORTKAUF, AUKTION, STARTSPIELER oder alt TRANSFER
+        final transferType = activity.content['transfer_type'] ?? 'TRANSFER';
 
         if (isListing) {
           headerIcon = Icons.sell;
@@ -135,6 +134,11 @@ class ActivityFeedTab extends StatelessWidget {
             headerIcon = Icons.gavel;
             headerColor = Colors.deepPurple;
             headerTitle = "AUKTION";
+          } else if (transferType == 'KEINE GEBOTE') {
+            // NEU: Unsere Graue Kategorie für abgelaufene Angebote ohne Bieter
+            headerIcon = Icons.timer_off;
+            headerColor = Colors.grey.shade600;
+            headerTitle = "KEINE GEBOTE";
           } else if (transferType == 'STARTSPIELER') {
             headerIcon = Icons.card_giftcard;
             headerColor = Colors.indigo;
@@ -203,8 +207,8 @@ class ActivityFeedTab extends StatelessWidget {
             ),
           );
 
-          // Wenn es ein echter Markt-Transfer war, mache die Leiste klickbar fürs Overlay!
-          if (transferType == 'SOFORTKAUF' || transferType == 'AUKTION' || transferType == 'TRANSFER') {
+          // NEU: 'KEINE GEBOTE' lässt sich nun auch für das Overlay anklicken
+          if (transferType == 'SOFORTKAUF' || transferType == 'AUKTION' || transferType == 'TRANSFER' || transferType == 'KEINE GEBOTE') {
             bottomBarContent = InkWell(
               borderRadius: const BorderRadius.only(bottomLeft: Radius.circular(16), bottomRight: Radius.circular(16)),
               onTap: () {
@@ -226,7 +230,7 @@ class ActivityFeedTab extends StatelessWidget {
             onTap: () {
               final tabController = DefaultTabController.maybeOf(context);
               if (tabController != null) {
-                tabController.animateTo(1);
+                tabController.animateTo(3);
                 if (playerId != 0) {
                   Future.delayed(const Duration(milliseconds: 100), () {
                     TransferMarketScreenState.instance?.scrollToPlayer(playerId);
@@ -258,7 +262,6 @@ class ActivityFeedTab extends StatelessWidget {
           );
         }
         break;
-
       default:
         headerIcon = Icons.info;
         headerColor = Colors.grey;

@@ -11,7 +11,6 @@ class TransferDetailsOverlay extends StatelessWidget {
 
   const TransferDetailsOverlay({super.key, required this.activity});
 
-  // Nimmt jetzt auch die avatarUrl entgegen
   Widget _buildManagerAvatar(String name, String? avatarUrl, Color color) {
     String initials = name.isNotEmpty ? name[0].toUpperCase() : '?';
     bool isSystem = name == 'System';
@@ -21,7 +20,6 @@ class TransferDetailsOverlay extends StatelessWidget {
         CircleAvatar(
           radius: 28,
           backgroundColor: isSystem ? Colors.grey.shade200 : color.withOpacity(0.15),
-          // NEU: Wenn eine URL da ist, lade das Profilbild!
           backgroundImage: (avatarUrl != null && avatarUrl.isNotEmpty) ? NetworkImage(avatarUrl) : null,
           child: (avatarUrl == null || avatarUrl.isEmpty)
               ? (isSystem
@@ -44,19 +42,26 @@ class TransferDetailsOverlay extends StatelessWidget {
   Widget build(BuildContext context) {
     final content = activity.content;
     final transferType = content['transfer_type'] ?? 'TRANSFER';
-    final isAuktion = transferType == 'AUKTION';
     final fmt = NumberFormat.currency(locale: 'de_DE', symbol: '€', decimalDigits: 0);
 
     final buyerName = content['buyer_name'] ?? 'System';
-    final buyerAvatar = content['buyer_avatar_url']; // NEU
+    final buyerAvatar = content['buyer_avatar_url'];
     final sellerName = content['seller_name'] ?? 'System';
-    final sellerAvatar = content['seller_avatar_url']; // NEU
+    final sellerAvatar = content['seller_avatar_url'];
 
     final price = content['price'] ?? 0;
+    final isSystemBuy = content['is_system_buy'] == true;
     final failedBid = content['failed_highest_bid'] == true;
     final transferId = content['transfer_id'];
 
-    Color themeColor = transferType == 'SOFORTKAUF' ? Colors.teal : Colors.deepPurple;
+    Color themeColor = transferType == 'SOFORTKAUF'
+        ? Colors.teal
+        : (transferType == 'KEINE GEBOTE' ? Colors.grey.shade600 : Colors.deepPurple);
+
+    IconData typeIcon = Icons.handshake;
+    if (transferType == 'AUKTION') typeIcon = Icons.gavel;
+    if (transferType == 'SOFORTKAUF') typeIcon = Icons.flash_on;
+    if (transferType == 'KEINE GEBOTE') typeIcon = Icons.timer_off;
 
     return Dialog(
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(20)),
@@ -64,7 +69,6 @@ class TransferDetailsOverlay extends StatelessWidget {
       clipBehavior: Clip.antiAlias,
       child: Container(
         color: Colors.white,
-        // NEU: Das Overlay zwingend auf 80% der Bildschirmhöhe strecken!
         height: MediaQuery.of(context).size.height * 0.80,
         child: Column(
           children: [
@@ -74,7 +78,7 @@ class TransferDetailsOverlay extends StatelessWidget {
               color: themeColor.withOpacity(0.1),
               child: Row(
                 children: [
-                  Icon(isAuktion ? Icons.gavel : Icons.flash_on, color: themeColor),
+                  Icon(typeIcon, color: themeColor),
                   const SizedBox(width: 8),
                   Text(
                     transferType,
@@ -138,7 +142,7 @@ class TransferDetailsOverlay extends StatelessWidget {
               ),
             ),
 
-            // 4. BIETER-HISTORIE (Jetzt IMMER sichtbar, nimmt gesamten restlichen Platz ein)
+            // 4. BIETER-HISTORIE
             if (transferId != null) ...[
               Divider(height: 1, color: Colors.grey.shade200),
 
@@ -153,7 +157,7 @@ class TransferDetailsOverlay extends StatelessWidget {
                       const SizedBox(width: 8),
                       Expanded(
                         child: Text(
-                          "Höchstbietender hatte nicht genug Budget. Transfer gescheitert / an System.",
+                          "Höhere Gebote wurden abgelehnt (Nicht genug Budget).",
                           style: TextStyle(color: Colors.red.shade900, fontSize: 12, fontWeight: FontWeight.w600),
                         ),
                       )
@@ -168,7 +172,6 @@ class TransferDetailsOverlay extends StatelessWidget {
                 child: const Text("ABGEGEBENE GEBOTE", style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey)),
               ),
 
-              // NEU: Expanded füllt den gesamten verbleibenden Platz bis ganz nach unten auf!
               Expanded(
                 child: FutureBuilder<List<Map<String, dynamic>>>(
                   future: Provider.of<DataManagement>(context, listen: false).supabaseService.getTransferBids(transferId),
@@ -184,12 +187,19 @@ class TransferDetailsOverlay extends StatelessWidget {
 
                     final bids = snapshot.data!;
                     return ListView.builder(
-                      padding: const EdgeInsets.only(top: 0, bottom: 16), // Padding fürs Ende der Liste
+                      padding: const EdgeInsets.only(top: 0, bottom: 16),
                       itemCount: bids.length,
                       itemBuilder: (context, index) {
                         final bid = bids[index];
-                        final isHighest = index == 0;
-                        final isFailedHighest = isHighest && failedBid;
+                        final bidAmount = bid['amount'];
+
+                        // LOGIK FÜR INSOLVENZ:
+                        // Wenn das System gekauft hat und es eine Auktion war -> Alle Bieter insolvent
+                        // Ansonsten: Wenn das Gebot HÖHER war als der endgültige Preis -> Bieter insolvent
+                        final bool isInsolvent = (isSystemBuy && transferType == 'AUKTION') || (!isSystemBuy && bidAmount > price);
+
+                        // Gewinner markieren (gleicher Preis wie Endpreis und gleicher Name)
+                        final bool isWinner = !isSystemBuy && bidAmount == price && bid['username'] == buyerName;
 
                         return ListTile(
                           dense: true,
@@ -204,9 +214,9 @@ class TransferDetailsOverlay extends StatelessWidget {
                           title: Text(
                               bid['username'],
                               style: TextStyle(
-                                fontWeight: isHighest ? FontWeight.bold : FontWeight.normal,
-                                color: isFailedHighest ? Colors.grey : Colors.black87,
-                                decoration: isFailedHighest ? TextDecoration.lineThrough : null,
+                                fontWeight: isWinner ? FontWeight.bold : FontWeight.normal,
+                                color: isInsolvent ? Colors.grey : Colors.black87,
+                                decoration: isInsolvent ? TextDecoration.lineThrough : null,
                               )
                           ),
                           trailing: Column(
@@ -216,13 +226,15 @@ class TransferDetailsOverlay extends StatelessWidget {
                               Text(
                                   fmt.format(bid['amount']),
                                   style: TextStyle(
-                                    fontWeight: isHighest ? FontWeight.bold : FontWeight.w500,
-                                    color: isFailedHighest ? Colors.red : (isHighest ? Colors.green.shade700 : Colors.black87),
-                                    decoration: isFailedHighest ? TextDecoration.lineThrough : null,
+                                    fontWeight: isWinner ? FontWeight.bold : FontWeight.w500,
+                                    color: isInsolvent ? Colors.red : (isWinner ? Colors.green.shade700 : Colors.black87),
+                                    decoration: isInsolvent ? TextDecoration.lineThrough : null,
                                   )
                               ),
-                              if (isFailedHighest)
+                              if (isInsolvent)
                                 const Text("INSOLVENT", style: TextStyle(fontSize: 9, color: Colors.red, fontWeight: FontWeight.bold))
+                              else if (isWinner)
+                                const Text("GEWONNEN", style: TextStyle(fontSize: 9, color: Colors.green, fontWeight: FontWeight.bold))
                             ],
                           ),
                         );
