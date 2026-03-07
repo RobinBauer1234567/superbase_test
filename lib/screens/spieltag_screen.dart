@@ -166,10 +166,15 @@ class _GameScreenState extends State<GameScreen> {
       while (versuch < maxVersuche) {
         versuch++;
 
+        final seasonId = currentSpielData['season_id'];
+
         final response = await Supabase.instance.client
             .from('matchrating')
-            .select('*, spieler!inner(*)')
-            .eq('spiel_id', spielId);
+            .select('*, spieler!inner(*, is_active, season_players!inner(team_id, season_id, is_active))')
+            .eq('spiel_id', spielId)
+            .eq('spieler.is_active', true)
+            .eq('spieler.season_players.season_id', seasonId)
+            .eq('spieler.season_players.is_active', true);
 
         final List<dynamic> ratingsData = response as List<dynamic>;
 
@@ -180,7 +185,13 @@ class _GameScreenState extends State<GameScreen> {
           final spieler = entry['spieler'];
           if (spieler == null) continue;
 
-          final int playerTeamId = spieler['team_id'];
+          final seasonPlayersRaw = spieler['season_players'];
+          int? playerTeamId;
+          if (seasonPlayersRaw is List && seasonPlayersRaw.isNotEmpty) {
+            final seasonPlayer = Map<String, dynamic>.from(seasonPlayersRaw.first as Map);
+            playerTeamId = seasonPlayer['team_id'] as int?;
+          }
+          if (playerTeamId == null) continue;
 
           final processedPlayer = {
             'id': spieler['id'],
