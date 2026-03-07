@@ -196,6 +196,7 @@ class ApiService {
           .from('spieler')
           .select('position')
           .eq('id', playerId)
+          .eq('is_active', true)
           .maybeSingle();
 
       String currentPositions = playerResponse?['position'] ?? '';
@@ -265,7 +266,6 @@ class ApiService {
         playerId,
         playerName,
         finalPositionsToSave,
-        teamId,
         imageUrl,
         marktwert,
         seasonId,
@@ -1220,14 +1220,14 @@ class SupabaseService {
     await supabase.from('spieltag').update({'status': neuerStatus}).eq('round', round).eq('season_id', seasonId);
   }
 
-  Future<void> saveSpieler(int id, String name, String position, int teamId, String? profilbildUrl, int? marktwert, int seasonId) async {
+  Future<void> saveSpieler(int id, String name, String position, String? profilbildUrl, int? marktwert, int seasonId) async {
     try {
       // 1. Stammdaten in die 'spieler' Tabelle
       final updateData = {
         'id': id,
         'name': name,
         'position': position,
-        'team_id': teamId
+        'is_active': true,
       };
       if (profilbildUrl != null) {
         updateData['profilbild_url'] = profilbildUrl;
@@ -1291,11 +1291,21 @@ class SupabaseService {
   }
 
   Future<int> getSpieleranzahl(int spielId, int heimTeamId, int auswaertsTeamId) async {
+    final spielData = await Supabase.instance.client
+        .from('spiel')
+        .select('season_id')
+        .eq('id', spielId)
+        .single();
+    final int seasonId = (spielData['season_id'] as num).toInt();
+
     final data = await Supabase.instance.client
         .from('spieler')
-        .select('*, matchrating!inner(formationsindex, match_position)')
+        .select('*, matchrating!inner(formationsindex, match_position), season_players!inner(team_id, season_id, is_active)')
+        .eq('is_active', true)
         .eq('matchrating.spiel_id', spielId)
-        .filter('team_id', 'in', '($heimTeamId, $auswaertsTeamId)');
+        .eq('season_players.season_id', seasonId)
+        .eq('season_players.is_active', true)
+        .filter('season_players.team_id', 'in', '($heimTeamId, $auswaertsTeamId)');
 
     print("--- DEBUG: Rohdaten von Supabase erhalten (${data.length} Spieler) ---");
     return data.length;
@@ -1897,17 +1907,41 @@ class SupabaseService {
             points,
             spieler:player_id (
               id, name, position, profilbild_url,
-              team:team_id (name, image_url),
+              season_players(season_id, is_active, team:team(name, image_url)),
               spieler_analytics (marktwert, gesamtstatistiken, anzahl_spiele)
             )
           ''')
           .eq('matchday_point_id', matchdayPointId)
+          .eq('spieler.is_active', true)
       // Nur die Analytics der aktuellen Saison laden
-          .eq('spieler.spieler_analytics.season_id', seasonId);
+          .eq('spieler.spieler_analytics.season_id', seasonId)
+          .eq('spieler.season_players.season_id', seasonId)
+          .eq('spieler.season_players.is_active', true);
+
+      final normalizedPlayersData = List<Map<String, dynamic>>.from(playersData).map((row) {
+        final mappedRow = Map<String, dynamic>.from(row);
+        final spieler = mappedRow['spieler'];
+        if (spieler is Map) {
+          final spielerMap = Map<String, dynamic>.from(spieler);
+          final seasonPlayers = spielerMap['season_players'];
+          if (seasonPlayers is List) {
+            final seasonEntry = seasonPlayers.cast<Map<String, dynamic>>().firstWhere(
+                  (sp) => sp['season_id'] == seasonId,
+              orElse: () => <String, dynamic>{},
+            );
+            spielerMap['season_players'] = seasonEntry;
+            if (seasonEntry['team'] is Map) {
+              spielerMap['team'] = seasonEntry['team'];
+            }
+          }
+          mappedRow['spieler'] = spielerMap;
+        }
+        return mappedRow;
+      }).toList();
 
       return {
         'points_data': pointsData,
-        'players': playersData,
+        'players': normalizedPlayersData,
       };
     } catch (e) {
       print("Fehler beim Laden der Matchday-Daten: $e");
