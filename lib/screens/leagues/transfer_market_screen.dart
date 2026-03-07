@@ -9,7 +9,6 @@ import 'package:premier_league/screens/screenelements/transaction_overlay.dart';
 import 'package:premier_league/screens/screenelements/match_screen/formations.dart';
 import 'dart:async';
 
-// NEU: Enum für die drei Listen-Zustände
 enum MarketMode { all, ownBids, ownOffers }
 
 class TransferMarketScreen extends StatefulWidget {
@@ -17,21 +16,68 @@ class TransferMarketScreen extends StatefulWidget {
   const TransferMarketScreen({super.key, required this.leagueId});
 
   @override
-  State<TransferMarketScreen> createState() => _TransferMarketScreenState();
+  // WICHTIG: Das State-Objekt ist nun öffentlich (kein Unterstrich am Anfang)
+  State<TransferMarketScreen> createState() => TransferMarketScreenState();
 }
 
-class _TransferMarketScreenState extends State<TransferMarketScreen> {
+class TransferMarketScreenState extends State<TransferMarketScreen> {
+  // SINGLETON: Erlaubt uns, von überall auf diesen State zuzugreifen!
+  static TransferMarketScreenState? instance;
+
   bool _isLoading = true;
   List<Map<String, dynamic>> _offers = [];
-  int _budget = 0; // NEU: Speichert das Budget
-  MarketMode _currentMode = MarketMode.all; // NEU: Startet mit "Alle Spieler"
+  int _budget = 0;
+  MarketMode _currentMode = MarketMode.all;
 
   final NumberFormat _currencyFormat = NumberFormat.currency(locale: 'de_DE', symbol: '€', decimalDigits: 0);
+
+  // NEU: Scroll Controller
+  final ScrollController _scrollController = ScrollController();
+  int? _pendingScrollPlayerId;
 
   @override
   void initState() {
     super.initState();
+    instance = this; // Instanz global verfügbar machen
     _loadMarket();
+  }
+
+  @override
+  void dispose() {
+    if (instance == this) instance = null; // Instanz wieder freigeben
+    _scrollController.dispose();
+    super.dispose();
+  }
+
+  // NEU: Diese Funktion wird vom Activity Feed aufgerufen!
+  void scrollToPlayer(int playerId) {
+    _pendingScrollPlayerId = playerId;
+    _attemptScroll();
+  }
+
+  // NEU: Führt das eigentliche Scrollen aus
+  void _attemptScroll() {
+    if (_pendingScrollPlayerId != null && _displayedOffers.isNotEmpty) {
+      final targetId = _pendingScrollPlayerId;
+      final index = _displayedOffers.indexWhere((o) => o['player']['id'] == targetId);
+
+      if (index != -1) {
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          if (_scrollController.hasClients) {
+            // Geschätzte Höhe einer Karte inkl. Margin (ca. 195 Pixel)
+            final offset = index * 195.0;
+            final maxScroll = _scrollController.position.maxScrollExtent;
+
+            _scrollController.animateTo(
+              offset > maxScroll ? maxScroll : offset,
+              duration: const Duration(milliseconds: 600),
+              curve: Curves.easeInOut,
+            );
+          }
+        });
+      }
+      _pendingScrollPlayerId = null; // Zurücksetzen
+    }
   }
 
   int _toInt(dynamic value) {
@@ -41,6 +87,7 @@ class _TransferMarketScreenState extends State<TransferMarketScreen> {
     if (value is String) return int.tryParse(value) ?? 0;
     return 0;
   }
+
   int _getMarktwert(dynamic playerMap) {
     if (playerMap == null) return 0;
     final analytics = playerMap['spieler_analytics'];
@@ -51,6 +98,7 @@ class _TransferMarketScreenState extends State<TransferMarketScreen> {
     }
     return 0;
   }
+
   Map<String, dynamic> _getStats(dynamic playerMap) {
     if (playerMap == null) return <String, dynamic>{};
     final analytics = playerMap['spieler_analytics'];
@@ -59,12 +107,12 @@ class _TransferMarketScreenState extends State<TransferMarketScreen> {
     if (stats is Map) return Map<String, dynamic>.from(stats);
     return <String, dynamic>{};
   }
+
   Future<void> _loadMarket() async {
     setState(() => _isLoading = true);
     final service = Provider.of<DataManagement>(context, listen: false).supabaseService;
 
     try {
-      // Wir laden gleichzeitig den Markt und das Budget
       final data = await service.fetchTransferMarket(widget.leagueId);
       final budget = await service.fetchUserBudget(widget.leagueId);
 
@@ -74,32 +122,28 @@ class _TransferMarketScreenState extends State<TransferMarketScreen> {
           _budget = budget;
           _isLoading = false;
         });
+        // NEU: Nach dem Laden schauen, ob wir scrollen müssen!
+        _attemptScroll();
       }
     } catch (e, stacktrace) {
-      // 🚨 Wenn es schon beim Laden knallt (z.B. in der fetchTransferMarket Funktion), fangen wir es hier!
       print("🚨 CRASH IM TRANSFERMARKT: $e");
       print("📍 STACKTRACE: $stacktrace");
-
       if (mounted) {
         setState(() => _isLoading = false);
       }
     }
   }
+
   List<Map<String, dynamic>> get _displayedOffers {
     final currentUserId = Provider.of<DataManagement>(context, listen: false).supabaseService.supabase.auth.currentUser?.id;
     if (currentUserId == null) return _offers;
 
     switch (_currentMode) {
       case MarketMode.all:
-      // Zeigt alle Spieler, AUSSER die, die man gerade selbst verkauft
         return _offers.where((o) => o['seller_id'] != currentUserId).toList();
-
       case MarketMode.ownOffers:
-      // Zeigt NUR die selbst angebotenen Spieler
         return _offers.where((o) => o['seller_id'] == currentUserId).toList();
-
       case MarketMode.ownBids:
-      // Zeigt NUR die Spieler, auf die man bereits geboten hat
         return _offers.where((o) {
           final bids = o['transfer_bids'] as List<dynamic>? ?? [];
           return bids.any((b) => b['bidder_id'] == currentUserId);
@@ -121,9 +165,9 @@ class _TransferMarketScreenState extends State<TransferMarketScreen> {
 
   IconData _getModeIcon() {
     switch (_currentMode) {
-      case MarketMode.all: return Icons.language; // Weltkugel für "Alle"
-      case MarketMode.ownBids: return Icons.gavel; // Hammer für "Eigene Gebote"
-      case MarketMode.ownOffers: return Icons.outbox; // Outbox für "Eigene Verkäufe"
+      case MarketMode.all: return Icons.language;
+      case MarketMode.ownBids: return Icons.gavel;
+      case MarketMode.ownOffers: return Icons.outbox;
     }
   }
 
@@ -191,7 +235,6 @@ class _TransferMarketScreenState extends State<TransferMarketScreen> {
       teamImageUrl: extraData['teamImageUrl'],
     );
 
-    // Context für Navigation sichern
     final dialogContextCompleter = Completer<BuildContext>();
 
     await showDialog(
@@ -204,48 +247,32 @@ class _TransferMarketScreenState extends State<TransferMarketScreen> {
           player: player,
           type: TransactionType.sell,
           basePrice: safeMarktwert,
-
-          // 1. Normaler Verkauf (Auktion)
           onConfirm: (price) async {
             final messenger = ScaffoldMessenger.of(context);
             try {
-              // Dialog schließen
               Navigator.of(ctx, rootNavigator: true).pop();
-
-              // API Call
               await Provider.of<DataManagement>(context, listen: false)
                   .supabaseService.listPlayerOnMarket(widget.leagueId, player.id, price);
-
               if (mounted) {
                 messenger.showSnackBar(const SnackBar(content: Text("Spieler auf den Markt gesetzt!"), backgroundColor: Colors.green));
                 _loadMarket();
               }
             } catch (e) {
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Fehler: $e"), backgroundColor: Colors.red));
-              }
+              if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Fehler: $e"), backgroundColor: Colors.red));
             }
           },
-
-          // 2. NEU: Schnellverkauf (Direkt an System)
           onQuickSell: () async {
             final messenger = ScaffoldMessenger.of(context);
             try {
-              // Dialog schließen
               Navigator.of(ctx, rootNavigator: true).pop();
-
-              // API Call für Schnellverkauf
               await Provider.of<DataManagement>(context, listen: false)
                   .supabaseService.sellPlayerToSystem(widget.leagueId, player.id);
-
               if (mounted) {
                 messenger.showSnackBar(const SnackBar(content: Text("Spieler erfolgreich verkauft!"), backgroundColor: Colors.green));
-                _loadMarket(); // Liste neu laden
+                _loadMarket();
               }
             } catch (e) {
-              if (mounted) {
-                ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Fehler: $e"), backgroundColor: Colors.red));
-              }
+              if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Fehler: $e"), backgroundColor: Colors.red));
             }
           },
         );
@@ -284,64 +311,36 @@ class _TransferMarketScreenState extends State<TransferMarketScreen> {
         type: TransactionType.bid,
         basePrice: offer['min_bid_price'],
         currentBid: currentBidAmount,
-
-        // CALLBACK: Gebot zurückziehen
         onWithdraw: () async {
           try {
-            // Wir warten hier auf die Datenbank
             await Provider.of<DataManagement>(context, listen: false)
-                .supabaseService
-                .withdrawBid(offer['id']);
-
+                .supabaseService.withdrawBid(offer['id']);
             if (mounted) {
               ScaffoldMessenger.of(context).showSnackBar(
                   const SnackBar(content: Text("Gebot zurückgezogen."), duration: Duration(seconds: 1))
               );
             }
           } catch (e) {
-            // WICHTIG: Fehler anzeigen UND weiterwerfen, damit das Overlay nicht "umschaltet"
-            if (mounted) {
-              ScaffoldMessenger.of(context).showSnackBar(
-                  SnackBar(content: Text("Fehler: $e"), backgroundColor: Colors.red)
-              );
-            }
+            if (mounted) ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text("Fehler: $e"), backgroundColor: Colors.red));
             rethrow;
           }
         },
-
         onConfirm: (amount) async {
-          // 1. Messenger sichern
           final messenger = ScaffoldMessenger.of(context);
-
           try {
             await Provider.of<DataManagement>(context, listen: false)
-                .supabaseService
-                .placeBid(offer['id'], amount);
-
-            // 2. Prüfen ob mounted
+                .supabaseService.placeBid(offer['id'], amount);
             if (!mounted) return;
-
-            // 3. WICHTIG: Dialog schließen!
             Navigator.of(context, rootNavigator: true).pop();
-
-            // 4. Feedback
-            messenger.showSnackBar(
-                const SnackBar(content: Text("Gebot erfolgreich abgegeben!"), backgroundColor: Colors.green)
-            );
+            messenger.showSnackBar(const SnackBar(content: Text("Gebot erfolgreich abgegeben!"), backgroundColor: Colors.green));
           } catch (e) {
-            if (mounted) {
-              messenger.showSnackBar(
-                  SnackBar(content: Text("Fehler: $e"), backgroundColor: Colors.red)
-              );
-            }
+            if (mounted) messenger.showSnackBar(SnackBar(content: Text("Fehler: $e"), backgroundColor: Colors.red));
           }
         },
       ),
     );
 
-    if (mounted) {
-      _loadMarket();
-    }
+    if (mounted) _loadMarket();
   }
 
   Map<String, dynamic> _extractPlayerData(Map<String, dynamic> playerRaw) {
@@ -370,21 +369,18 @@ class _TransferMarketScreenState extends State<TransferMarketScreen> {
     return Scaffold(
       backgroundColor: Colors.grey.shade100,
 
-      // --- NEU: DIE LEISTE IST JETZT UNTEN (bottomNavigationBar) ---
       bottomNavigationBar: SafeArea(
         child: Container(
           padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
           decoration: BoxDecoration(
             color: Colors.white,
             boxShadow: [
-              // Der Schatten zeigt jetzt nach OBEN (Offset y = -2)
               BoxShadow(color: Colors.black.withOpacity(0.05), blurRadius: 4, offset: const Offset(0, -2))
             ],
           ),
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceBetween,
             children: [
-              // Links: Toggle Button für Ansicht
               Tooltip(
                 message: _getModeTitle(),
                 child: IconButton(
@@ -392,8 +388,6 @@ class _TransferMarketScreenState extends State<TransferMarketScreen> {
                   onPressed: _toggleMode,
                 ),
               ),
-
-              // Mitte: Budget Anzeige
               Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
@@ -404,8 +398,6 @@ class _TransferMarketScreenState extends State<TransferMarketScreen> {
                   ),
                 ],
               ),
-
-              // Rechts: Spieler Verkaufen (Dezentes Plus/Kreuz)
               Tooltip(
                 message: "Spieler verkaufen",
                 child: IconButton(
@@ -419,10 +411,8 @@ class _TransferMarketScreenState extends State<TransferMarketScreen> {
         ),
       ),
 
-      // --- DER RESTLICHE BILDSCHIRM (body) ---
       body: Column(
         children: [
-          // Info-Zeile für den aktuellen Modus jetzt oben über der Liste
           Padding(
             padding: const EdgeInsets.only(top: 16.0, bottom: 8.0),
             child: Text(
@@ -430,8 +420,6 @@ class _TransferMarketScreenState extends State<TransferMarketScreen> {
               style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: Colors.grey.shade500, letterSpacing: 1.0),
             ),
           ),
-
-          // --- DIE LISTE ---
           Expanded(
             child: _isLoading
                 ? const Center(child: CircularProgressIndicator())
@@ -440,6 +428,7 @@ class _TransferMarketScreenState extends State<TransferMarketScreen> {
               child: displayedList.isEmpty
                   ? Center(child: Text("Hier ist aktuell nichts los.", style: TextStyle(color: Colors.grey.shade600)))
                   : ListView.builder(
+                controller: _scrollController, // NEU: Controller hier einbinden!
                 padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
                 itemCount: displayedList.length,
                 itemBuilder: (context, index) {
@@ -449,7 +438,6 @@ class _TransferMarketScreenState extends State<TransferMarketScreen> {
                   final isOwnOffer = offer['seller_id'] == currentUserId;
                   final extraData = _extractPlayerData(player);
 
-                  // NEU: Prüfen, ob wir ein Gebot haben und wie hoch es ist
                   final bids = offer['transfer_bids'] as List<dynamic>? ?? [];
                   final myBid = bids.firstWhere((b) => b['bidder_id'] == currentUserId, orElse: () => null);
                   final bool hasBid = myBid != null;
@@ -467,7 +455,6 @@ class _TransferMarketScreenState extends State<TransferMarketScreen> {
                     shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
                     child: Column(
                       children: [
-                        // 1. DER SPIELER
                         PlayerListItem(
                           rank: index + 1,
                           profileImageUrl: player['profilbild_url'],
@@ -484,13 +471,10 @@ class _TransferMarketScreenState extends State<TransferMarketScreen> {
                             Navigator.push(context, MaterialPageRoute(builder: (_) => PlayerScreen(playerId: player['id'])));
                           },
                         ),
-
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 16.0),
                           child: Divider(height: 1, color: Colors.grey.shade100),
                         ),
-
-                        // 2. MARKT-BEREICH
                         Padding(
                           padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
                           child: Column(
@@ -509,10 +493,7 @@ class _TransferMarketScreenState extends State<TransferMarketScreen> {
                                   Text(timeString, style: TextStyle(fontSize: 11, color: timeColor, fontWeight: FontWeight.bold)),
                                 ],
                               ),
-
                               const SizedBox(height: 12),
-
-                              // WENN ES DAS EIGENE ANGEBOT IST: Keine Buttons anzeigen
                               if (isOwnOffer)
                                 Container(
                                   width: double.infinity,
@@ -522,7 +503,6 @@ class _TransferMarketScreenState extends State<TransferMarketScreen> {
                                     child: Text("Dein Spieler ist auf dem Markt", style: TextStyle(color: Colors.black54, fontWeight: FontWeight.bold, fontSize: 13)),
                                   ),
                                 )
-                              // ANSONSTEN: Kaufen & Bieten Buttons anzeigen
                               else
                                 Row(
                                   children: [
@@ -540,19 +520,16 @@ class _TransferMarketScreenState extends State<TransferMarketScreen> {
                                         child: Container(
                                           padding: const EdgeInsets.symmetric(vertical: 8),
                                           decoration: BoxDecoration(
-                                            // NEU: Dezenter blauer Hintergrund, falls geboten!
                                               color: hasBid ? Colors.blue.shade50 : Colors.transparent,
                                               border: Border.all(color: hasBid ? Colors.blue.shade300 : Colors.grey.shade300),
                                               borderRadius: BorderRadius.circular(12)
                                           ),
                                           child: Column(
                                             children: [
-                                              // NEU: Text ändert sich zu "DEIN GEBOT"
                                               Text(hasBid ? "DEIN GEBOT" : "GEBOT AB",
                                                   style: TextStyle(fontSize: 9, color: hasBid ? Colors.blue.shade700 : Colors.grey.shade600, letterSpacing: 0.5, fontWeight: FontWeight.bold)
                                               ),
                                               const SizedBox(height: 2),
-                                              // NEU: Zeigt den eigenen Gebotsbetrag an, falls vorhanden
                                               Text(_currencyFormat.format(hasBid ? myBidAmount : offer['min_bid_price']),
                                                   style: TextStyle(fontWeight: FontWeight.bold, fontSize: 13, color: hasBid ? Colors.blue.shade900 : Colors.black87)
                                               ),

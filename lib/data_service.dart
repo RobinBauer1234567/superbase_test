@@ -1041,7 +1041,59 @@ class ApiService {
       if (e.toString().contains('API_LIMIT_REACHED')) rethrow;
       print('❌ Fehler bei der Initialisierung von $playerId: $e');
     }
-  }}
+  }
+
+  Future<void> fetchAndProcessTransfers(int teamId, int seasonId) async {
+    final url = '$baseUrl/team/$teamId/transfers';
+
+    try {
+      final response = await _throttledGet(url);
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+
+        // Wir nehmen In- und Out-Transfers und packen sie in eine gemeinsame Liste
+        final List<dynamic> transfersIn = data['transfersIn'] ?? [];
+        final List<dynamic> transfersOut = data['transfersOut'] ?? [];
+        final List<dynamic> allTransfers = [...transfersIn, ...transfersOut];
+
+        for (var transfer in allTransfers) {
+          int transferId = transfer['id'];
+          int playerId = transfer['player']['id'];
+
+          // Sicherstellen, dass die IDs existieren (z.B. bei "No Team" kann sie fehlen)
+          int? fromTeamId = transfer['transferFrom']?['id'];
+          int? toTeamId = transfer['transferTo']?['id'];
+
+          // 💡 Optional: Du könntest hier prüfen, ob 'transferDateTimestamp' in
+          // der aktuellen Saison liegt, damit du keine Transfers von vor 5 Jahren scannst.
+
+          // Rufe unseren neuen Supabase RPC auf
+          final bool wasProcessed = await supabaseService.supabase.rpc(
+            'process_transfer_event',
+            params: {
+              'p_transfer_id': transferId,
+              'p_player_id': playerId,
+              'p_from_team_id': fromTeamId,
+              'p_to_team_id': toTeamId,
+              'p_season_id': seasonId,
+            },
+          );
+
+          if (wasProcessed) {
+            print('✅ Neuer Transfer verarbeitet: Spieler $playerId gewechselt!');
+          }
+        }
+      } else {
+        print('⚠️ Konnte Transfers für Team $teamId nicht laden: ${response.statusCode}');
+      }
+    } catch (e) {
+      if (e.toString().contains('API_LIMIT_REACHED')) rethrow;
+      print('❌ Fehler beim Verarbeiten der Transfers für Team $teamId: $e');
+    }
+  }
+
+}
 
 class SupabaseService {
   final SupabaseClient supabase = Supabase.instance.client;
@@ -1989,5 +2041,31 @@ class SupabaseService {
     } catch (e) {
       print("Fehler beim Speichern der Aufstellung RPC: $e");
     }
+  }
+
+  Future<List<Map<String, dynamic>>> getTransferBids(int transferId) async {
+    // Holt die Gebote und die Namen der Bieter in zwei sicheren Schritten
+    final bidsRes = await supabase
+        .from('transfer_bids')
+        .select()
+        .eq('transfer_id', transferId)
+        .order('amount', ascending: false);
+
+    if (bidsRes.isEmpty) return [];
+
+    final userIds = bidsRes.map((b) => b['bidder_id']).toList();
+    final profilesRes = await supabase
+        .from('profiles')
+        .select('user_id, username, avatar_url')
+        .inFilter('user_id', userIds);
+
+    // Mappen der User-Infos an die Gebote
+    for (var bid in bidsRes) {
+      final profile = profilesRes.firstWhere((p) => p['user_id'] == bid['bidder_id'], orElse: () => {});
+      bid['username'] = profile['username'] ?? 'Unbekannt';
+      bid['avatar_url'] = profile['avatar_url'];
+    }
+
+    return List<Map<String, dynamic>>.from(bidsRes);
   }
 }

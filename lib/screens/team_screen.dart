@@ -46,6 +46,24 @@ class _TeamScreenState extends State<TeamScreen> with SingleTickerProviderStateM
   }
 
 
+
+  String _normalizePosition(dynamic rawPosition) {
+    if (rawPosition == null) return 'N/A';
+    if (rawPosition is String) {
+      final value = rawPosition.trim();
+      return value.isEmpty ? 'N/A' : value;
+    }
+    if (rawPosition is List) {
+      final values = rawPosition
+          .map((e) => e.toString().trim())
+          .where((e) => e.isNotEmpty)
+          .toList();
+      return values.isEmpty ? 'N/A' : values.join(', ');
+    }
+    final value = rawPosition.toString().trim();
+    return value.isEmpty ? 'N/A' : value;
+  }
+
   int _extractMarketValue(dynamic analyticsRaw, int seasonId) {
     if (analyticsRaw is Map) {
       return (analyticsRaw['marktwert'] as num?)?.toInt() ?? 0;
@@ -115,6 +133,7 @@ class _TeamScreenState extends State<TeamScreen> with SingleTickerProviderStateM
         topPlayersList.add({
           'id': player['id'],
           'name': player['name'],
+          'position': _normalizePosition(player['position']),
           'profilbild_url': player['profilbild_url'],
           'marktwert': _extractMarketValue(player['spieler_analytics'], seasonId), // Marktwert aus DB mappen
           'total_punkte': totalPoints,
@@ -259,7 +278,7 @@ class _TeamScreenState extends State<TeamScreen> with SingleTickerProviderStateM
                       score: player['total_punkte'],
                       maxScore: (anzahlMatches * 250*0.8).toInt(),
 
-                      position: player['position'] ?? 'N/A',
+                      position: _normalizePosition(player['position']),
                       id: player['id'],
                       goals: 0, // Stats müssten erst aufwendig geparst werden, 0 reicht für die Optik
                       assists: 0,
