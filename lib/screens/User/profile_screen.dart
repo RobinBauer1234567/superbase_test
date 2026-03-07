@@ -14,6 +14,7 @@ import 'package:premier_league/screens/screenelements/matchday_team_shared.dart'
 import 'package:premier_league/screens/player_screen.dart';
 import 'package:premier_league/screens/leagues/matchday_team_overlay.dart';
 import 'package:premier_league/screens/screenelements/league_logo.dart';
+import 'package:premier_league/screens/screenelements/transfer_activity_card.dart';
 
 class ProfileScreen extends StatefulWidget {
   // NEU: Optionale Parameter, um fremde Profile und eine bestimmte Liga direkt zu öffnen
@@ -843,52 +844,21 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                   sliver: SliverList(
                     delegate: SliverChildBuilderDelegate(
                           (context, index) {
-                        final fmt = NumberFormat.currency(locale: 'de_DE', symbol: '€', decimalDigits: 0);
                         final transfer = _transfers[index];
                         final content = transfer['content'] as Map<String, dynamic>;
-                        final date = DateFormat('dd.MM.yyyy HH:mm').format(DateTime.parse(transfer['created_at']).toLocal());
-                        final isBuyer = content['buyer_name'] == _username;
-                        final price = content['price'] ?? 0;
-                        final otherParty = isBuyer ? (content['seller_name'] ?? 'System') : (content['buyer_name'] ?? 'System');
-                        final iconColor = isBuyer ? Colors.green : Colors.red;
-
                         return Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          child: Card(
-                            elevation: 1, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                            child: Padding(
-                              padding: const EdgeInsets.all(16.0),
-                              child: Row(
-                                children: [
-                                  Container(
-                                    width: 44, height: 44,
-                                    decoration: BoxDecoration(color: iconColor.withOpacity(0.1), shape: BoxShape.circle),
-                                    child: Icon(isBuyer ? Icons.arrow_downward : Icons.arrow_upward, color: iconColor),
-                                  ),
-                                  const SizedBox(width: 16),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(content['player_name'] ?? 'Unbekannt', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                                        const SizedBox(height: 4),
-                                        Text(isBuyer ? 'Von: $otherParty' : 'An: $otherParty', style: TextStyle(fontSize: 13, color: Colors.grey.shade600)),
-                                        const SizedBox(height: 2),
-                                        Text(date, style: TextStyle(fontSize: 11, color: Colors.grey.shade400)),
-                                      ],
-                                    ),
-                                  ),
-                                  Column(
-                                    crossAxisAlignment: CrossAxisAlignment.end,
-                                    children: [
-                                      Text(isBuyer ? 'Zugang' : 'Abgang', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: iconColor)),
-                                      const SizedBox(height: 4),
-                                      Text(fmt.format(price), style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: iconColor)),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          child: TransferActivityCard(
+                            content: content,
+                            createdAt: DateTime.parse(transfer['created_at']).toLocal(),
+                            datePattern: 'dd.MM.yyyy HH:mm',
+                            showDetailsTap: false,
+                            onPlayerTap: () {
+                              final playerId = content['player_id'] ?? 0;
+                              if (playerId != 0) {
+                                Navigator.push(context, MaterialPageRoute(builder: (_) => PlayerScreen(playerId: playerId)));
+                              }
+                            },
                           ),
                         );
                       },

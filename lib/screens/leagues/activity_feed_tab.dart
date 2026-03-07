@@ -6,6 +6,7 @@ import 'package:premier_league/screens/screenelements/transfer_details_overlay.d
 import 'package:premier_league/viewmodels/data_viewmodel.dart';
 import 'package:premier_league/models/league_activity.dart';
 import 'package:premier_league/screens/screenelements/player_list_item.dart';
+import 'package:premier_league/screens/screenelements/transfer_activity_card.dart';
 import 'package:premier_league/screens/player_screen.dart';
 import 'package:premier_league/screens/User/profile_screen.dart';
 import 'package:premier_league/screens/leagues/transfer_market_screen.dart';
@@ -116,39 +117,27 @@ class ActivityFeedTab extends StatelessWidget {
           ),
         );
         break;
-      case 'LISTING':
       case 'TRANSFER':
-        final isListing = activity.type == 'LISTING';
-        final transferType = activity.content['transfer_type'] ?? 'TRANSFER';
-
-        if (isListing) {
-          headerIcon = Icons.sell;
-          headerColor = Colors.orange;
-          headerTitle = "AUF DEM MARKT";
-        } else {
-          if (transferType == 'SOFORTKAUF') {
-            headerIcon = Icons.flash_on;
-            headerColor = Colors.teal;
-            headerTitle = "SOFORTKAUF";
-          } else if (transferType == 'AUKTION') {
-            headerIcon = Icons.gavel;
-            headerColor = Colors.deepPurple;
-            headerTitle = "AUKTION";
-          } else if (transferType == 'KEINE GEBOTE') {
-            // NEU: Unsere Graue Kategorie für abgelaufene Angebote ohne Bieter
-            headerIcon = Icons.timer_off;
-            headerColor = Colors.grey.shade600;
-            headerTitle = "KEINE GEBOTE";
-          } else if (transferType == 'STARTSPIELER') {
-            headerIcon = Icons.card_giftcard;
-            headerColor = Colors.indigo;
-            headerTitle = "STARTSPIELER";
-          } else {
-            headerIcon = Icons.handshake;
-            headerColor = Colors.blue;
-            headerTitle = "TRANSFER";
-          }
-        }
+        return TransferActivityCard(
+          content: activity.content,
+          createdAt: activity.createdAt,
+          onPlayerTap: () {
+            final playerId = activity.content['player_id'] ?? 0;
+            if (playerId != 0) {
+              Navigator.push(context, MaterialPageRoute(builder: (_) => PlayerScreen(playerId: playerId)));
+            }
+          },
+          onDetailsTap: () {
+            showDialog(
+              context: context,
+              builder: (_) => TransferDetailsOverlay(activity: activity),
+            );
+          },
+        );
+      case 'LISTING':
+        headerIcon = Icons.sell;
+        headerColor = Colors.orange;
+        headerTitle = "AUF DEM MARKT";
 
         final playerName = activity.content['player_name'] ?? 'Unbekannt';
         final playerId = activity.content['player_id'] ?? 0;
@@ -173,94 +162,41 @@ class ActivityFeedTab extends StatelessWidget {
           },
         );
 
-        if (!isListing) {
-          final buyer = activity.content['buyer_name'] ?? 'System';
-
-          Widget innerBar = Padding(
+        // BEI LISTING (Auf dem Markt): Navigiert zum Transfermarkt
+        bottomBarContent = InkWell(
+          onTap: () {
+            final tabController = DefaultTabController.maybeOf(context);
+            if (tabController != null) {
+              tabController.animateTo(3);
+              if (playerId != 0) {
+                Future.delayed(const Duration(milliseconds: 100), () {
+                  TransferMarketScreenState.instance?.scrollToPlayer(playerId);
+                });
+              }
+            }
+          },
+          borderRadius: const BorderRadius.only(bottomLeft: Radius.circular(16), bottomRight: Radius.circular(16)),
+          child: Padding(
             padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
             child: Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                Expanded(
-                  child: Row(
-                    children: [
-                      Icon(seller == 'System' ? Icons.computer : Icons.person, size: 14, color: Colors.grey.shade400),
-                      const SizedBox(width: 4),
-                      Flexible(child: Text(seller, style: TextStyle(fontSize: 11, color: Colors.grey.shade600, fontWeight: FontWeight.w500), overflow: TextOverflow.ellipsis)),
-                      Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 6.0),
-                          child: Icon(Icons.arrow_forward, size: 12, color: Colors.grey.shade400)
-                      ),
-                      Icon(buyer == 'System' ? Icons.computer : Icons.person, size: 14, color: Colors.grey.shade400),
-                      const SizedBox(width: 4),
-                      Flexible(child: Text(buyer, style: TextStyle(fontSize: 11, color: Colors.grey.shade600, fontWeight: FontWeight.w500), overflow: TextOverflow.ellipsis)),
-                    ],
-                  ),
+                Row(
+                  children: [
+                    Icon(seller == 'System' ? Icons.computer : Icons.person, size: 14, color: Colors.grey.shade400),
+                    const SizedBox(width: 4),
+                    Text(seller, style: TextStyle(fontSize: 11, color: Colors.grey.shade600, fontWeight: FontWeight.w500)),
+                  ],
                 ),
-                const SizedBox(width: 12),
                 Container(
                   padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                  decoration: BoxDecoration(color: headerColor.withOpacity(0.1), borderRadius: BorderRadius.circular(8)),
-                  child: Text(fmt.format(price), style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: headerColor)),
+                  decoration: BoxDecoration(color: Colors.orange.shade50, borderRadius: BorderRadius.circular(8)),
+                  child: Text(fmt.format(price), style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.orange.shade700)),
                 ),
               ],
             ),
-          );
-
-          // NEU: 'KEINE GEBOTE' lässt sich nun auch für das Overlay anklicken
-          if (transferType == 'SOFORTKAUF' || transferType == 'AUKTION' || transferType == 'TRANSFER' || transferType == 'KEINE GEBOTE') {
-            bottomBarContent = InkWell(
-              borderRadius: const BorderRadius.only(bottomLeft: Radius.circular(16), bottomRight: Radius.circular(16)),
-              onTap: () {
-                showDialog(
-                  context: context,
-                  builder: (_) => TransferDetailsOverlay(activity: activity),
-                );
-              },
-              child: innerBar,
-            );
-          } else {
-            // Startspieler sind nicht klickbar
-            bottomBarContent = innerBar;
-          }
-
-        } else {
-          // BEI LISTING (Auf dem Markt): Navigiert zum Transfermarkt
-          bottomBarContent = InkWell(
-            onTap: () {
-              final tabController = DefaultTabController.maybeOf(context);
-              if (tabController != null) {
-                tabController.animateTo(3);
-                if (playerId != 0) {
-                  Future.delayed(const Duration(milliseconds: 100), () {
-                    TransferMarketScreenState.instance?.scrollToPlayer(playerId);
-                  });
-                }
-              }
-            },
-            borderRadius: const BorderRadius.only(bottomLeft: Radius.circular(16), bottomRight: Radius.circular(16)),
-            child: Padding(
-              padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-              child: Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  Row(
-                    children: [
-                      Icon(seller == 'System' ? Icons.computer : Icons.person, size: 14, color: Colors.grey.shade400),
-                      const SizedBox(width: 4),
-                      Text(seller, style: TextStyle(fontSize: 11, color: Colors.grey.shade600, fontWeight: FontWeight.w500)),
-                    ],
-                  ),
-                  Container(
-                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                    decoration: BoxDecoration(color: Colors.orange.shade50, borderRadius: BorderRadius.circular(8)),
-                    child: Text(fmt.format(price), style: TextStyle(fontSize: 12, fontWeight: FontWeight.bold, color: Colors.orange.shade700)),
-                  ),
-                ],
-              ),
-            ),
-          );
-        }
+          ),
+        );
         break;
       default:
         headerIcon = Icons.info;
