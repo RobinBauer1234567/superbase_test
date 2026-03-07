@@ -72,6 +72,16 @@
   {
     "schemaname": "public",
     "tablename": "transfer_bids",
+    "policyname": "Market visible to everyone",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "SELECT",
+    "qual": "true",
+    "with_check": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "transfer_bids",
     "policyname": "Users can delete their own bids",
     "permissive": "PERMISSIVE",
     "roles": "{public}",
@@ -88,16 +98,6 @@
     "cmd": "INSERT",
     "qual": null,
     "with_check": "(auth.uid() = bidder_id)"
-  },
-  {
-    "schemaname": "public",
-    "tablename": "transfer_bids",
-    "policyname": "Users can see only their own bids",
-    "permissive": "PERMISSIVE",
-    "roles": "{public}",
-    "cmd": "SELECT",
-    "qual": "(auth.uid() = bidder_id)",
-    "with_check": null
   },
   {
     "schemaname": "public",
