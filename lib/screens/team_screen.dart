@@ -6,7 +6,6 @@ import 'package:premier_league/screens/player_screen.dart';
 import 'package:premier_league/screens/premier_league/matches_screen.dart';
 import 'package:premier_league/viewmodels/data_viewmodel.dart';
 import 'package:premier_league/utils/color_helper.dart';
-import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 import 'package:premier_league/screens/screenelements/player_list_item.dart';
 
 class TeamScreen extends StatefulWidget {
@@ -20,6 +19,7 @@ class TeamScreen extends StatefulWidget {
 
 class _TeamScreenState extends State<TeamScreen> with SingleTickerProviderStateMixin {
   late final TabController _tabController;
+  final ScrollController _matchesScrollController = ScrollController();
 
   bool _isLoading = true;
   String _errorMessage = '';
@@ -29,14 +29,16 @@ class _TeamScreenState extends State<TeamScreen> with SingleTickerProviderStateM
   List<Map<String, dynamic>> _topPlayers = [];
   int anzahlMatches = 0;
 
-  // scrollable_positioned_list controller/listener
-  final ItemScrollController _itemScrollController = ItemScrollController();
-  final ItemPositionsListener _itemPositionsListener = ItemPositionsListener.create();
-
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
+    _tabController.addListener(() {
+      setState(() {});
+      if (_tabController.index == 0) {
+        _scrollToUpcomingMatch();
+      }
+    });
   }
 
   @override
@@ -145,12 +147,11 @@ class _TeamScreenState extends State<TeamScreen> with SingleTickerProviderStateM
       if (mounted) {
         setState(() {
           _teamData = teamResponse;
-          _teamMatches = List<Map<String, dynamic>>.from(matchesResponse ?? []);
+          _teamMatches = List<Map<String, dynamic>>.from(matchesResponse);
           _topPlayers = topPlayersList;
           _isLoading = false;
         });
 
-        // Scroll erst nachdem Frame gebaut ist
         WidgetsBinding.instance.addPostFrameCallback((_) {
           _scrollToUpcomingMatch();
         });
@@ -167,51 +168,66 @@ class _TeamScreenState extends State<TeamScreen> with SingleTickerProviderStateM
   }
 
   Future<void> _scrollToUpcomingMatch() async {
-    if (_teamMatches.isEmpty) return;
+    WidgetsBinding.instance.addPostFrameCallback((_) {
+      if (_teamMatches.isEmpty || !_matchesScrollController.hasClients) return;
 
-    final now = DateTime.now();
-    int? upcomingMatchIndex;
+      final now = DateTime.now();
+      int? upcomingMatchIndex;
 
-    // Liste ist aufsteigend nach Datum sortiert -> nächstes Spiel ist das erste mit datum > now
-    for (int i = 0; i < _teamMatches.length; i++) {
-      final match = _teamMatches[i];
-      if (match['datum'] != null) {
-        try {
-          final matchDate = DateTime.parse(match['datum']);
-          if (matchDate.isAfter(now)) {
-            upcomingMatchIndex = i;
-            break;
+      for (int i = 0; i < _teamMatches.length; i++) {
+        final match = _teamMatches[i];
+        if (match['datum'] != null) {
+          try {
+            final matchDate = DateTime.parse(match['datum']);
+            if (matchDate.isAfter(now)) {
+              upcomingMatchIndex = i;
+              break;
+            }
+          } catch (_) {
+            // parsing fail -> skip
           }
-        } catch (_) {
-          // parsing fail -> skip
         }
       }
-    }
 
-    if (upcomingMatchIndex == null) {
-      // kein zukünftiges Spiel gefunden -> evtl. letztes Spiel anzeigen
-      upcomingMatchIndex = _teamMatches.isNotEmpty ? _teamMatches.length - 1 : null;
-    }
+      if (upcomingMatchIndex == null) {
+        upcomingMatchIndex = _teamMatches.length - 1;
+      }
 
-    if (upcomingMatchIndex == null) return;
-
-    // scrollable_positioned_list scrollTo ist robust — auch wenn Items noch lazy gebaut werden
-    try {
-      _itemScrollController.scrollTo(
-        index: upcomingMatchIndex,
+      _matchesScrollController.animateTo(
+        upcomingMatchIndex * 92.0,
         duration: const Duration(milliseconds: 500),
         curve: Curves.easeOutCubic,
       );
-      print('✅ TeamScreen: gescrollt zu Match Index $upcomingMatchIndex');
-    } catch (e) {
-      print('⚠️ TeamScreen: scrollTo fehlgeschlagen: $e');
-    }
+    });
   }
 
   @override
   void dispose() {
     _tabController.dispose();
+    _matchesScrollController.dispose();
     super.dispose();
+  }
+
+  Widget _buildCollapsedTeamBar() {
+    return Row(
+      children: [
+        CircleAvatar(
+          radius: 18,
+          backgroundColor: Colors.grey.shade200,
+          backgroundImage: _teamData?['image_url'] != null ? NetworkImage(_teamData!['image_url']) : null,
+          child: _teamData?['image_url'] == null ? const Icon(Icons.shield, size: 18, color: Colors.grey) : null,
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            _teamData?['name'] ?? 'Team',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
+          ),
+        ),
+      ],
+    );
   }
 
   Color _getColorForRating(int rating) {
@@ -222,85 +238,107 @@ class _TeamScreenState extends State<TeamScreen> with SingleTickerProviderStateM
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(
-        title: Text(_teamData?['name'] ?? 'Team wird geladen...'),
-      ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
           : _errorMessage.isNotEmpty
           ? Center(child: Text(_errorMessage))
-          : Column(
-        children: [
-          Padding(
-            padding: const EdgeInsets.all(16.0),
-            child: Image.network(
-              _teamData?['image_url'] ?? '',
-              height: 120,
-              width: 120,
-              errorBuilder: (context, error, stackTrace) =>
-              const Icon(Icons.shield, size: 120, color: Colors.grey),
-            ),
-          ),
-          TabBar(
-            controller: _tabController,
-            tabs: const [
-              Tab(text: 'Spiele'),
-              Tab(text: 'Kader'),
-            ],
-          ),
-          Expanded(
-            child: TabBarView(
-              controller: _tabController,
-              children: [
-                // Spiele-Tab: ScrollablePositionedList
-                _teamMatches.isEmpty
-                    ? const Center(child: Text('Keine Spiele verfügbar'))
-                    : ScrollablePositionedList.builder(
-                  itemCount: _teamMatches.length,
-                  itemScrollController: _itemScrollController,
-                  itemPositionsListener: _itemPositionsListener,
-                  itemBuilder: (context, index) {
-                    final match = _teamMatches[index];
-                    return MatchCard(spiel: match, onRefresh: _fetchTeamData);
-                  },
-                ),
-                ListView.builder(
-                  itemCount: _topPlayers.length,
-                  itemBuilder: (context, index) {
-                    final player = _topPlayers[index];
-                    return PlayerListItem(
-                      rank: index + 1,
-                      profileImageUrl: player['profilbild_url'],
-                      playerName: player['name'],
-                      // teamImageUrl auf null setzen, damit stattdessen der Marktwert angezeigt wird
-                      teamImageUrl: null,
-                      marketValue: player['marktwert'], // Marktwert übergeben
-                      score: player['total_punkte'],
-                      maxScore: (anzahlMatches * 250*0.8).toInt(),
-
-                      position: _normalizePosition(player['position']),
-                      id: player['id'],
-                      goals: 0, // Stats müssten erst aufwendig geparst werden, 0 reicht für die Optik
-                      assists: 0,
-                      ownGoals: 0,
-                      teamColor: Colors.blue,
-                      onTap: () {
-                        Navigator.push(
-                          context,
-                          MaterialPageRoute(
-                            builder: (context) => PlayerScreen(playerId: player['id']),
+          : NestedScrollView(
+              headerSliverBuilder: (context, innerBoxIsScrolled) {
+                return [
+                  SliverOverlapAbsorber(
+                    handle: NestedScrollView.sliverOverlapAbsorberHandleFor(context),
+                    sliver: SliverAppBar(
+                      expandedHeight: 220,
+                      pinned: true,
+                      backgroundColor: Colors.white,
+                      foregroundColor: Colors.black87,
+                      title: _buildCollapsedTeamBar(),
+                      flexibleSpace: FlexibleSpaceBar(
+                        background: Padding(
+                          padding: const EdgeInsets.only(bottom: 16),
+                          child: Center(
+                            child: Image.network(
+                              _teamData?['image_url'] ?? '',
+                              height: 120,
+                              width: 120,
+                              errorBuilder: (context, error, stackTrace) => const Icon(Icons.shield, size: 120, color: Colors.grey),
+                            ),
                           ),
-                        );
-                      },
-                    );
-                  },
-                ),
-// ...
-              ],
+                        ),
+                      ),
+                      bottom: TabBar(
+                        controller: _tabController,
+                        tabs: const [
+                          Tab(text: 'Spiele'),
+                          Tab(text: 'Kader'),
+                        ],
+                      ),
+                    ),
+                  ),
+                ];
+              },
+              body: TabBarView(
+                controller: _tabController,
+                children: [
+                  Builder(
+                    builder: (context) => CustomScrollView(
+                      key: const PageStorageKey<String>('teamMatchesTab'),
+                      controller: _matchesScrollController,
+                      slivers: [
+                        SliverOverlapInjector(handle: NestedScrollView.sliverOverlapAbsorberHandleFor(context)),
+                        if (_teamMatches.isEmpty)
+                          const SliverFillRemaining(hasScrollBody: false, child: Center(child: Text('Keine Spiele verfügbar')))
+                        else
+                          SliverList.builder(
+                            itemCount: _teamMatches.length,
+                            itemBuilder: (context, index) {
+                              final match = _teamMatches[index];
+                              return MatchCard(spiel: match, onRefresh: _fetchTeamData);
+                            },
+                          ),
+                      ],
+                    ),
+                  ),
+                  Builder(
+                    builder: (context) => CustomScrollView(
+                      key: const PageStorageKey<String>('teamSquadTab'),
+                      slivers: [
+                        SliverOverlapInjector(handle: NestedScrollView.sliverOverlapAbsorberHandleFor(context)),
+                        SliverList.builder(
+                          itemCount: _topPlayers.length,
+                          itemBuilder: (context, index) {
+                            final player = _topPlayers[index];
+                            return PlayerListItem(
+                              rank: index + 1,
+                              profileImageUrl: player['profilbild_url'],
+                              playerName: player['name'],
+                              teamImageUrl: null,
+                              marketValue: player['marktwert'],
+                              score: player['total_punkte'],
+                              maxScore: (anzahlMatches * 250 * 0.8).toInt(),
+                              position: _normalizePosition(player['position']),
+                              id: player['id'],
+                              goals: 0,
+                              assists: 0,
+                              ownGoals: 0,
+                              teamColor: Colors.blue,
+                              onTap: () {
+                                Navigator.push(
+                                  context,
+                                  MaterialPageRoute(
+                                    builder: (context) => PlayerScreen(playerId: player['id']),
+                                  ),
+                                );
+                              },
+                            );
+                          },
+                        ),
+                      ],
+                    ),
+                  ),
+                ],
+              ),
             ),
-          ),
-        ],
-      ),
     );
   }
 }
