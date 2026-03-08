@@ -261,97 +261,6 @@ class _PlayerScreenState extends State<PlayerScreen>
     return '${formatter.format(value)} €';
   }
 
-  Widget _buildHeaderContent() {
-    return Padding(
-      padding: const EdgeInsets.fromLTRB(16, 12, 16, 16),
-      child: Column(
-        mainAxisAlignment: MainAxisAlignment.end,
-        children: [
-          SizedBox(
-            height: 150,
-            child: Row(
-              children: [
-                Expanded(
-                  flex: 2,
-                  child: Align(
-                    alignment: Alignment.centerRight,
-                    child: Opacity(
-                      opacity: 0.4,
-                      child: teamImageUrl != null
-                          ? Image.network(
-                              teamImageUrl!,
-                              width: 120,
-                              height: 120,
-                              fit: BoxFit.contain,
-                            )
-                          : const SizedBox.shrink(),
-                    ),
-                  ),
-                ),
-                ClipOval(
-                  child: profileImageUrl != null
-                      ? Image.network(
-                          profileImageUrl!,
-                          width: 150,
-                          height: 150,
-                          fit: BoxFit.cover,
-                          errorBuilder: (context, error, stackTrace) {
-                            return const Icon(Icons.error, size: 120, color: Colors.red);
-                          },
-                        )
-                      : const Icon(Icons.person, size: 120, color: Colors.grey),
-                ),
-                const Expanded(flex: 2, child: SizedBox()),
-              ],
-            ),
-          ),
-          const SizedBox(height: 12),
-          Text(
-            playerName,
-            style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
-            textAlign: TextAlign.center,
-          ),
-          const SizedBox(height: 4),
-          Text(
-            'Marktwert: ${_formatMarketValue(marketValue)}',
-            style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
-          ),
-          Text(
-            'Positionen: ${availablePositions.join(', ')}',
-            style: TextStyle(fontSize: 14, color: Colors.grey.shade700),
-          ),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildCollapsedPlayerBar() {
-    return Row(
-      children: [
-        CircleAvatar(
-          radius: 18,
-          backgroundColor: Colors.grey.shade200,
-          backgroundImage: profileImageUrl != null ? NetworkImage(profileImageUrl!) : null,
-          child: profileImageUrl == null ? const Icon(Icons.person, size: 18, color: Colors.grey) : null,
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Text(
-            playerName,
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
-          ),
-        ),
-        const SizedBox(width: 8),
-        Text(
-          _formatMarketValue(marketValue),
-          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600, color: Colors.black54),
-        ),
-      ],
-    );
-  }
-
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -360,106 +269,249 @@ class _PlayerScreenState extends State<PlayerScreen>
           : _errorMessage.isNotEmpty
           ? Center(child: Text(_errorMessage))
           : NestedScrollView(
-              headerSliverBuilder: (context, innerBoxIsScrolled) {
-                return [
-                  SliverOverlapAbsorber(
-                    handle: NestedScrollView.sliverOverlapAbsorberHandleFor(context),
-                    sliver: SliverAppBar(
-                      expandedHeight: 320,
-                      pinned: true,
-                      backgroundColor: Colors.white,
-                      foregroundColor: Colors.black87,
-                      title: _buildCollapsedPlayerBar(),
-                      flexibleSpace: FlexibleSpaceBar(background: _buildHeaderContent()),
-                      bottom: TabBar(
-                        controller: _tabController,
-                        tabs: const [
-                          Tab(text: 'Saisonspiele'),
-                          Tab(text: 'Radar Chart'),
-                        ],
-                      ),
-                    ),
-                  ),
-                ];
-              },
-              body: TabBarView(
-                controller: _tabController,
-                children: [
-                  Builder(
-                    builder: (context) => CustomScrollView(
-                      key: const PageStorageKey<String>('playerMatchesTab'),
-                      controller: _scrollController,
-                      slivers: [
-                        SliverOverlapInjector(handle: NestedScrollView.sliverOverlapAbsorberHandleFor(context)),
-                        if (teamMatches.isEmpty)
-                          const SliverFillRemaining(hasScrollBody: false, child: Center(child: Text('Keine Spiele vorhanden')))
-                        else
-                          SliverList.builder(
-                            itemCount: teamMatches.length,
-                            itemBuilder: (context, index) {
-                              final match = teamMatches[index];
-                              return MatchRatingRow(
-                                match: match,
-                                playerId: widget.playerId,
-                                playerName: playerName,
-                                playerProfileImageUrl: profileImageUrl,
-                              );
-                            },
-                          ),
-                      ],
-                    ),
-                  ),
-                  Builder(
-                    builder: (context) => CustomScrollView(
-                      key: const PageStorageKey<String>('playerRadarTab'),
-                      slivers: [
-                        SliverOverlapInjector(handle: NestedScrollView.sliverOverlapAbsorberHandleFor(context)),
-                        SliverToBoxAdapter(
-                          child: radarChartData.isEmpty
-                              ? const SizedBox(
-                                  height: 220,
-                                  child: Center(child: Text('Statistiken nicht verfügbar.')),
-                                )
-                              : Column(
-                                  children: [
-                                    Padding(
-                                      padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 16.0),
-                                      child: DropdownButton<String>(
-                                        value: selectedPosition,
-                                        isExpanded: true,
-                                        hint: const Text('Vergleichsposition wählen'),
-                                        items: availablePositions.map((String value) {
-                                          return DropdownMenuItem<String>(value: value, child: Text(value));
-                                        }).toList(),
-                                        onChanged: (newValue) {
-                                          if (newValue != null) {
-                                            setState(() => selectedPosition = newValue);
-                                            _triggerRadarChartCalculation(newValue);
-                                          }
-                                        },
-                                      ),
-                                    ),
-                                    SizedBox(
-                                      height: 420,
-                                      child: Padding(
-                                        padding: const EdgeInsets.all(16.0),
-                                        child: RadialSegmentChart(
-                                          groups: radarChartData,
-                                          maxAbsValue: 100.0,
-                                          centerDisplayValue: averagePlayerRating.round(),
-                                          centerComparisonValue: averagePlayerRatingPercentile,
+        headerSliverBuilder: (context, innerBoxIsScrolled) {
+          return [
+            SliverOverlapAbsorber(
+              handle: NestedScrollView.sliverOverlapAbsorberHandleFor(context),
+              sliver: SliverAppBar(
+                expandedHeight: 290,
+                pinned: true,
+                backgroundColor: Colors.white,
+                foregroundColor: Colors.black87,
+                elevation: 1,
+                title: Text(playerName),
+                flexibleSpace: LayoutBuilder(
+                  builder: (context, constraints) {
+                    final safeAreaTop = MediaQuery.of(context).padding.top;
+                    const collapsedBottomHeight = 48.0;
+                    final collapsedHeight = kToolbarHeight + collapsedBottomHeight + safeAreaTop;
+                    const expandedHeight = 290.0;
+                    var fade = 1.0;
+                    if (expandedHeight > collapsedHeight) {
+                      fade = (constraints.maxHeight - collapsedHeight) / (expandedHeight - collapsedHeight);
+                      fade = fade.clamp(0.0, 1.0);
+                    }
+
+                    return Stack(
+                      fit: StackFit.expand,
+                      children: [
+                        Positioned(
+                          top: safeAreaTop + 18,
+                          left: 0,
+                          right: 0,
+                          child: IgnorePointer(
+                            ignoring: fade < 0.5,
+                            child: Opacity(
+                              opacity: fade,
+                              child: Column(
+                                children: [
+                                  SizedBox(
+                                    height: 140,
+                                    child: Row(
+                                      children: [
+                                        Expanded(
+                                          flex: 2,
+                                          child: Align(
+                                            alignment: Alignment.centerRight,
+                                            child: Opacity(
+                                              opacity: 0.4,
+                                              child: teamImageUrl != null
+                                                  ? Image.network(
+                                                teamImageUrl!,
+                                                width: 110,
+                                                height: 110,
+                                                fit: BoxFit.contain,
+                                              )
+                                                  : const SizedBox.shrink(),
+                                            ),
+                                          ),
                                         ),
-                                      ),
+                                        ClipOval(
+                                          child: profileImageUrl != null
+                                              ? Image.network(
+                                            profileImageUrl!,
+                                            width: 130,
+                                            height: 130,
+                                            fit: BoxFit.cover,
+                                            errorBuilder: (context, error, stackTrace) {
+                                              return const Icon(Icons.error, size: 100, color: Colors.red);
+                                            },
+                                          )
+                                              : const Icon(Icons.person, size: 100, color: Colors.grey),
+                                        ),
+                                        const Expanded(flex: 2, child: SizedBox.shrink()),
+                                      ],
                                     ),
-                                  ],
-                                ),
+                                  ),
+                                  const SizedBox(height: 12),
+                                  Text(
+                                    playerName,
+                                    style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.black87),
+                                  ),
+                                  const SizedBox(height: 6),
+                                  Text(
+                                    'Marktwert: ${_formatMarketValue(marketValue)}',
+                                    style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w600),
+                                  ),
+                                  Text(
+                                    'Positionen: ${availablePositions.join(', ')}',
+                                    style: const TextStyle(fontSize: 15, color: Colors.black54),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
+                        ),
+                        Positioned(
+                          top: safeAreaTop,
+                          left: 16,
+                          right: 16,
+                          height: kToolbarHeight,
+                          child: IgnorePointer(
+                            ignoring: fade > 0.5,
+                            child: Opacity(
+                              opacity: 1.0 - fade,
+                              child: Row(
+                                children: [
+                                  CircleAvatar(
+                                    radius: 18,
+                                    backgroundColor: Colors.grey.shade200,
+                                    backgroundImage: profileImageUrl != null ? NetworkImage(profileImageUrl!) : null,
+                                    child: profileImageUrl == null ? const Icon(Icons.person, size: 18, color: Colors.grey) : null,
+                                  ),
+                                  const SizedBox(width: 10),
+                                  Expanded(
+                                    child: Column(
+                                      mainAxisAlignment: MainAxisAlignment.center,
+                                      crossAxisAlignment: CrossAxisAlignment.start,
+                                      children: [
+                                        Text(playerName, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
+                                        Text(
+                                          availablePositions.join(', '),
+                                          maxLines: 1,
+                                          overflow: TextOverflow.ellipsis,
+                                          style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+                                        ),
+                                      ],
+                                    ),
+                                  ),
+                                  Text(
+                                    _formatMarketValue(marketValue),
+                                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                                  ),
+                                ],
+                              ),
+                            ),
+                          ),
                         ),
                       ],
-                    ),
-                  ),
-                ],
+                    );
+                  },
+                ),
+                bottom: TabBar(
+                  controller: _tabController,
+                  tabs: const [
+                    Tab(text: 'Saisonspiele'),
+                    Tab(text: 'Radar Chart'),
+                  ],
+                ),
               ),
             ),
+          ];
+        },
+        body: TabBarView(
+          controller: _tabController,
+          children: [
+            Builder(
+              builder: (context) {
+                return CustomScrollView(
+                  key: const PageStorageKey<String>('playerMatchesTab'),
+                  controller: _scrollController,
+                  slivers: [
+                    SliverOverlapInjector(handle: NestedScrollView.sliverOverlapAbsorberHandleFor(context)),
+                    if (teamMatches.isEmpty)
+                      const SliverFillRemaining(
+                        hasScrollBody: false,
+                        child: Center(child: Text('Keine Spiele vorhanden')),
+                      )
+                    else
+                      SliverList(
+                        delegate: SliverChildBuilderDelegate(
+                          (context, index) {
+                            final match = teamMatches[index];
+                            return MatchRatingRow(
+                            match: match,
+                            playerId: widget.playerId,
+                            playerName: playerName,
+                            playerProfileImageUrl: profileImageUrl,
+                          );
+                          },
+                          childCount: teamMatches.length,
+                        ),
+                      ),
+                  ],
+                );
+              },
+            ),
+            Builder(
+              builder: (context) {
+                return CustomScrollView(
+                  key: const PageStorageKey<String>('playerRadarTab'),
+                  slivers: [
+                    SliverOverlapInjector(handle: NestedScrollView.sliverOverlapAbsorberHandleFor(context)),
+                    if (radarChartData.isEmpty)
+                      const SliverFillRemaining(
+                        hasScrollBody: false,
+                        child: Center(child: Text('Statistiken nicht verfügbar.')),
+                      )
+                    else
+                      SliverFillRemaining(
+                        hasScrollBody: false,
+                        child: Column(
+                          children: [
+                            Padding(
+                              padding: const EdgeInsets.symmetric(vertical: 8.0, horizontal: 16.0),
+                              child: DropdownButton<String>(
+                                value: selectedPosition,
+                                isExpanded: true,
+                                hint: const Text('Vergleichsposition wählen'),
+                                items: availablePositions.map((String value) {
+                                  return DropdownMenuItem<String>(
+                                    value: value,
+                                    child: Text(value),
+                                  );
+                                }).toList(),
+                                onChanged: (newValue) {
+                                  if (newValue != null) {
+                                    setState(() {
+                                      selectedPosition = newValue;
+                                    });
+                                    _triggerRadarChartCalculation(newValue);
+                                  }
+                                },
+                              ),
+                            ),
+                            Expanded(
+                              child: Padding(
+                                padding: const EdgeInsets.all(16.0),
+                                child: RadialSegmentChart(
+                                  groups: radarChartData,
+                                  maxAbsValue: 100.0,
+                                  centerDisplayValue: averagePlayerRating.round(),
+                                  centerComparisonValue: averagePlayerRatingPercentile,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                  ],
+                );
+              },
+            ),
+          ],
+        ),
+      ),
     );
   }
 }
