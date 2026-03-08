@@ -6,7 +6,6 @@ import 'package:premier_league/viewmodels/data_viewmodel.dart';
 import 'package:premier_league/viewmodels/radar_chart_viewmodel.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'dart:math';
 import 'package:premier_league/screens/screenelements/match_screen/formations.dart';
 import 'package:premier_league/screens/screenelements/match_screen/matchrating_screen.dart';
 import 'package:premier_league/utils/color_helper.dart';
@@ -52,6 +51,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
     _tabController.addListener(() {
+      setState(() {});
       if (_tabController.index == 0) {
         // Scrollt zum nächsten anstehenden Spiel
         _scrollToUpcomingMatch();

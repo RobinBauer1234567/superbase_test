@@ -19,6 +19,7 @@ class TeamScreen extends StatefulWidget {
 
 class _TeamScreenState extends State<TeamScreen> with SingleTickerProviderStateMixin {
   late final TabController _tabController;
+  final ScrollController _matchesScrollController = ScrollController();
 
   bool _isLoading = true;
   String _errorMessage = '';
@@ -147,12 +148,11 @@ class _TeamScreenState extends State<TeamScreen> with SingleTickerProviderStateM
       if (mounted) {
         setState(() {
           _teamData = teamResponse;
-          _teamMatches = List<Map<String, dynamic>>.from(matchesResponse ?? []);
+          _teamMatches = List<Map<String, dynamic>>.from(matchesResponse);
           _topPlayers = topPlayersList;
           _isLoading = false;
         });
 
-        // Scroll erst nachdem Frame gebaut ist
         WidgetsBinding.instance.addPostFrameCallback((_) {
           _scrollToUpcomingMatch();
         });
@@ -209,6 +209,28 @@ class _TeamScreenState extends State<TeamScreen> with SingleTickerProviderStateM
     _tabController.dispose();
     _matchesScrollController.dispose();
     super.dispose();
+  }
+
+  Widget _buildCollapsedTeamBar() {
+    return Row(
+      children: [
+        CircleAvatar(
+          radius: 18,
+          backgroundColor: Colors.grey.shade200,
+          backgroundImage: _teamData?['image_url'] != null ? NetworkImage(_teamData!['image_url']) : null,
+          child: _teamData?['image_url'] == null ? const Icon(Icons.shield, size: 18, color: Colors.grey) : null,
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Text(
+            _teamData?['name'] ?? 'Team',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
+          ),
+        ),
+      ],
+    );
   }
 
   Color _getColorForRating(int rating) {
