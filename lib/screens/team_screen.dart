@@ -5,7 +5,6 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:premier_league/screens/player_screen.dart';
 import 'package:premier_league/screens/premier_league/matches_screen.dart';
 import 'package:premier_league/viewmodels/data_viewmodel.dart';
-import 'package:premier_league/utils/color_helper.dart';
 import 'package:premier_league/screens/screenelements/player_list_item.dart';
 
 class TeamScreen extends StatefulWidget {
@@ -209,9 +208,34 @@ class _TeamScreenState extends State<TeamScreen> with SingleTickerProviderStateM
     super.dispose();
   }
 
-  Color _getColorForRating(int rating) {
-    final maxValue = anzahlMatches*250*0.8;
-    return getColorForRating(rating, maxValue.round());
+  int get _totalSquadMarketValue => _topPlayers.fold<int>(
+        0,
+        (sum, player) => sum + ((player['marktwert'] as int?) ?? 0),
+      );
+
+  int get _totalSquadRating => _topPlayers.fold<int>(
+        0,
+        (sum, player) => sum + ((player['total_punkte'] as int?) ?? 0),
+      );
+
+  Widget _buildCollapsedTeamBar() {
+    final maxTotalScore = (anzahlMatches * 250 * 0.8).round();
+    final teamScore = _totalSquadRating;
+    return SizedBox(
+      height: kToolbarHeight,
+      child: PlayerListItem(
+        profileImageUrl: _teamData?['image_url'],
+        playerName: _teamData?['name'] ?? '',
+        marketValue: _totalSquadMarketValue,
+        score: teamScore,
+        maxScore: maxTotalScore > 0 ? maxTotalScore : 1,
+        position: 'Team',
+        isPlayed: anzahlMatches > 0,
+        showTeamImageTrailing: false,
+        teamColor: Colors.blueGrey,
+        onTap: () {},
+      ),
+    );
   }
 
   @override
@@ -232,7 +256,6 @@ class _TeamScreenState extends State<TeamScreen> with SingleTickerProviderStateM
                 backgroundColor: Colors.white,
                 foregroundColor: Colors.black87,
                 elevation: 1,
-                title: Text(_teamData?['name'] ?? ''),
                 flexibleSpace: LayoutBuilder(
                   builder: (context, constraints) {
                     final safeAreaTop = MediaQuery.of(context).padding.top;
@@ -263,11 +286,6 @@ class _TeamScreenState extends State<TeamScreen> with SingleTickerProviderStateM
                                     width: 100,
                                     errorBuilder: (context, error, stackTrace) => const Icon(Icons.shield, size: 100, color: Colors.grey),
                                   ),
-                                  const SizedBox(height: 10),
-                                  Text(
-                                    _teamData?['name'] ?? '',
-                                    style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.black87),
-                                  ),
                                 ],
                               ),
                             ),
@@ -275,35 +293,14 @@ class _TeamScreenState extends State<TeamScreen> with SingleTickerProviderStateM
                         ),
                         Positioned(
                           top: safeAreaTop,
-                          left: 16,
+                          left: 72,
                           right: 16,
                           height: kToolbarHeight,
                           child: IgnorePointer(
                             ignoring: fade > 0.5,
                             child: Opacity(
                               opacity: 1 - fade,
-                              child: Row(
-                                children: [
-                                  ClipRRect(
-                                    borderRadius: BorderRadius.circular(999),
-                                    child: Image.network(
-                                      _teamData?['image_url'] ?? '',
-                                      width: 36,
-                                      height: 36,
-                                      errorBuilder: (context, error, stackTrace) => const Icon(Icons.shield, size: 30, color: Colors.grey),
-                                    ),
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: Text(
-                                      _teamData?['name'] ?? '',
-                                      maxLines: 1,
-                                      overflow: TextOverflow.ellipsis,
-                                      style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
-                                    ),
-                                  ),
-                                ],
-                              ),
+                              child: _buildCollapsedTeamBar(),
                             ),
                           ),
                         ),
@@ -366,6 +363,7 @@ class _TeamScreenState extends State<TeamScreen> with SingleTickerProviderStateM
                           profileImageUrl: player['profilbild_url'],
                           playerName: player['name'],
                           teamImageUrl: null,
+                          showTeamImageTrailing: false,
                           marketValue: player['marktwert'],
                           score: player['total_punkte'],
                           maxScore: (anzahlMatches * 250 * 0.8).toInt(),

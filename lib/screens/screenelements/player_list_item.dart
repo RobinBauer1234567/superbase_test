@@ -13,6 +13,7 @@ class PlayerListItem extends StatelessWidget {
   final int maxScore;
   final int? marketValue;
   final VoidCallback onTap;
+  final bool showTeamImageTrailing;
 
   final String position;
   final int id;
@@ -32,6 +33,7 @@ class PlayerListItem extends StatelessWidget {
     required this.maxScore,
     this.marketValue,
     required this.onTap,
+    this.showTeamImageTrailing = true,
     required this.position,
     this.id = 0,
     this.goals = 0,
@@ -95,14 +97,14 @@ class PlayerListItem extends StatelessWidget {
         ),
       ),
       title: Text(playerName, maxLines: 1, overflow: TextOverflow.ellipsis),
-      subtitle: (teamImageUrl != null && marketValue != null)
+      subtitle: marketValue != null
           ? Text(_formatMarketValue(marketValue), style: const TextStyle(fontSize: 12, color: Colors.grey))
           : null,
       trailing: Row(
         mainAxisSize: MainAxisSize.min,
         mainAxisAlignment: MainAxisAlignment.end,
         children: [
-          if (teamImageUrl != null)
+          if (showTeamImageTrailing && teamImageUrl != null)
             Image.network(
               teamImageUrl!,
               width: 24,
