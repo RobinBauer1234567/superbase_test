@@ -28,6 +28,7 @@ class _MatchesScreenState extends State<MatchesScreen> {
   final ItemPositionsListener _itemPositionsListener = ItemPositionsListener.create();
 
   int? _aktuellerSpieltag;
+  bool _hasInitialAutoScroll = false;
 
   @override
   void didChangeDependencies() {
@@ -60,10 +61,13 @@ class _MatchesScreenState extends State<MatchesScreen> {
 
       _updateStateWithData(List<Map<String, dynamic>>.from(data));
 
-      // Kleines Delay, dann scrollen (scrollable_positioned_list ist robust gegenüber nicht gebauten Items)
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _scrollToAktuellenSpieltag();
-      });
+      if (!_hasInitialAutoScroll) {
+        // Nur beim initialen Laden einmalig auf den aktuellen Spieltag scrollen.
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _scrollToAktuellenSpieltag();
+        });
+        _hasInitialAutoScroll = true;
+      }
     } catch (e) {
       print("Fehler beim Laden der Spiele: $e");
     } finally {

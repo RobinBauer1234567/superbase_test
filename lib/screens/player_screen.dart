@@ -47,6 +47,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   double averagePlayerRating = 0.0;
   double averagePlayerRatingPercentile = 0.0;
   int totalPlayerPoints = 0;
+  bool _hasInitialAutoScroll = false;
 
   @override
   void initState() {
@@ -54,10 +55,6 @@ class _PlayerScreenState extends State<PlayerScreen>
     _tabController = TabController(length: 2, vsync: this);
     _tabController.addListener(() {
       setState(() {});
-      if (_tabController.index == 0) {
-        // Scrollt zum nächsten anstehenden Spiel
-        _scrollToUpcomingMatch();
-      }
     });
   }
 
@@ -65,6 +62,12 @@ class _PlayerScreenState extends State<PlayerScreen>
   void didChangeDependencies() {
     super.didChangeDependencies();
     fetchPlayerData();
+  }
+
+  void _maybeScrollToUpcomingMatch() {
+    if (_hasInitialAutoScroll) return;
+    _hasInitialAutoScroll = true;
+    _scrollToUpcomingMatch();
   }
 
   void _scrollToUpcomingMatch() {
@@ -222,7 +225,7 @@ class _PlayerScreenState extends State<PlayerScreen>
         totalPlayerPoints = aggregatedPoints;
       });
 
-      _scrollToUpcomingMatch();
+      _maybeScrollToUpcomingMatch();
 
       // 6. Radar-Chart-Berechnung anstoßen (wie bisher)
       if (selectedPosition != null) {
