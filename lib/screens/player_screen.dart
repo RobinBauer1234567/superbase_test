@@ -275,40 +275,66 @@ class _PlayerScreenState extends State<PlayerScreen>
       maxRating: 100,
     );
 
-    return Row(
-      children: [
-        PlayerAvatar(
-          player: playerInfo,
-          teamColor: Colors.blueGrey,
-          radius: 20,
-          showDetails: false,
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text(
-                playerName,
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
-              ),
-              Text(
-                availablePositions.join(', '),
-                maxLines: 1,
-                overflow: TextOverflow.ellipsis,
-                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-              ),
-            ],
+    final scoreColor = getColorForRating(playerInfo.rating, playerInfo.maxRating);
+
+    return Container(
+      height: kToolbarHeight,
+      alignment: Alignment.centerLeft,
+      child: Row(
+        children: [
+          PlayerAvatar(
+            player: playerInfo,
+            teamColor: Colors.blueGrey,
+            radius: 18,
+            showDetails: false,
           ),
-        ),
-        Text(
-          _formatMarketValue(marketValue),
-          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-        ),
-      ],
+          const SizedBox(width: 8),
+          Expanded(
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  playerName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14),
+                ),
+                Text(
+                  _formatMarketValue(marketValue),
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(fontSize: 11, color: Colors.grey.shade600),
+                ),
+              ],
+            ),
+          ),
+          if (teamImageUrl != null)
+            Padding(
+              padding: const EdgeInsets.only(right: 8.0),
+              child: Image.network(
+                teamImageUrl!,
+                width: 22,
+                height: 22,
+                errorBuilder: (context, error, stackTrace) => const Icon(Icons.shield, size: 22),
+              ),
+            ),
+          Container(
+            width: 36,
+            padding: const EdgeInsets.symmetric(vertical: 4),
+            decoration: BoxDecoration(
+              color: scoreColor.withOpacity(0.1),
+              border: Border.all(color: scoreColor.withOpacity(0.3)),
+              borderRadius: BorderRadius.circular(4),
+            ),
+            child: Text(
+              playerInfo.rating.toString(),
+              textAlign: TextAlign.center,
+              style: TextStyle(color: scoreColor, fontWeight: FontWeight.bold),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -330,7 +356,6 @@ class _PlayerScreenState extends State<PlayerScreen>
                 backgroundColor: Colors.white,
                 foregroundColor: Colors.black87,
                 elevation: 1,
-                title: Text(playerName),
                 flexibleSpace: LayoutBuilder(
                   builder: (context, constraints) {
                     final safeAreaTop = MediaQuery.of(context).padding.top;
@@ -415,7 +440,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                         ),
                         Positioned(
                           top: safeAreaTop,
-                          left: 16,
+                          left: 72,
                           right: 16,
                           height: kToolbarHeight,
                           child: IgnorePointer(
