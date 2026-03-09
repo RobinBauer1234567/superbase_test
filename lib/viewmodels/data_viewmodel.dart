@@ -226,7 +226,11 @@ class DataManagement {
       return;
     }
 
-    if (currentStatus == 'finished') return;
+    final normalizedStatus = (currentStatus ?? '').trim().toLowerCase();
+    if (normalizedStatus == 'final' || normalizedStatus == 'finished') {
+      print('⏭️ Update übersprungen: Spiel $spielId ist bereits final.');
+      return;
+    }
     String neuerStatus = await getSpielStatus(spielId);
     if (neuerStatus == 'nicht gestartet') {
       print('nicht gestartet');
