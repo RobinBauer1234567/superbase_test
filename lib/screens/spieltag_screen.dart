@@ -254,9 +254,6 @@ class _GameScreenState extends State<GameScreen> {
   }
 
   Widget _buildSubstitutesContent(List<PlayerInfo> substitutes, Color teamColor) {
-    final String status = (currentSpielData['status'] ?? '').toString().toLowerCase();
-    final bool isPlayed = status == 'final';
-
     return Card(
       margin: EdgeInsets.zero,
       child: ListView.builder(
@@ -269,7 +266,6 @@ class _GameScreenState extends State<GameScreen> {
             player: player,
             teamColor: teamColor,
             avatarRadius: playerAvatarRadiusOnField,
-            isPlayed: isPlayed,
             onTap: () => Navigator.push(
               context,
               MaterialPageRoute(builder: (context) => PlayerScreen(playerId: player.id)),
@@ -435,7 +431,6 @@ class SubstitutePlayerRow extends StatelessWidget {
   final Color teamColor;
   final double avatarRadius;
   final VoidCallback onTap;
-  final bool isPlayed;
 
   const SubstitutePlayerRow({
     super.key,
@@ -443,7 +438,6 @@ class SubstitutePlayerRow extends StatelessWidget {
     required this.teamColor,
     required this.avatarRadius,
     required this.onTap,
-    this.isPlayed = true,
   });
 
 
@@ -461,9 +455,6 @@ class SubstitutePlayerRow extends StatelessWidget {
     // Dynamische Schriftgrößen
     final double titleFontSize = avatarRadius * 0.8;
     final double ratingFontSize = avatarRadius * 0.8;
-
-    final Color ratingColor = isPlayed ? getColorForRating(player.rating, 250) : Colors.grey;
-    final String ratingText = isPlayed ? player.rating.toString() : '-';
 
     return ListTile(
       dense: true,
@@ -507,14 +498,13 @@ class SubstitutePlayerRow extends StatelessWidget {
       trailing: Container(
         padding: EdgeInsets.symmetric(horizontal: avatarRadius * 0.3, vertical: avatarRadius * 0.1),
         decoration: BoxDecoration(
-          color: ratingColor.withOpacity(0.1),
-          border: Border.all(color: ratingColor.withOpacity(0.3)),
+          color: getColorForRating(player.rating, 250),
           borderRadius: BorderRadius.circular(4),
         ),
         child: Text(
-          ratingText,
+          player.rating.toString(),
           style: TextStyle(
-            color: ratingColor,
+            color: Colors.white,
             fontSize: ratingFontSize,
             fontWeight: FontWeight.bold,
           ),
