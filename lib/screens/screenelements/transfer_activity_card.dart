@@ -130,7 +130,7 @@ class TransferActivityCard extends StatelessWidget {
             isPlayed: true,
             position: content['position'] ?? 'N/A',
             id: playerId,
-            onTap: onPlayerTap,
+            onTap: onPlayerTap ?? () {},
           ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 16.0),
