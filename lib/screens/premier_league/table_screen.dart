@@ -141,8 +141,6 @@ class _TableScreenState extends State<TableScreen> {
                   ? constraints.maxWidth * 0.30
                   : constraints.maxWidth * 0.48;
 
-              final estimatedTableWidth = (showResultColumns ? 420.0 : 320.0) + clubColumnWidth;
-
               final dataTable = DataTable(
                 columnSpacing: 12.0,
                 horizontalMargin: 8.0,
@@ -208,20 +206,14 @@ class _TableScreenState extends State<TableScreen> {
                 }).toList(),
               );
 
-              Widget tableContent = ConstrainedBox(
-                constraints: BoxConstraints(minWidth: constraints.maxWidth),
-                child: dataTable,
+              final tableContent = SizedBox(
+                width: constraints.maxWidth,
+                child: FittedBox(
+                  fit: BoxFit.fitWidth,
+                  alignment: Alignment.topLeft,
+                  child: dataTable,
+                ),
               );
-
-              if (estimatedTableWidth > constraints.maxWidth) {
-                tableContent = SingleChildScrollView(
-                  scrollDirection: Axis.horizontal,
-                  child: ConstrainedBox(
-                    constraints: BoxConstraints(minWidth: estimatedTableWidth),
-                    child: dataTable,
-                  ),
-                );
-              }
 
               return SingleChildScrollView(
                 child: tableContent,
