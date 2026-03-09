@@ -196,6 +196,7 @@ class ApiService {
           .from('spieler')
           .select('position')
           .eq('id', playerId)
+          .eq('is_active', true)
           .maybeSingle();
 
       String currentPositions = playerResponse?['position'] ?? '';
@@ -265,7 +266,6 @@ class ApiService {
         playerId,
         playerName,
         finalPositionsToSave,
-        teamId,
         imageUrl,
         marktwert,
         seasonId,
@@ -1041,7 +1041,59 @@ class ApiService {
       if (e.toString().contains('API_LIMIT_REACHED')) rethrow;
       print('❌ Fehler bei der Initialisierung von $playerId: $e');
     }
-  }}
+  }
+
+  Future<void> fetchAndProcessTransfers(int teamId, int seasonId) async {
+    final url = '$baseUrl/team/$teamId/transfers';
+
+    try {
+      final response = await _throttledGet(url);
+
+      if (response.statusCode == 200) {
+        final data = json.decode(response.body);
+
+        // Wir nehmen In- und Out-Transfers und packen sie in eine gemeinsame Liste
+        final List<dynamic> transfersIn = data['transfersIn'] ?? [];
+        final List<dynamic> transfersOut = data['transfersOut'] ?? [];
+        final List<dynamic> allTransfers = [...transfersIn, ...transfersOut];
+
+        for (var transfer in allTransfers) {
+          int transferId = transfer['id'];
+          int playerId = transfer['player']['id'];
+
+          // Sicherstellen, dass die IDs existieren (z.B. bei "No Team" kann sie fehlen)
+          int? fromTeamId = transfer['transferFrom']?['id'];
+          int? toTeamId = transfer['transferTo']?['id'];
+
+          // 💡 Optional: Du könntest hier prüfen, ob 'transferDateTimestamp' in
+          // der aktuellen Saison liegt, damit du keine Transfers von vor 5 Jahren scannst.
+
+          // Rufe unseren neuen Supabase RPC auf
+          final bool wasProcessed = await supabaseService.supabase.rpc(
+            'process_transfer_event',
+            params: {
+              'p_transfer_id': transferId,
+              'p_player_id': playerId,
+              'p_from_team_id': fromTeamId,
+              'p_to_team_id': toTeamId,
+              'p_season_id': seasonId,
+            },
+          );
+
+          if (wasProcessed) {
+            print('✅ Neuer Transfer verarbeitet: Spieler $playerId gewechselt!');
+          }
+        }
+      } else {
+        print('⚠️ Konnte Transfers für Team $teamId nicht laden: ${response.statusCode}');
+      }
+    } catch (e) {
+      if (e.toString().contains('API_LIMIT_REACHED')) rethrow;
+      print('❌ Fehler beim Verarbeiten der Transfers für Team $teamId: $e');
+    }
+  }
+
+}
 
 class SupabaseService {
   final SupabaseClient supabase = Supabase.instance.client;
@@ -1168,14 +1220,14 @@ class SupabaseService {
     await supabase.from('spieltag').update({'status': neuerStatus}).eq('round', round).eq('season_id', seasonId);
   }
 
-  Future<void> saveSpieler(int id, String name, String position, int teamId, String? profilbildUrl, int? marktwert, int seasonId) async {
+  Future<void> saveSpieler(int id, String name, String position, String? profilbildUrl, int? marktwert, int seasonId) async {
     try {
       // 1. Stammdaten in die 'spieler' Tabelle
       final updateData = {
         'id': id,
         'name': name,
         'position': position,
-        'team_id': teamId
+        'is_active': true,
       };
       if (profilbildUrl != null) {
         updateData['profilbild_url'] = profilbildUrl;
@@ -1239,11 +1291,21 @@ class SupabaseService {
   }
 
   Future<int> getSpieleranzahl(int spielId, int heimTeamId, int auswaertsTeamId) async {
+    final spielData = await Supabase.instance.client
+        .from('spiel')
+        .select('season_id')
+        .eq('id', spielId)
+        .single();
+    final int seasonId = (spielData['season_id'] as num).toInt();
+
     final data = await Supabase.instance.client
         .from('spieler')
-        .select('*, matchrating!inner(formationsindex, match_position)')
+        .select('*, matchrating!inner(formationsindex, match_position), season_players!inner(team_id, season_id, is_active)')
+        .eq('is_active', true)
         .eq('matchrating.spiel_id', spielId)
-        .filter('team_id', 'in', '($heimTeamId, $auswaertsTeamId)');
+        .eq('season_players.season_id', seasonId)
+        .eq('season_players.is_active', true)
+        .filter('season_players.team_id', 'in', '($heimTeamId, $auswaertsTeamId)');
 
     print("--- DEBUG: Rohdaten von Supabase erhalten (${data.length} Spieler) ---");
     return data.length;
@@ -1845,17 +1907,41 @@ class SupabaseService {
             points,
             spieler:player_id (
               id, name, position, profilbild_url,
-              team:team_id (name, image_url),
+              season_players(season_id, is_active, team:team(name, image_url)),
               spieler_analytics (marktwert, gesamtstatistiken, anzahl_spiele)
             )
           ''')
           .eq('matchday_point_id', matchdayPointId)
+          .eq('spieler.is_active', true)
       // Nur die Analytics der aktuellen Saison laden
-          .eq('spieler.spieler_analytics.season_id', seasonId);
+          .eq('spieler.spieler_analytics.season_id', seasonId)
+          .eq('spieler.season_players.season_id', seasonId)
+          .eq('spieler.season_players.is_active', true);
+
+      final normalizedPlayersData = List<Map<String, dynamic>>.from(playersData).map((row) {
+        final mappedRow = Map<String, dynamic>.from(row);
+        final spieler = mappedRow['spieler'];
+        if (spieler is Map) {
+          final spielerMap = Map<String, dynamic>.from(spieler);
+          final seasonPlayers = spielerMap['season_players'];
+          if (seasonPlayers is List) {
+            final seasonEntry = seasonPlayers.cast<Map<String, dynamic>>().firstWhere(
+                  (sp) => sp['season_id'] == seasonId,
+              orElse: () => <String, dynamic>{},
+            );
+            spielerMap['season_players'] = seasonEntry;
+            if (seasonEntry['team'] is Map) {
+              spielerMap['team'] = seasonEntry['team'];
+            }
+          }
+          mappedRow['spieler'] = spielerMap;
+        }
+        return mappedRow;
+      }).toList();
 
       return {
         'points_data': pointsData,
-        'players': playersData,
+        'players': normalizedPlayersData,
       };
     } catch (e) {
       print("Fehler beim Laden der Matchday-Daten: $e");
@@ -1989,5 +2075,31 @@ class SupabaseService {
     } catch (e) {
       print("Fehler beim Speichern der Aufstellung RPC: $e");
     }
+  }
+
+  Future<List<Map<String, dynamic>>> getTransferBids(int transferId) async {
+    // Holt die Gebote und die Namen der Bieter in zwei sicheren Schritten
+    final bidsRes = await supabase
+        .from('transfer_bids')
+        .select()
+        .eq('transfer_id', transferId)
+        .order('amount', ascending: false);
+
+    if (bidsRes.isEmpty) return [];
+
+    final userIds = bidsRes.map((b) => b['bidder_id']).toList();
+    final profilesRes = await supabase
+        .from('profiles')
+        .select('user_id, username, avatar_url')
+        .inFilter('user_id', userIds);
+
+    // Mappen der User-Infos an die Gebote
+    for (var bid in bidsRes) {
+      final profile = profilesRes.firstWhere((p) => p['user_id'] == bid['bidder_id'], orElse: () => {});
+      bid['username'] = profile['username'] ?? 'Unbekannt';
+      bid['avatar_url'] = profile['avatar_url'];
+    }
+
+    return List<Map<String, dynamic>>.from(bidsRes);
   }
 }

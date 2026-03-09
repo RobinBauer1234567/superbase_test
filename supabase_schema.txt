@@ -80,6 +80,7 @@ CREATE TABLE public.leagues (
   starting_team_value bigint DEFAULT 0,
   is_active boolean DEFAULT true,
   last_activity_at timestamp with time zone DEFAULT now(),
+  image_url text,
   CONSTRAINT leagues_pkey PRIMARY KEY (id),
   CONSTRAINT leagues_admin_id_fkey FOREIGN KEY (admin_id) REFERENCES public.profiles(user_id)
 );
@@ -106,6 +107,11 @@ CREATE TABLE public.matchrating (
   CONSTRAINT matchrating_spiel_id_fkey FOREIGN KEY (spiel_id) REFERENCES public.spiel(id),
   CONSTRAINT matchrating_spieler_id_fkey FOREIGN KEY (spieler_id) REFERENCES public.spieler(id)
 );
+CREATE TABLE public.processed_transfers (
+  transfer_id bigint NOT NULL,
+  processed_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT processed_transfers_pkey PRIMARY KEY (transfer_id)
+);
 CREATE TABLE public.profiles (
   user_id uuid NOT NULL,
   username text NOT NULL,
@@ -125,8 +131,9 @@ CREATE TABLE public.season (
 CREATE TABLE public.season_players (
   season_id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
   player_id integer NOT NULL,
-  team_id integer,
-  CONSTRAINT season_players_pkey PRIMARY KEY (season_id, player_id),
+  team_id integer NOT NULL,
+  is_active boolean DEFAULT true,
+  CONSTRAINT season_players_pkey PRIMARY KEY (season_id, player_id, team_id),
   CONSTRAINT season_players_season_id_fkey FOREIGN KEY (season_id) REFERENCES public.season(id),
   CONSTRAINT season_players_player_id_fkey FOREIGN KEY (player_id) REFERENCES public.spieler(id),
   CONSTRAINT season_players_team_id_fkey FOREIGN KEY (team_id) REFERENCES public.team(id)
@@ -163,9 +170,7 @@ CREATE TABLE public.spieler (
   profilbild_url text,
   season_players integer,
   position text,
-  team_id bigint,
-  CONSTRAINT spieler_pkey PRIMARY KEY (id),
-  CONSTRAINT spieler_team_id_fkey FOREIGN KEY (team_id) REFERENCES public.team(id)
+  CONSTRAINT spieler_pkey PRIMARY KEY (id)
 );
 CREATE TABLE public.spieler_analytics (
   spieler_id integer NOT NULL,

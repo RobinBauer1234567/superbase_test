@@ -1,5 +1,6 @@
 // lib/screens/profile_screen.dart
 import 'dart:typed_data';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
@@ -12,6 +13,8 @@ import 'package:premier_league/screens/screenelements/match_screen/formations.da
 import 'package:premier_league/screens/screenelements/matchday_team_shared.dart';
 import 'package:premier_league/screens/player_screen.dart';
 import 'package:premier_league/screens/leagues/matchday_team_overlay.dart';
+import 'package:premier_league/screens/screenelements/league_logo.dart';
+import 'package:premier_league/screens/screenelements/transfer_activity_card.dart';
 
 class ProfileScreen extends StatefulWidget {
   // NEU: Optionale Parameter, um fremde Profile und eine bestimmte Liga direkt zu öffnen
@@ -25,6 +28,10 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProviderStateMixin {
+  static const double _headerImageRadius = 50;
+  static const double _collapsedImageRadius = 18;
+  static const double _imageEditButtonSize = 28;
+
   final supabase = Supabase.instance.client;
   final ImagePicker _imagePicker = ImagePicker();
 
@@ -110,12 +117,13 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       }
 
       // Ligen für diese User-ID holen
-      final leaguesRes = await supabase.from('league_members').select('league_id, leagues(name)').eq('user_id', _effectiveUserId);
+      final leaguesRes = await supabase.from('league_members').select('league_id, leagues(name, image_url)').eq('user_id', _effectiveUserId);
 
       List<Map<String, dynamic>> leaguesWithRanks = [];
       for (var l in leaguesRes) {
         final int leagueId = l['league_id'];
         final String leagueName = l['leagues']['name'];
+        final String? leagueImageUrl = l['leagues']['image_url'] as String?;
         final rankingRes = await supabase.rpc('get_ranking_overall', params: {'p_league_id': leagueId});
         final rankingList = List<Map<String, dynamic>>.from(rankingRes);
 
@@ -128,7 +136,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
             break;
           }
         }
-        leaguesWithRanks.add({'league_id': leagueId, 'name': leagueName, 'rank': rank, 'points': totalPoints});
+        leaguesWithRanks.add({'league_id': leagueId, 'name': leagueName, 'image_url': leagueImageUrl, 'rank': rank, 'points': totalPoints});
       }
 
       leaguesWithRanks.sort((a, b) => b['points'].compareTo(a['points']));
@@ -165,9 +173,35 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       final dataManagement = context.read<DataManagement>();
       final seasonId = dataManagement.seasonId;
 
-      final matchdaysRes = await supabase.from('user_matchday_points').select('round, total_points, is_locked, spieltag(status)').eq('user_id', _effectiveUserId).eq('league_id', _selectedLeagueId!).order('round', ascending: false);
+      final allMatchdaysRes = await supabase
+          .from('spieltag')
+          .select('round, status')
+          .eq('season_id', seasonId)
+          .order('round', ascending: false);
 
-      final rankingFutures = matchdaysRes.map((md) async {
+      final userMatchdayPointsRes = await supabase
+          .from('user_matchday_points')
+          .select('round, total_points, is_locked')
+          .eq('user_id', _effectiveUserId)
+          .eq('league_id', _selectedLeagueId!);
+
+      final Map<int, Map<String, dynamic>> userMatchdayPointsByRound = {
+        for (final md in userMatchdayPointsRes)
+          (md['round'] as int): Map<String, dynamic>.from(md),
+      };
+
+      final mergedMatchdays = allMatchdaysRes.map((spieltag) {
+        final round = spieltag['round'] as int;
+        final userData = userMatchdayPointsByRound[round];
+        return {
+          'round': round,
+          'total_points': userData?['total_points'] ?? 0,
+          'is_locked': userData?['is_locked'] ?? false,
+          'spieltag': {'status': spieltag['status'] ?? ''},
+        };
+      }).toList();
+
+      final rankingFutures = mergedMatchdays.map((md) async {
         final rankingRes = await supabase.rpc('get_ranking_matchday', params: {'p_league_id': _selectedLeagueId, 'p_round': md['round']});
         final rankingList = List<Map<String, dynamic>>.from(rankingRes);
         int rank = 0;
@@ -264,9 +298,14 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                 flexibleSpace: LayoutBuilder(
                   builder: (BuildContext context, BoxConstraints constraints) {
                     final double safeAreaTop = MediaQuery.of(context).padding.top;
+                    final double screenWidth = MediaQuery.of(context).size.width;
                     final double collapsedHeight = kToolbarHeight + bottomHeight + safeAreaTop;
                     final double expandedHeight = 320.0;
                     final double currentHeight = constraints.maxHeight;
+                    final double avatarRadius = (screenWidth * 0.14).clamp(40.0, _headerImageRadius);
+                    final double cameraButtonSize = (avatarRadius * 0.56).clamp(22.0, _imageEditButtonSize);
+                    final double cameraIconSize = (cameraButtonSize * 0.58).clamp(14.0, 18.0);
+                    final double cameraCenterOffset = avatarRadius + (avatarRadius / math.sqrt2) - (cameraButtonSize / 2);
 
                     double fade = 1.0;
                     if (expandedHeight > collapsedHeight) {
@@ -292,19 +331,19 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                                       alignment: Alignment.bottomRight,
                                       children: [
                                         CircleAvatar(
-                                          radius: 50,
+                                          radius: avatarRadius,
                                           backgroundColor: Colors.grey.shade200,
                                           backgroundImage: _getAvatarProvider(),
-                                          child: _getAvatarProvider() == null ? const Icon(Icons.person, size: 50, color: Colors.grey) : null,
+                                          child: _getAvatarProvider() == null ? Icon(Icons.person, size: avatarRadius, color: Colors.grey) : null,
                                         ),
-                                        // Kamera-Icon nur bei eigenem Profil
                                         if (_isCurrentUser)
-                                          Container(
-                                            decoration: BoxDecoration(color: primaryColor, shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 3)),
-                                            child: IconButton(
-                                              icon: const Icon(Icons.camera_alt, color: Colors.white, size: 18),
-                                              padding: const EdgeInsets.all(6),
-                                              constraints: const BoxConstraints(),
+                                          Positioned(
+                                            left: cameraCenterOffset,
+                                            top: cameraCenterOffset,
+                                            child: _buildEditImageButton(
+                                              primaryColor: primaryColor,
+                                              buttonSize: cameraButtonSize,
+                                              iconSize: cameraIconSize,
                                               onPressed: _pickNewProfileImage,
                                             ),
                                           ),
@@ -333,10 +372,10 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                                 child: Row(
                                   children: [
                                     CircleAvatar(
-                                      radius: 18,
+                                      radius: _collapsedImageRadius,
                                       backgroundColor: Colors.grey.shade200,
                                       backgroundImage: _getAvatarProvider(),
-                                      child: _getAvatarProvider() == null ? const Icon(Icons.person, size: 18, color: Colors.grey) : null,
+                                      child: _getAvatarProvider() == null ? const Icon(Icons.person, size: _collapsedImageRadius, color: Colors.grey) : null,
                                     ),
                                     const SizedBox(width: 12),
                                     Expanded(
@@ -407,11 +446,37 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     );
   }
 
+  Widget _buildEditImageButton({
+    required Color primaryColor,
+    required double buttonSize,
+    required double iconSize,
+    required VoidCallback onPressed,
+  }) {
+    return Container(
+      width: buttonSize,
+      height: buttonSize,
+      decoration: BoxDecoration(
+        color: primaryColor,
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.white, width: 3),
+      ),
+      child: IconButton(
+        icon: Icon(Icons.camera_alt, color: Colors.white, size: iconSize),
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(),
+        visualDensity: VisualDensity.compact,
+        onPressed: onPressed,
+      ),
+    );
+  }
+
   Widget _buildSelectedLeagueRow(Color primaryColor) {
     final selectedLeague = _userLeagues.firstWhere(
             (l) => l['league_id'] == _selectedLeagueId,
         orElse: () => _userLeagues.isNotEmpty ? _userLeagues.first : {'name': 'Liga wählen'}
     );
+
+    final selectedLeagueImageUrl = selectedLeague['image_url'] as String?;
 
     return InkWell(
       onTap: () {
@@ -427,10 +492,9 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
         ),
         child: Row(
           children: [
-            CircleAvatar(
+            LeagueLogo(
+              imageUrl: selectedLeagueImageUrl,
               radius: 16,
-              backgroundColor: primaryColor.withOpacity(0.1),
-              child: Icon(Icons.emoji_events, size: 18, color: primaryColor),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -469,6 +533,8 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                       final bool isSelected = league['league_id'] == _selectedLeagueId;
                       Color rankColor = rank == 1 ? Colors.amber : (rank == 2 ? Colors.blueGrey : (rank == 3 ? Colors.brown : Colors.grey));
 
+                      final String? leagueImageUrl = league['image_url'] as String?;
+
                       return Card(
                         elevation: isSelected ? 2 : 1,
                         margin: const EdgeInsets.only(bottom: 12),
@@ -479,10 +545,34 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                         color: Colors.white,
                         child: ListTile(
                           contentPadding: const EdgeInsets.all(12),
-                          leading: Container(
-                            width: 40, height: 40,
-                            decoration: BoxDecoration(color: rankColor.withOpacity(0.1), shape: BoxShape.circle),
-                            child: Center(child: Text('$rank', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: rankColor))),
+                          leading: Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              LeagueLogo(imageUrl: leagueImageUrl, radius: 20),
+                              Positioned(
+                                right: -4,
+                                bottom: -4,
+                                child: Container(
+                                  width: 20,
+                                  height: 20,
+                                  decoration: BoxDecoration(
+                                    color: rankColor,
+                                    shape: BoxShape.circle,
+                                    border: Border.all(color: Colors.white, width: 2),
+                                  ),
+                                  child: Center(
+                                    child: Text(
+                                      '$rank',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 10,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                           title: Text(league['name'], style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                           subtitle: Text("Punkte gesamt: ${league['points']}"),
@@ -705,6 +795,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                             currentRound: _currentRound,
                             displayMode: AvatarDisplayMode.matchday,
                             isReadOnly: true,
+                            hideUnlockedMatchdayRating: true,
                             onPlayerTap: (playerId, radius) {
                               if (playerId > 0) {
                                 Navigator.push(context, MaterialPageRoute(builder: (_) => PlayerScreen(playerId: playerId)));
@@ -753,52 +844,21 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                   sliver: SliverList(
                     delegate: SliverChildBuilderDelegate(
                           (context, index) {
-                        final fmt = NumberFormat.currency(locale: 'de_DE', symbol: '€', decimalDigits: 0);
                         final transfer = _transfers[index];
                         final content = transfer['content'] as Map<String, dynamic>;
-                        final date = DateFormat('dd.MM.yyyy HH:mm').format(DateTime.parse(transfer['created_at']).toLocal());
-                        final isBuyer = content['buyer_name'] == _username;
-                        final price = content['price'] ?? 0;
-                        final otherParty = isBuyer ? (content['seller_name'] ?? 'System') : (content['buyer_name'] ?? 'System');
-                        final iconColor = isBuyer ? Colors.green : Colors.red;
-
                         return Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          child: Card(
-                            elevation: 1, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                            child: Padding(
-                              padding: const EdgeInsets.all(16.0),
-                              child: Row(
-                                children: [
-                                  Container(
-                                    width: 44, height: 44,
-                                    decoration: BoxDecoration(color: iconColor.withOpacity(0.1), shape: BoxShape.circle),
-                                    child: Icon(isBuyer ? Icons.arrow_downward : Icons.arrow_upward, color: iconColor),
-                                  ),
-                                  const SizedBox(width: 16),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(content['player_name'] ?? 'Unbekannt', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                                        const SizedBox(height: 4),
-                                        Text(isBuyer ? 'Von: $otherParty' : 'An: $otherParty', style: TextStyle(fontSize: 13, color: Colors.grey.shade600)),
-                                        const SizedBox(height: 2),
-                                        Text(date, style: TextStyle(fontSize: 11, color: Colors.grey.shade400)),
-                                      ],
-                                    ),
-                                  ),
-                                  Column(
-                                    crossAxisAlignment: CrossAxisAlignment.end,
-                                    children: [
-                                      Text(isBuyer ? 'Zugang' : 'Abgang', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: iconColor)),
-                                      const SizedBox(height: 4),
-                                      Text(fmt.format(price), style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: iconColor)),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          child: TransferActivityCard(
+                            content: content,
+                            createdAt: DateTime.parse(transfer['created_at']).toLocal(),
+                            datePattern: 'dd.MM.yyyy HH:mm',
+                            showDetailsTap: false,
+                            onPlayerTap: () {
+                              final playerId = content['player_id'] ?? 0;
+                              if (playerId != 0) {
+                                Navigator.push(context, MaterialPageRoute(builder: (_) => PlayerScreen(playerId: playerId)));
+                              }
+                            },
                           ),
                         );
                       },
