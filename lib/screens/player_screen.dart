@@ -333,10 +333,15 @@ class _PlayerScreenState extends State<PlayerScreen>
               border: Border.all(color: scoreColor.withOpacity(0.3)),
               borderRadius: BorderRadius.circular(4),
             ),
-            child: Text(
-              playerInfo.rating.toString(),
-              textAlign: TextAlign.center,
-              style: TextStyle(color: scoreColor, fontWeight: FontWeight.bold),
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                playerInfo.rating.toString(),
+                maxLines: 1,
+                softWrap: false,
+                textAlign: TextAlign.center,
+                style: TextStyle(color: scoreColor, fontWeight: FontWeight.bold),
+              ),
             ),
           ),
         ],
