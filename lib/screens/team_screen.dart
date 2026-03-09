@@ -229,9 +229,10 @@ class _TeamScreenState extends State<TeamScreen> with SingleTickerProviderStateM
         marketValue: _totalSquadMarketValue,
         score: teamScore,
         maxScore: maxTotalScore > 0 ? maxTotalScore : 1,
-        position: 'Team',
+        position: '',
         isPlayed: anzahlMatches > 0,
         showTeamImageTrailing: false,
+        showMarketValueTrailing: false,
         teamColor: Colors.blueGrey,
         onTap: () {},
       ),
@@ -285,6 +286,17 @@ class _TeamScreenState extends State<TeamScreen> with SingleTickerProviderStateM
                                     height: 100,
                                     width: 100,
                                     errorBuilder: (context, error, stackTrace) => const Icon(Icons.shield, size: 100, color: Colors.grey),
+                                  ),
+                                  const SizedBox(height: 8),
+                                  Text(
+                                    _teamData?['name'] ?? '',
+                                    style: const TextStyle(
+                                      fontSize: 18,
+                                      fontWeight: FontWeight.w700,
+                                      color: Colors.black87,
+                                    ),
+                                    maxLines: 1,
+                                    overflow: TextOverflow.ellipsis,
                                   ),
                                 ],
                               ),
@@ -359,29 +371,29 @@ class _TeamScreenState extends State<TeamScreen> with SingleTickerProviderStateM
                         (context, index) {
                           final player = _topPlayers[index];
                           return PlayerListItem(
-                          rank: index + 1,
-                          profileImageUrl: player['profilbild_url'],
-                          playerName: player['name'],
-                          teamImageUrl: null,
-                          showTeamImageTrailing: false,
-                          marketValue: player['marktwert'],
-                          score: player['total_punkte'],
-                          maxScore: (anzahlMatches * 250 * 0.8).toInt(),
-                          position: _normalizePosition(player['position']),
-                          id: player['id'],
-                          goals: 0,
-                          assists: 0,
-                          ownGoals: 0,
-                          teamColor: Colors.blue,
-                          onTap: () {
-                            Navigator.push(
-                              context,
-                              MaterialPageRoute(
-                                builder: (context) => PlayerScreen(playerId: player['id']),
-                              ),
-                            );
-                          },
-                        );
+                            rank: index + 1,
+                            profileImageUrl: player['profilbild_url'],
+                            playerName: player['name'],
+                            teamImageUrl: null,
+                            showTeamImageTrailing: false,
+                            marketValue: player['marktwert'],
+                            score: player['total_punkte'],
+                            maxScore: (anzahlMatches * 250 * 0.8).toInt(),
+                            position: _normalizePosition(player['position']),
+                            id: player['id'],
+                            goals: 0,
+                            assists: 0,
+                            ownGoals: 0,
+                            teamColor: Colors.blue,
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => PlayerScreen(playerId: player['id']),
+                                ),
+                              );
+                            },
+                          );
                         },
                         childCount: _topPlayers.length,
                       ),
