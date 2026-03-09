@@ -46,6 +46,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   String? selectedPosition;
   double averagePlayerRating = 0.0;
   double averagePlayerRatingPercentile = 0.0;
+  int totalPlayerPoints = 0;
 
   @override
   void initState() {
@@ -182,8 +183,11 @@ class _PlayerScreenState extends State<PlayerScreen>
 
       // 4. Durchschnitts-Rating berechnen (nur aus echten Ratings)
       double totalRating = 0;
+      int aggregatedPoints = 0;
       for (var rating in actualRatings) {
-        totalRating += (rating['punkte'] as num? ?? 0.0).toDouble();
+        final points = (rating['punkte'] as num? ?? 0.0).toDouble();
+        totalRating += points;
+        aggregatedPoints += points.round();
       }
       final double calculatedAverageRating =
       actualRatings.isNotEmpty ? totalRating / actualRatings.length : 0.0;
@@ -215,6 +219,7 @@ class _PlayerScreenState extends State<PlayerScreen>
         availablePositions = parsedPositions;
         selectedPosition = selectedPos;
         averagePlayerRating = calculatedAverageRating;
+        totalPlayerPoints = aggregatedPoints;
       });
 
       _scrollToUpcomingMatch();
@@ -263,16 +268,17 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   Widget _buildCollapsedPlayerBar() {
+    final maxTotalScore = (teamMatches.length * 250 * 0.8).round();
     final playerInfo = PlayerInfo(
       id: widget.playerId,
       name: playerName,
       position: availablePositions.join(', '),
       profileImageUrl: profileImageUrl,
-      rating: averagePlayerRating.round(),
+      rating: totalPlayerPoints,
       goals: 0,
       assists: 0,
       ownGoals: 0,
-      maxRating: 100,
+      maxRating: maxTotalScore > 0 ? maxTotalScore : 1,
     );
 
     final scoreColor = getColorForRating(playerInfo.rating, playerInfo.maxRating);
