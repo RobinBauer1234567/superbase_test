@@ -14,6 +14,7 @@ class PlayerListItem extends StatelessWidget {
   final int? marketValue;
   final VoidCallback onTap;
   final bool showTeamImageTrailing;
+  final bool showMarketValueTrailing;
 
   final String position;
   final int id;
@@ -34,6 +35,7 @@ class PlayerListItem extends StatelessWidget {
     this.marketValue,
     required this.onTap,
     this.showTeamImageTrailing = true,
+    this.showMarketValueTrailing = true,
     required this.position,
     this.id = 0,
     this.goals = 0,
@@ -111,7 +113,7 @@ class PlayerListItem extends StatelessWidget {
               height: 24,
               errorBuilder: (c, e, s) => const Icon(Icons.shield, size: 24),
             )
-          else if (marketValue != null)
+          else if (showMarketValueTrailing && marketValue != null)
             Text(
               _formatMarketValue(marketValue),
               style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
