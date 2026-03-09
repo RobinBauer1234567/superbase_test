@@ -28,8 +28,12 @@ class DataManagement {
       // 1. Das Update durchführen
       await updateData();
 
+      // 2. Wartezeit berechnen
+      // HIER ANPASSEN: Wie lange ist dein Sync-Lock in der Datenbank eingestellt?
+      // Angenommen, der Lock ist auf 3 Minuten gestellt:
       final int syncLockMinutes = 2;
 
+      // Zufällige Zeit zwischen 0 und 120 Sekunden (2 Minuten) generieren
       final int randomSeconds = Random().nextInt(121);
 
       // Gesamte Wartezeit zusammensetzen
@@ -77,6 +81,8 @@ class DataManagement {
   Future<void> updateData() async {
     print('🔍 Update-Check gestartet...');
 
+    // 1. LOKALE SPERRE PRÜFEN (Das Gedächtnis des Handys)
+    // Bevor wir überhaupt das Internet nutzen, schauen wir, ob wir noch "Strafzeit" haben.
     if (await _isDeviceBanned()) {
       print(
         '📵 LOKALE SPERRE: Dieses Gerät pausiert API-Anfragen wegen vorheriger Limits.',
@@ -84,6 +90,7 @@ class DataManagement {
       return; // Hier brechen wir ab, ohne Server-Last zu erzeugen.
     }
 
+    // 2. LOCK PRÜFEN (Die Datenbank-Ampel)
     bool permissionGranted = await supabaseService.requestSyncPermission();
     if (!permissionGranted) {
       print('⏳ Kein Sync-Token erhalten (Globaler Lock).');
@@ -110,7 +117,7 @@ class DataManagement {
           await apiService.fetchAndStoreSpiele(spieltag, seasonId.toString());
           await Future.delayed(const Duration(milliseconds: 500));
         }
-        checkAllTeamTransfers();
+
         await _supabase.rpc(
           'mark_schedule_updated',
           params: {'p_season_id': seasonId},
@@ -217,7 +224,10 @@ class DataManagement {
     return spielstatus;
   }
 
-  Future<void> updateRatingsForSingleGame(int spielId, String? currentStatus) async {
+  Future<void> updateRatingsForSingleGame(
+    int spielId,
+    String? currentStatus,
+  ) async {
     print('👆 Anforderung: Update für Spiel $spielId (Status: $currentStatus)');
 
     // 1. LOKALE SPERRE PRÜFEN
@@ -268,26 +278,5 @@ class DataManagement {
         print('❌ Fehler beim manuellen Update: $e');
       }
     }
-  }
-
-  Future<void> checkAllTeamTransfers() async {
-    print('🔄 Starte Transfer-Rundgang...');
-
-    // Hole alle Teams, die zu dieser Saison gehören
-    final response = await _supabase
-        .from('season_teams')
-        .select('team_id')
-        .eq('season_id', seasonId);
-
-    final List<dynamic> teams = response as List<dynamic>;
-
-    for (var row in teams) {
-      int teamId = row['team_id'];
-      await apiService.fetchAndProcessTransfers(teamId, seasonId);
-      // Kurze Pause, um die Sofascore API nicht zu triggern
-      await Future.delayed(const Duration(milliseconds: 500));
-    }
-
-    print('✅ Transfer-Rundgang abgeschlossen.');
   }
 }

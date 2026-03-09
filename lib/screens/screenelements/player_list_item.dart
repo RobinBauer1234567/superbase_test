@@ -5,7 +5,7 @@ import 'package:premier_league/utils/color_helper.dart';
 import 'package:premier_league/screens/screenelements/match_screen/formations.dart';
 
 class PlayerListItem extends StatelessWidget {
-  final int? rank;
+  final int rank;
   final String? profileImageUrl;
   final String playerName;
   final String? teamImageUrl;
@@ -20,11 +20,10 @@ class PlayerListItem extends StatelessWidget {
   final int assists;
   final int ownGoals;
   final Color? teamColor;
-  final bool isPlayed;
 
   const PlayerListItem({
     super.key,
-    this.rank,
+    required this.rank,
     this.profileImageUrl,
     required this.playerName,
     this.teamImageUrl,
@@ -38,7 +37,6 @@ class PlayerListItem extends StatelessWidget {
     this.assists = 0,
     this.ownGoals = 0,
     this.teamColor,
-    this.isPlayed = true,
   });
 
   String _formatMarketValue(int? value) {
@@ -61,11 +59,6 @@ class PlayerListItem extends StatelessWidget {
       maxRating: maxScore,
     );
 
-    final Color scoreColor = isPlayed
-        ? getColorForRating(score, maxScore)
-        : Colors.grey;
-    final String scoreText = isPlayed ? score.toString() : '-';
-
     return ListTile(
       onTap: onTap,
       contentPadding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 4.0),
@@ -75,16 +68,16 @@ class PlayerListItem extends StatelessWidget {
         child: Row(
           mainAxisSize: MainAxisSize.min, // WICHTIG
           children: [
-            if (rank != null) // <-- Nur anzeigen, wenn rank übergeben wurde
-              SizedBox(
-                width: 25,
-                child: Text(
-                  '$rank.',
-                  style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.grey),
-                ),
+            SizedBox(
+              width: 25,
+              child: Text(
+                '$rank.',
+                style: const TextStyle(fontSize: 16, fontWeight: FontWeight.bold, color: Colors.grey),
               ),
-            if (rank != null) const SizedBox(width: 4),
+            ),
+            const SizedBox(width: 4),
 
+            // KORREKTUR: Kompakter Avatar ohne Name/Rating
             PlayerAvatar(
               player: playerInfo,
               teamColor: teamColor ?? Colors.blueGrey,
@@ -121,14 +114,13 @@ class PlayerListItem extends StatelessWidget {
             width: 40,
             padding: const EdgeInsets.symmetric(vertical: 4),
             decoration: BoxDecoration(
-              color: scoreColor.withOpacity(0.1),
-              border: Border.all(color: scoreColor.withOpacity(0.3)),
+              color: getColorForRating(score, maxScore),
               borderRadius: BorderRadius.circular(4),
             ),
             child: Text(
-              scoreText,
+              score.toString(),
               textAlign: TextAlign.center,
-              style: TextStyle(color: scoreColor, fontWeight: FontWeight.bold),
+              style: const TextStyle(color: Colors.white, fontWeight: FontWeight.bold),
             ),
           ),
         ],

@@ -58,7 +58,6 @@ class PlayerAvatar extends StatelessWidget {
   final bool showDetails;
   final bool showPositions;
   final bool isLocked;
-  final bool hideUnlockedMatchdayRating;
   final AvatarDisplayMode displayMode; // <--- NEU
   final int currentRound;              // <--- NEU
 
@@ -72,7 +71,6 @@ class PlayerAvatar extends StatelessWidget {
     this.showDetails = true,
     this.showPositions = true,
     this.isLocked = false,
-    this.hideUnlockedMatchdayRating = false,
     this.displayMode = AvatarDisplayMode.matchday, // Standard
     this.currentRound = 1,                         // Standard
   });
@@ -164,15 +162,13 @@ class PlayerAvatar extends StatelessWidget {
     final int colorRatingValue = _getColorRatingValue();
     final int calculatedMaxScore = _getCalculatedMaxScore();
 
-    final bool showLockedMatchdayRating =
-        !hideUnlockedMatchdayRating ||
-        displayMode != AvatarDisplayMode.matchday ||
-        isLocked;
-    final String finalDisplayValue =
-        showLockedMatchdayRating ? displayValue : '-';
-    final Color pillColor = showLockedMatchdayRating
-        ? getColorForRating(colorRatingValue, calculatedMaxScore)
-        : Colors.grey;
+    // --- NEU: Logik für noch nicht gespielte Spieler ---
+    // Gilt nur im Matchday-Modus für echte Spieler, die nicht gelockt sind.
+    final bool isUnplayed = displayMode == AvatarDisplayMode.matchday && !isLocked && !isPlaceholder;
+    final String finalDisplayValue = isUnplayed ? "-" : displayValue;
+    final Color pillColor = isUnplayed
+        ? Colors.grey.shade500
+        : getColorForRating(colorRatingValue, calculatedMaxScore);
 
     // --- NEU: Icon Bestimmung für die Pill ---
     IconData? modeIcon;
@@ -235,22 +231,19 @@ class PlayerAvatar extends StatelessWidget {
                     child: Container(
                       padding: EdgeInsets.symmetric(horizontal: radius * 0.4, vertical: 2),
                       decoration: BoxDecoration(
-                        color: Color.alphaBlend(
-                          pillColor.withOpacity(0.12),
-                          Colors.white.withOpacity(0.96),
-                        ),
+                        color: pillColor, // <--- HIER: pillColor statt getColorForRating
                         borderRadius: BorderRadius.circular(10),
-                        border: Border.all(color: pillColor.withOpacity(0.65), width: 1.5),
+                        border: Border.all(color: Colors.white, width: 1.5),
                         boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 2, offset: Offset(0, 1))],
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          if (modeIcon != null) ...[Icon(modeIcon, color: pillColor, size: ratingFontSize * 1.1), SizedBox(width: ratingFontSize * 0.3)],
-                          if (modePrefix != null) ...[Text(modePrefix, style: TextStyle(color: pillColor, fontSize: ratingFontSize, fontWeight: FontWeight.bold)), SizedBox(width: ratingFontSize * 0.3)],
+                          if (modeIcon != null) ...[Icon(modeIcon, color: Colors.white, size: ratingFontSize * 1.1), SizedBox(width: ratingFontSize * 0.3)],
+                          if (modePrefix != null) ...[Text(modePrefix, style: TextStyle(color: Colors.white, fontSize: ratingFontSize, fontWeight: FontWeight.bold)), SizedBox(width: ratingFontSize * 0.3)],
                           Text(
                               finalDisplayValue, // <--- HIER: finalDisplayValue statt displayValue
-                              style: TextStyle(color: pillColor, fontSize: finalDisplayValue.length > 3 ? ratingFontSize * 0.8 : ratingFontSize, fontWeight: FontWeight.w800)
+                              style: TextStyle(color: Colors.white, fontSize: finalDisplayValue.length > 3 ? ratingFontSize * 0.8 : ratingFontSize, fontWeight: FontWeight.w800)
                           ),
                         ],
                       ),
@@ -303,7 +296,6 @@ class MatchFormationDisplay extends StatefulWidget {
   final AvatarDisplayMode displayMode; // NEU
   final int currentRound;
   final bool isReadOnly; // <--- NEU HINZUFÜGEN
-  final bool hideUnlockedMatchdayRating;
 
   const MatchFormationDisplay({
     super.key,
@@ -322,7 +314,6 @@ class MatchFormationDisplay extends StatefulWidget {
     this.displayMode = AvatarDisplayMode.matchday, // NEU
     this.currentRound = 1,
     this.isReadOnly = false, // <--- NEU HINZUFÜGEN (Standard ist false)
-    this.hideUnlockedMatchdayRating = false,
   });
 
   @override
@@ -517,7 +508,6 @@ class _MatchFormationDisplayState extends State<MatchFormationDisplay> {
                                   isLocked: isPlayerLocked, // NEU
                                   displayMode: widget.displayMode,
                                   currentRound: widget.currentRound,
-                                  hideUnlockedMatchdayRating: widget.hideUnlockedMatchdayRating,
                                 );
 
                                 return Padding(
@@ -596,7 +586,6 @@ class _MatchFormationDisplayState extends State<MatchFormationDisplay> {
                   showValidTargetEffect: isValidTarget,
                   displayMode: widget.displayMode,
                   currentRound: widget.currentRound,
-                  hideUnlockedMatchdayRating: widget.hideUnlockedMatchdayRating,
                 ),
               );
 
@@ -629,7 +618,6 @@ class _MatchFormationDisplayState extends State<MatchFormationDisplay> {
                       isLocked: isPlayerLocked, // NEU übergeben
                       displayMode: widget.displayMode,
                       currentRound: widget.currentRound,
-                      hideUnlockedMatchdayRating: widget.hideUnlockedMatchdayRating,
                     );
 
                     if (targetPlayer.id > 0 && !isPlayerLocked && !widget.isReadOnly) {
