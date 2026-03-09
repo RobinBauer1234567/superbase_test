@@ -410,7 +410,7 @@ class _MatchFormationDisplayState extends State<MatchFormationDisplay> {
                 child: Stack(
                   children: [
                     CustomPaint(size: Size.infinite,
-                        painter: _SoccerFieldPainter(
+                        painter: SoccerFieldPainter(
                             singleTeamMode: singleTeamMode)),
 
                     if (singleTeamMode) ...[
@@ -771,10 +771,10 @@ class _MatchFormationDisplayState extends State<MatchFormationDisplay> {
 
 }
 
-class _SoccerFieldPainter extends CustomPainter {
+class SoccerFieldPainter extends CustomPainter {
   final bool singleTeamMode;
 
-  _SoccerFieldPainter({this.singleTeamMode = false});
+  SoccerFieldPainter({this.singleTeamMode = false});
 
   @override
   void paint(Canvas canvas, Size size) {
@@ -892,5 +892,5 @@ class _SoccerFieldPainter extends CustomPainter {
   }
 
   @override
-  bool shouldRepaint(covariant _SoccerFieldPainter oldDelegate) => oldDelegate.singleTeamMode != singleTeamMode;
+  bool shouldRepaint(covariant SoccerFieldPainter oldDelegate) => oldDelegate.singleTeamMode != singleTeamMode;
 }
