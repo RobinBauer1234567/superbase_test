@@ -8,6 +8,7 @@ import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:premier_league/screens/screenelements/match_screen/formations.dart';
 import 'package:premier_league/screens/screenelements/match_screen/matchrating_screen.dart';
+import 'package:premier_league/screens/screenelements/player_list_item.dart';
 import 'package:premier_league/utils/color_helper.dart';
 
 
@@ -261,6 +262,56 @@ class _PlayerScreenState extends State<PlayerScreen>
     return '${formatter.format(value)} €';
   }
 
+  Widget _buildCollapsedPlayerBar() {
+    final playerInfo = PlayerInfo(
+      id: widget.playerId,
+      name: playerName,
+      position: availablePositions.join(', '),
+      profileImageUrl: profileImageUrl,
+      rating: averagePlayerRating.round(),
+      goals: 0,
+      assists: 0,
+      ownGoals: 0,
+      maxRating: 100,
+    );
+
+    return Row(
+      children: [
+        PlayerAvatar(
+          player: playerInfo,
+          teamColor: Colors.blueGrey,
+          radius: 20,
+          showDetails: false,
+        ),
+        const SizedBox(width: 10),
+        Expanded(
+          child: Column(
+            mainAxisAlignment: MainAxisAlignment.center,
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Text(
+                playerName,
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+              ),
+              Text(
+                availablePositions.join(', '),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+                style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
+              ),
+            ],
+          ),
+        ),
+        Text(
+          _formatMarketValue(marketValue),
+          style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+        ),
+      ],
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     return Scaffold(
@@ -371,36 +422,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                             ignoring: fade > 0.5,
                             child: Opacity(
                               opacity: 1.0 - fade,
-                              child: Row(
-                                children: [
-                                  CircleAvatar(
-                                    radius: 18,
-                                    backgroundColor: Colors.grey.shade200,
-                                    backgroundImage: profileImageUrl != null ? NetworkImage(profileImageUrl!) : null,
-                                    child: profileImageUrl == null ? const Icon(Icons.person, size: 18, color: Colors.grey) : null,
-                                  ),
-                                  const SizedBox(width: 10),
-                                  Expanded(
-                                    child: Column(
-                                      mainAxisAlignment: MainAxisAlignment.center,
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(playerName, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15)),
-                                        Text(
-                                          availablePositions.join(', '),
-                                          maxLines: 1,
-                                          overflow: TextOverflow.ellipsis,
-                                          style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                  Text(
-                                    _formatMarketValue(marketValue),
-                                    style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-                                  ),
-                                ],
-                              ),
+                              child: _buildCollapsedPlayerBar(),
                             ),
                           ),
                         ),

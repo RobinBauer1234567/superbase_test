@@ -29,8 +29,6 @@ class _TeamScreenState extends State<TeamScreen> with SingleTickerProviderStateM
   List<Map<String, dynamic>> _topPlayers = [];
   int anzahlMatches = 0;
 
-  final ScrollController _matchesScrollController = ScrollController();
-
   @override
   void initState() {
     super.initState();
@@ -209,28 +207,6 @@ class _TeamScreenState extends State<TeamScreen> with SingleTickerProviderStateM
     _tabController.dispose();
     _matchesScrollController.dispose();
     super.dispose();
-  }
-
-  Widget _buildCollapsedTeamBar() {
-    return Row(
-      children: [
-        CircleAvatar(
-          radius: 18,
-          backgroundColor: Colors.grey.shade200,
-          backgroundImage: _teamData?['image_url'] != null ? NetworkImage(_teamData!['image_url']) : null,
-          child: _teamData?['image_url'] == null ? const Icon(Icons.shield, size: 18, color: Colors.grey) : null,
-        ),
-        const SizedBox(width: 10),
-        Expanded(
-          child: Text(
-            _teamData?['name'] ?? 'Team',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            style: const TextStyle(fontWeight: FontWeight.bold, color: Colors.black87),
-          ),
-        ),
-      ],
-    );
   }
 
   Color _getColorForRating(int rating) {
