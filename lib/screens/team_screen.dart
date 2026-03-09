@@ -27,16 +27,12 @@ class _TeamScreenState extends State<TeamScreen> with SingleTickerProviderStateM
   List<dynamic> _teamMatches = [];
   List<Map<String, dynamic>> _topPlayers = [];
   int anzahlMatches = 0;
+  bool _hasInitialAutoScroll = false;
 
   @override
   void initState() {
     super.initState();
     _tabController = TabController(length: 2, vsync: this);
-    _tabController.addListener(() {
-      if (_tabController.index == 0) {
-        _scrollToUpcomingMatch();
-      }
-    });
   }
 
   @override
@@ -150,9 +146,7 @@ class _TeamScreenState extends State<TeamScreen> with SingleTickerProviderStateM
           _isLoading = false;
         });
 
-        WidgetsBinding.instance.addPostFrameCallback((_) {
-          _scrollToUpcomingMatch();
-        });
+        _maybeScrollToUpcomingMatch();
       }
     } catch (e) {
       print("Fehler beim Laden der Teamdaten: $e");
@@ -163,6 +157,12 @@ class _TeamScreenState extends State<TeamScreen> with SingleTickerProviderStateM
         });
       }
     }
+  }
+
+  void _maybeScrollToUpcomingMatch() {
+    if (_hasInitialAutoScroll) return;
+    _hasInitialAutoScroll = true;
+    _scrollToUpcomingMatch();
   }
 
   Future<void> _scrollToUpcomingMatch() async {
