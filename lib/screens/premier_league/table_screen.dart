@@ -141,75 +141,90 @@ class _TableScreenState extends State<TableScreen> {
                   ? constraints.maxWidth * 0.30
                   : constraints.maxWidth * 0.48;
 
-              return SingleChildScrollView(
-                scrollDirection: Axis.horizontal,
-                child: ConstrainedBox(
-                  constraints: BoxConstraints(minWidth: constraints.maxWidth),
-                  child: DataTable(
-                    columnSpacing: 12.0,
-                    horizontalMargin: 8.0,
-                    columns: [
-                      const DataColumn(label: Text('#')),
-                      const DataColumn(label: Text('Club')),
-                      const DataColumn(label: Text('Sp')),
-                      if (showResultColumns) const DataColumn(label: Text('S')),
-                      if (showResultColumns) const DataColumn(label: Text('U')),
-                      if (showResultColumns) const DataColumn(label: Text('N')),
-                      const DataColumn(label: Text('Tordiff.')),
-                      const DataColumn(label: Text('Pkt.')),
-                    ],
-                    rows: _tableStats.map((stats) {
-                      return DataRow(
-                        cells: [
-                          DataCell(Text(stats.position.toString())),
-                          DataCell(
-                            SizedBox(
-                              width: clubColumnWidth,
-                              child: InkWell(
-                                onTap: () {
-                                  Navigator.push(
-                                    context,
-                                    MaterialPageRoute(
-                                      builder: (context) => TeamScreen(teamId: stats.id),
-                                    ),
-                                  );
-                                },
-                                child: Row(
-                                  children: [
-                                    Image.network(
-                                      stats.imageUrl,
-                                      width: 24,
-                                      height: 24,
-                                      errorBuilder: (c, e, s) => const Icon(Icons.shield, size: 24),
-                                    ),
-                                    const SizedBox(width: 8),
-                                    Expanded(
-                                      child: Text(
-                                        stats.name,
-                                        overflow: TextOverflow.ellipsis,
-                                      ),
-                                    ),
-                                  ],
+              final estimatedTableWidth = (showResultColumns ? 420.0 : 320.0) + clubColumnWidth;
+
+              final dataTable = DataTable(
+                columnSpacing: 12.0,
+                horizontalMargin: 8.0,
+                columns: [
+                  const DataColumn(label: Text('#')),
+                  const DataColumn(label: Text('Club')),
+                  const DataColumn(label: Text('Sp')),
+                  if (showResultColumns) const DataColumn(label: Text('S')),
+                  if (showResultColumns) const DataColumn(label: Text('U')),
+                  if (showResultColumns) const DataColumn(label: Text('N')),
+                  const DataColumn(label: Text('Tordiff.')),
+                  const DataColumn(label: Text('Pkt.')),
+                ],
+                rows: _tableStats.map((stats) {
+                  return DataRow(
+                    cells: [
+                      DataCell(Text(stats.position.toString())),
+                      DataCell(
+                        SizedBox(
+                          width: clubColumnWidth,
+                          child: InkWell(
+                            onTap: () {
+                              Navigator.push(
+                                context,
+                                MaterialPageRoute(
+                                  builder: (context) => TeamScreen(teamId: stats.id),
                                 ),
-                              ),
+                              );
+                            },
+                            child: Row(
+                              children: [
+                                Image.network(
+                                  stats.imageUrl,
+                                  width: 24,
+                                  height: 24,
+                                  errorBuilder: (c, e, s) => const Icon(Icons.shield, size: 24),
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(
+                                  child: Text(
+                                    stats.name,
+                                    overflow: TextOverflow.ellipsis,
+                                  ),
+                                ),
+                              ],
                             ),
                           ),
-                          DataCell(Text(stats.gamesPlayed.toString())),
-                          if (showResultColumns) DataCell(Text(stats.wins.toString())),
-                          if (showResultColumns) DataCell(Text(stats.draws.toString())),
-                          if (showResultColumns) DataCell(Text(stats.losses.toString())),
-                          DataCell(Text(stats.goalDifference.toString())),
-                          DataCell(
-                            Text(
-                              stats.points.toString(),
-                              style: const TextStyle(fontWeight: FontWeight.bold),
-                            ),
-                          ),
-                        ],
-                      );
-                    }).toList(),
+                        ),
+                      ),
+                      DataCell(Text(stats.gamesPlayed.toString())),
+                      if (showResultColumns) DataCell(Text(stats.wins.toString())),
+                      if (showResultColumns) DataCell(Text(stats.draws.toString())),
+                      if (showResultColumns) DataCell(Text(stats.losses.toString())),
+                      DataCell(Text(stats.goalDifference.toString())),
+                      DataCell(
+                        Text(
+                          stats.points.toString(),
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                      ),
+                    ],
+                  );
+                }).toList(),
+              );
+
+              Widget tableContent = ConstrainedBox(
+                constraints: BoxConstraints(minWidth: constraints.maxWidth),
+                child: dataTable,
+              );
+
+              if (estimatedTableWidth > constraints.maxWidth) {
+                tableContent = SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: ConstrainedBox(
+                    constraints: BoxConstraints(minWidth: estimatedTableWidth),
+                    child: dataTable,
                   ),
-                ),
+                );
+              }
+
+              return SingleChildScrollView(
+                child: tableContent,
               );
             },
           );
