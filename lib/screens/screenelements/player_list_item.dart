@@ -120,17 +120,22 @@ class PlayerListItem extends StatelessWidget {
           const SizedBox(width: 8),
 
           Container(
-            width: 40,
+            width: 44,
             padding: const EdgeInsets.symmetric(vertical: 4),
             decoration: BoxDecoration(
               color: scoreColor.withOpacity(0.1),
               border: Border.all(color: scoreColor.withOpacity(0.3)),
               borderRadius: BorderRadius.circular(4),
             ),
-            child: Text(
-              scoreText,
-              textAlign: TextAlign.center,
-              style: TextStyle(color: scoreColor, fontWeight: FontWeight.bold),
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                scoreText,
+                maxLines: 1,
+                softWrap: false,
+                textAlign: TextAlign.center,
+                style: TextStyle(color: scoreColor, fontWeight: FontWeight.bold),
+              ),
             ),
           ),
         ],
