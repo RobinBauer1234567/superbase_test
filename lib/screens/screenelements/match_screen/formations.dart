@@ -52,6 +52,7 @@ class PlayerInfo {
 class PlayerAvatar extends StatelessWidget {
   final PlayerInfo player;
   final Color teamColor;
+  final Color? goalkeeperColor; // <--- NEU HINZUFÜGEN
   final double radius;
   final bool showHoverEffect;
   final bool showValidTargetEffect;
@@ -74,7 +75,8 @@ class PlayerAvatar extends StatelessWidget {
     this.isLocked = false,
     this.hideUnlockedMatchdayRating = false,
     this.displayMode = AvatarDisplayMode.matchday, // Standard
-    this.currentRound = 1,                         // Standard
+    this.currentRound = 1,
+    this.goalkeeperColor,
   });
 
   String _getDisplayValue() {
@@ -120,7 +122,6 @@ class PlayerAvatar extends StatelessWidget {
     }
   }
 
-
   Widget _buildEventIcon(IconData icon, Color color, int count, double size) {
     if (count == 0) return const SizedBox.shrink();
     return Container(
@@ -146,9 +147,20 @@ class PlayerAvatar extends StatelessWidget {
     final double nameFontSize = radius * 0.42;
     final double eventIconSize = radius * 0.45;
 
-    Color outerColor = isGoalkeeper ? Colors.orange.shade700 : teamColor;
+    Color outerColor = isGoalkeeper ? (goalkeeperColor ?? Colors.orange.shade700) : teamColor;
     if (isPlaceholder) outerColor = Colors.grey.shade400;
     double scale = 1.0;
+    if (showHoverEffect) { scale = 1.2; outerColor = Colors.green.shade600; }
+    else if (showValidTargetEffect) { outerColor = Colors.yellow.shade700; }
+
+    // --- NEU: Helligkeit prüfen ---
+    // computeLuminance() gibt einen Wert von 0.0 (Schwarz) bis 1.0 (Weiß) zurück.
+    final bool isOuterLight = outerColor.computeLuminance() > 0.6;
+    final bool isTeamLight = teamColor.computeLuminance() > 0.6;
+
+    // Dynamische Farben für das Positions-Badge
+    final Color posTextColor = isTeamLight ? Colors.black : Colors.white;
+    final Color posBorderColor = isTeamLight ? Colors.black38 : Colors.white;
     if (showHoverEffect) { scale = 1.2; outerColor = Colors.green.shade600; }
     else if (showValidTargetEffect) { outerColor = Colors.yellow.shade700; }
 
@@ -194,7 +206,17 @@ class PlayerAvatar extends StatelessWidget {
               clipBehavior: Clip.none, alignment: Alignment.center,
               children: [
                 Container(width: totalRadius * 2, height: totalRadius * 2, decoration: BoxDecoration(shape: BoxShape.circle, boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 4, offset: const Offset(0, 2))])),
-                CircleAvatar(radius: totalRadius, backgroundColor: outerColor),
+                // Äußerer Farb-Ring (mit optionalem dunklen Rand bei hellen Farben)
+                Container(
+                  width: totalRadius * 2,
+                  height: totalRadius * 2,
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: outerColor,
+                    border: isOuterLight ? Border.all(color: Colors.black26, width: 0.5) : null,
+                  ),
+                ),
+                // Innerer weißer Ring
                 CircleAvatar(radius: imageRadius + whiteRingWidth, backgroundColor: Colors.white),
                 profileImageWidget,
 
@@ -208,12 +230,28 @@ class PlayerAvatar extends StatelessWidget {
                     return Positioned(
                       left: totalRadius + (dist * cos(angle)) - (badgeSize / 2), top: totalRadius + (dist * sin(angle) * -1 * -1) - (badgeSize / 2),
                       child: Container(
-                        width: badgeSize, height: badgeSize, alignment: Alignment.center,
-                        decoration: BoxDecoration(color: teamColor, shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 1.0), boxShadow: const [BoxShadow(color: Colors.black38, blurRadius: 1, offset: Offset(1, 1))]),
-                        child: FittedBox(child: Padding(padding: const EdgeInsets.all(1.0), child: Text(positions[index], style: TextStyle(color: Colors.white, fontSize: posFontSize, fontWeight: FontWeight.bold)))),
+                          width: badgeSize, height: badgeSize, alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                              color: teamColor,
+                              shape: BoxShape.circle,
+                              border: Border.all(color: posBorderColor, width: 1.0), // <-- HIER ANGEPASST
+                              boxShadow: const [BoxShadow(color: Colors.black38, blurRadius: 1, offset: Offset(1, 1))]
+                          ),
+                          child: FittedBox(
+                              child: Padding(
+                                  padding: const EdgeInsets.all(1.0),
+                                  child: Text(
+                                      positions[index],
+                                      style: TextStyle(
+                                          color: posTextColor, // <-- HIER ANGEPASST
+                                          fontSize: posFontSize,
+                                          fontWeight: FontWeight.bold
+                                      )
+                                  )
+                              )
+                          )
                       ),
-                    );
-                  }),
+                    );                  }),
 
                 if (!isPlaceholder && showDetails)
                   Positioned(
@@ -291,9 +329,11 @@ class MatchFormationDisplay extends StatefulWidget {
   final String homeFormation;
   final List<PlayerInfo> homePlayers;
   final Color homeColor;
+  final Color? homeGoalkeeperColor; // <--- NEU
   final String? awayFormation;
   final List<PlayerInfo>? awayPlayers;
   final Color? awayColor;
+  final Color? awayGoalkeeperColor; // <--- NEU
   final void Function(int playerId, double radius) onPlayerTap;
   final List<PlayerInfo>? substitutes;
   final void Function(PlayerInfo fieldSlot, PlayerInfo benchPlayer)? onPlayerDrop;
@@ -323,6 +363,8 @@ class MatchFormationDisplay extends StatefulWidget {
     this.currentRound = 1,
     this.isReadOnly = false, // <--- NEU HINZUFÜGEN (Standard ist false)
     this.hideUnlockedMatchdayRating = false,
+    this.homeGoalkeeperColor, // <--- NEU
+    this.awayGoalkeeperColor
   });
 
   @override
@@ -513,6 +555,8 @@ class _MatchFormationDisplayState extends State<MatchFormationDisplay> {
                                 final displayWidget = PlayerAvatar(
                                   player: player,
                                   teamColor: widget.homeColor,
+                                  // NEU: Torwartfarbe für die Bank (Bank in dieser Ansicht immer Heim)
+                                  goalkeeperColor: widget.homeGoalkeeperColor,
                                   radius: radius,
                                   isLocked: isPlayerLocked, // NEU
                                   displayMode: widget.displayMode,
@@ -591,6 +635,8 @@ class _MatchFormationDisplayState extends State<MatchFormationDisplay> {
                 child: PlayerAvatar(
                   player: targetPlayer,
                   teamColor: teamColor,
+                  // NEU: Je nach Team die richtige Torwartfarbe übergeben
+                  goalkeeperColor: isAwayTeam ? widget.awayGoalkeeperColor : widget.homeGoalkeeperColor,
                   radius: radius,
                   showHoverEffect: false, // Wird unten vom DragTarget gesteuert
                   showValidTargetEffect: isValidTarget,
@@ -615,7 +661,6 @@ class _MatchFormationDisplayState extends State<MatchFormationDisplay> {
                   },
                   builder: (context, candidateData, rejectedData) {
                     final bool isHovering = candidateData.isNotEmpty;
-
                     // NEU: Prüfen, ob der Spieler gelockt ist
                     final bool isPlayerLocked = widget.frozenPlayerIds.contains(targetPlayer.id);
 
@@ -623,6 +668,8 @@ class _MatchFormationDisplayState extends State<MatchFormationDisplay> {
                     final displayWidget = PlayerAvatar(
                       player: targetPlayer,
                       teamColor: teamColor,
+                      // NEU: Auch hier die Torwartfarbe übergeben!
+                      goalkeeperColor: isAwayTeam ? widget.awayGoalkeeperColor : widget.homeGoalkeeperColor,
                       radius: radius,
                       showHoverEffect: isHovering,
                       showValidTargetEffect: isValidTarget,

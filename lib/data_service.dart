@@ -127,25 +127,59 @@ class ApiService {
 
   Future<void> updateSpielData(int seasonId, int spielId, status) async {
     final url = '$baseUrl/event/$spielId';
-    final response = await http.get(Uri.parse(url));
+    // Nutze hier am besten _throttledGet, um das API-Limit nicht zu reizen
+    final response = await _throttledGet(url);
 
     if (response.statusCode == 200) {
       final parsedJson = json.decode(response.body);
 
-        var homeScore = parsedJson['event']['homeScore']?['current'] ?? 0;
-        var awayScore = parsedJson['event']['awayScore']?['current'] ?? 0;
+      var homeScore = parsedJson['event']['homeScore']?['current'] ?? 0;
+      var awayScore = parsedJson['event']['awayScore']?['current'] ?? 0;
 
-        String ergebnis = (parsedJson['event']['homeScore'] == null ||
-            parsedJson['event']['awayScore'] == null)
-            ? "Noch kein Ergebnis"
-            : "$homeScore:$awayScore";
-        await supabaseService.updateSpiel(
-            spielId,
-            ergebnis,
-            status
-        );
+      String ergebnis = (parsedJson['event']['homeScore'] == null ||
+          parsedJson['event']['awayScore'] == null)
+          ? "Noch kein Ergebnis"
+          : "$homeScore:$awayScore";
+
+      // NEU: Variablen für Incidents und Farben vorbereiten
+      List<dynamic> incidents = [];
+      String? homeColorPrimary;
+      String? homeGkColorPrimary;
+      String? awayColorPrimary;
+      String? awayGkColorPrimary;
+
+      // NEU: Incidents und Farben über den separaten API-Endpunkt abrufen
+      try {
+        final incidentsUrl = '$baseUrl/event/$spielId/incidents';
+        final incidentsResponse = await _throttledGet(incidentsUrl);
+
+        if (incidentsResponse.statusCode == 200) {
+          final incidentsJson = json.decode(incidentsResponse.body);
+          incidents = incidentsJson['incidents'] ?? [];
+
+          // Farben extrahieren (falls vorhanden)
+          homeColorPrimary = incidentsJson['home']?['playerColor']?['primary'];
+          homeGkColorPrimary = incidentsJson['home']?['goalkeeperColor']?['primary'];
+
+          awayColorPrimary = incidentsJson['away']?['playerColor']?['primary'];
+          awayGkColorPrimary = incidentsJson['away']?['goalkeeperColor']?['primary'];
+        }
+      } catch (e) {
+        print('Fehler beim Abrufen der Incidents für Spiel $spielId: $e');
       }
 
+      // Übergabe der neuen Daten an den SupabaseService
+      await supabaseService.updateSpiel(
+        spielId,
+        ergebnis,
+        status,
+        incidents: incidents,
+        homeColorPrimary: homeColorPrimary,
+        homeGkColorPrimary: homeGkColorPrimary,
+        awayColorPrimary: awayColorPrimary,
+        awayGkColorPrimary: awayGkColorPrimary,
+      );
+    }
   }
 
   Future<void> fetchAndStoreSpielerundMatchratings(int spielId, int hometeamId, int awayteamId, int seasonId) async {
@@ -809,60 +843,6 @@ class ApiService {
     throw Exception('Failed to fetch $url after retries');
   }
 
-  Future<int?> _calculateInitialMarketValue(int playerId) async {
-    try {
-      final response = await _throttledGet('https://www.sofascore.com/api/v1/player/$playerId/events/last/0');
-
-      if (response.statusCode != 200) return null;
-
-      final data = json.decode(response.body);
-      final List<dynamic> events = data['events'] ?? [];
-
-      final recentEvents = events.toList();
-      if (recentEvents.isEmpty) return null;
-
-      List<int> punkte = [];
-
-      // 2. Details (Rating) für jedes dieser Spiele holen
-      for (var event in recentEvents) {
-        String eventId = event['id'].toString();
-        // AUCH HIER: Gedrosselter Aufruf für die Lineups
-        final lineupResp = await _throttledGet('https://www.sofascore.com/api/v1/event/$eventId/lineups');
-
-        if (lineupResp.statusCode == 200) {
-          final lineupData = json.decode(lineupResp.body);
-          // Finde den Spieler in Heim- oder Auswärtsteam
-          final allPlayers = [
-            ...(lineupData['home']?['players'] ?? []),
-            ...(lineupData['away']?['players'] ?? [])
-          ];
-
-          final playerStats = allPlayers.firstWhere(
-                  (p) => p['player']['id'] == playerId,
-              orElse: () => null
-          );
-
-          if (playerStats != null) {
-            num rating = playerStats['statistics']?['rating'] ?? 6.0;
-            rating = rating.toDouble();
-            punkte.add(((rating - 6) * 100).round());
-          }
-        }
-      }
-
-      if (punkte.isEmpty) return null;
-
-      // Durchschnitt berechnen
-      double avgPoints = punkte.reduce((a, b) => a + b) / punkte.length;
-      double calculatedMarktwert =  15000 * pow(avgPoints, 1.5) + 1000000;
-      return calculatedMarktwert.round();
-
-    } catch (e) {
-      print('Fehler bei Marktwertberechnung für $playerId: $e');
-      return null;
-    }
-  }
-
   Future<void> fixIncompletePlayers(int seasonId) async {
     print('🧹 Starte Reparatur-Job für unvollständige Spieler...');
 
@@ -1092,7 +1072,6 @@ class ApiService {
       print('❌ Fehler beim Verarbeiten der Transfers für Team $teamId: $e');
     }
   }
-
 }
 
 class SupabaseService {
@@ -1211,9 +1190,25 @@ class SupabaseService {
     return DateTime.parse(response['datum']);
   }
 
-  Future<void> updateSpiel(int spielId,String ergebnis, String neuerStatus) async {
-    await supabase.from('spiel').update({'ergebnis': ergebnis}).eq('id', spielId);
-    await supabase.from('spiel').update({'status': neuerStatus}).eq('id', spielId);
+  Future<void> updateSpiel(int spielId, String ergebnis, String neuerStatus, {List<dynamic>? incidents, String? homeColorPrimary, String? homeGkColorPrimary, String? awayColorPrimary, String? awayGkColorPrimary,}) async {
+    // Grunddaten für das Update
+    final Map<String, dynamic> updateData = {
+      'ergebnis': ergebnis,
+      'status': neuerStatus,
+    };
+
+    // Optionale Daten hinzufügen, wenn sie vorhanden sind
+    if (incidents != null) updateData['incidents'] = incidents;
+    if (homeColorPrimary != null) updateData['home_color_primary'] = homeColorPrimary;
+    if (homeGkColorPrimary != null) updateData['home_goalkeeper_color_primary'] = homeGkColorPrimary;
+    if (awayColorPrimary != null) updateData['away_color_primary'] = awayColorPrimary;
+    if (awayGkColorPrimary != null) updateData['away_goalkeeper_color_primary'] = awayGkColorPrimary;
+
+    try {
+      await supabase.from('spiel').update(updateData).eq('id', spielId);
+    } catch (error) {
+      print('Fehler beim Updaten des Spiels $spielId: $error');
+    }
   }
 
   Future<void> updateSpieltagStatus(int round, String neuerStatus, int seasonId) async {

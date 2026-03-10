@@ -1,7 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:premier_league/screens/screenelements/radial_chart.dart';
-import 'package:premier_league/screens/spieltag_screen.dart';
+import 'package:premier_league/screens/spiel_screen.dart';
 import 'package:premier_league/viewmodels/data_viewmodel.dart';
 import 'package:premier_league/viewmodels/radar_chart_viewmodel.dart';
 import 'package:provider/provider.dart';
