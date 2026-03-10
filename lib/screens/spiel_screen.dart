@@ -239,8 +239,6 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
       margin: EdgeInsets.zero,
       child: ListView.builder(
         itemCount: substitutes.length,
-        shrinkWrap: true,
-        physics: const NeverScrollableScrollPhysics(),
         itemBuilder: (context, index) {
           final player = substitutes[index];
           return SubstitutePlayerRow(
@@ -250,17 +248,16 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
             isPlayed: isPlayed,
             onTap: () =>
                 Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                      builder: (context) => PlayerScreen(playerId: player.id)),
-                ),
+              context,
+              MaterialPageRoute(
+                  builder: (context) => PlayerScreen(playerId: player.id)),
+            ),
           );
         },
       ),
     );
   }
 
-  @override
   @override
   Widget build(BuildContext context) {
     final heimTeam = currentSpielData['heimteam'] ?? {};
@@ -386,62 +383,169 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
             // TAB 1: DAS SPIELFELD
             Builder(
                 builder: (context) {
-                  // NEU: Radius direkt über MediaQuery berechnen -> Vermeidet den LayoutBuilder-Absturz!
-                  final screenHeight = MediaQuery.of(context).size.height;
+                  final mediaQuery = MediaQuery.of(context);
+                  final screenHeight = mediaQuery.size.height;
                   playerAvatarRadiusOnField = screenHeight / 40;
+
+                  const benchToggleHeight = 48.0;
+                  const appBarHeightCollapsed =
+                      kToolbarHeight + kTextTabBarHeight;
+                  final collapsedViewportHeight = math.max(
+                    300.0,
+                    screenHeight - mediaQuery.padding.top - appBarHeightCollapsed,
+                  );
+
+                  final visibleSubstitutes = _expandedBench == 'home'
+                      ? homeSubstitutes
+                      : _expandedBench == 'away'
+                          ? awaySubstitutes
+                          : <PlayerInfo>[];
+
+                  final desiredBenchHeight =
+                      visibleSubstitutes.length * (playerAvatarRadiusOnField * 2.1);
+                  final maxBenchHeight = math.max(
+                    120.0,
+                    collapsedViewportHeight * 0.42,
+                  );
+                  final benchHeight = _expandedBench == null
+                      ? 0.0
+                      : math.min(maxBenchHeight, desiredBenchHeight);
 
                   return CustomScrollView(
                       key: const PageStorageKey<String>('gamePitchTab'),
                       slivers: [
                         SliverOverlapInjector(handle: NestedScrollView.sliverOverlapAbsorberHandleFor(context)),
-                        SliverFillRemaining(
-                          hasScrollBody: false,
-                          child: Stack(
-                            children: [
-                              Positioned.fill(
-                                bottom: 48,
-                                child: (homePlayers.length >= 11 && awayPlayers.length >= 11)
-                                    ? Center(
-                                  child: MatchFormationDisplay(
-                                    homeFormation: homeFormation,
-                                    homePlayers: homePlayers,
-                                    homeColor: homeColor,
-                                    homeGoalkeeperColor: homeGkColor,
-                                    awayFormation: awayFormation,
-                                    awayPlayers: awayPlayers,
-                                    awayColor: awayColor,
-                                    awayGoalkeeperColor: awayGkColor,
-                                    onPlayerTap: (playerId, radius) {
-                                      Navigator.push(context, MaterialPageRoute(builder: (context) => PlayerScreen(playerId: playerId)));
-                                    },
-                                  ),
-                                )
-                                    : const Center(child: Text("Nicht genügend Spielerdaten für die Formationsanzeige.")),
-                              ),
-                              Positioned(
-                                bottom: 48, left: 0, right: 0,
-                                child: AnimatedSwitcher(
+                        SliverToBoxAdapter(
+                          child: SizedBox(
+                            height: collapsedViewportHeight,
+                            child: Column(
+                              children: [
+                                Expanded(
+                                  child: (homePlayers.length >= 11 && awayPlayers.length >= 11)
+                                      ? Center(
+                                          child: MatchFormationDisplay(
+                                            homeFormation: homeFormation,
+                                            homePlayers: homePlayers,
+                                            homeColor: homeColor,
+                                            homeGoalkeeperColor: homeGkColor,
+                                            awayFormation: awayFormation,
+                                            awayPlayers: awayPlayers,
+                                            awayColor: awayColor,
+                                            awayGoalkeeperColor: awayGkColor,
+                                            onPlayerTap: (playerId, radius) {
+                                              Navigator.push(
+                                                context,
+                                                MaterialPageRoute(
+                                                  builder: (context) =>
+                                                      PlayerScreen(
+                                                          playerId: playerId),
+                                                ),
+                                              );
+                                            },
+                                          ),
+                                        )
+                                      : const Center(
+                                          child: Text(
+                                            "Nicht genügend Spielerdaten für die Formationsanzeige.",
+                                          ),
+                                        ),
+                                ),
+                                AnimatedContainer(
                                   duration: const Duration(milliseconds: 200),
-                                  transitionBuilder: (child, animation) => SizeTransition(sizeFactor: animation, axisAlignment: -1.0, child: child),
-                                  child: _expandedBench == 'home'
-                                      ? _buildSubstitutesContent(homeSubstitutes, homeColor)
-                                      : _expandedBench == 'away'
-                                      ? _buildSubstitutesContent(awaySubstitutes, awayColor)
-                                      : const SizedBox.shrink(),
+                                  curve: Curves.easeInOut,
+                                  height: benchHeight,
+                                  child: AnimatedSwitcher(
+                                    duration: const Duration(milliseconds: 200),
+                                    child: _expandedBench == 'home'
+                                        ? _buildSubstitutesContent(
+                                            homeSubstitutes, homeColor)
+                                        : _expandedBench == 'away'
+                                            ? _buildSubstitutesContent(
+                                                awaySubstitutes, awayColor)
+                                            : const SizedBox.shrink(),
+                                  ),
                                 ),
-                              ),
-                              Positioned(
-                                bottom: 0, left: 0, right: 0,
-                                child: Row(
-                                  children: [
-                                    if (homeSubstitutes.isNotEmpty)
-                                      Expanded(child: GestureDetector(onTap: () => setState(() => _expandedBench = (_expandedBench == 'home') ? null : 'home'), child: Card(margin: EdgeInsets.zero, elevation: 4, child: Container(height: 48, alignment: Alignment.center, child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [const Text("Bank Heim", style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)), Icon(_expandedBench == 'home' ? Icons.keyboard_arrow_down : Icons.keyboard_arrow_up)]))))),
-                                    if (awaySubstitutes.isNotEmpty)
-                                      Expanded(child: GestureDetector(onTap: () => setState(() => _expandedBench = (_expandedBench == 'away') ? null : 'away'), child: Card(margin: EdgeInsets.zero, elevation: 4, child: Container(height: 48, alignment: Alignment.center, child: Row(mainAxisAlignment: MainAxisAlignment.center, children: [const Text("Bank Auswärts", style: TextStyle(fontSize: 14, fontWeight: FontWeight.bold)), Icon(_expandedBench == 'away' ? Icons.keyboard_arrow_down : Icons.keyboard_arrow_up)]))))),
-                                  ],
+                                SizedBox(
+                                  height: benchToggleHeight,
+                                  child: Row(
+                                    children: [
+                                      if (homeSubstitutes.isNotEmpty)
+                                        Expanded(
+                                          child: GestureDetector(
+                                            onTap: () => setState(() =>
+                                                _expandedBench =
+                                                    (_expandedBench == 'home')
+                                                        ? null
+                                                        : 'home'),
+                                            child: Card(
+                                              margin: EdgeInsets.zero,
+                                              elevation: 4,
+                                              child: Container(
+                                                alignment: Alignment.center,
+                                                child: Row(
+                                                  mainAxisAlignment:
+                                                      MainAxisAlignment.center,
+                                                  children: [
+                                                    const Text(
+                                                      "Bank Heim",
+                                                      style: TextStyle(
+                                                          fontSize: 14,
+                                                          fontWeight:
+                                                              FontWeight.bold),
+                                                    ),
+                                                    Icon(_expandedBench ==
+                                                            'home'
+                                                        ? Icons
+                                                            .keyboard_arrow_down
+                                                        : Icons
+                                                            .keyboard_arrow_up),
+                                                  ],
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                      if (awaySubstitutes.isNotEmpty)
+                                        Expanded(
+                                          child: GestureDetector(
+                                            onTap: () => setState(() =>
+                                                _expandedBench =
+                                                    (_expandedBench == 'away')
+                                                        ? null
+                                                        : 'away'),
+                                            child: Card(
+                                              margin: EdgeInsets.zero,
+                                              elevation: 4,
+                                              child: Container(
+                                                alignment: Alignment.center,
+                                                child: Row(
+                                                  mainAxisAlignment:
+                                                      MainAxisAlignment.center,
+                                                  children: [
+                                                    const Text(
+                                                      "Bank Auswärts",
+                                                      style: TextStyle(
+                                                          fontSize: 14,
+                                                          fontWeight:
+                                                              FontWeight.bold),
+                                                    ),
+                                                    Icon(_expandedBench ==
+                                                            'away'
+                                                        ? Icons
+                                                            .keyboard_arrow_down
+                                                        : Icons
+                                                            .keyboard_arrow_up),
+                                                  ],
+                                                ),
+                                              ),
+                                            ),
+                                          ),
+                                        ),
+                                    ],
+                                  ),
                                 ),
-                              ),
-                            ],
+                              ],
+                            ),
                           ),
                         ),
                       ]
