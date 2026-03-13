@@ -582,66 +582,116 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
       );
     }
 
-    // Wir drehen die Liste um, damit die neuesten Ereignisse (Minute 90) oben stehen
-    final sortedIncidents = List
-        .from(incidents)
-        .reversed
-        .toList();
+    int _toMinute(dynamic value) {
+      if (value is num) return value.toInt();
+      return int.tryParse(value?.toString() ?? '') ?? -1;
+    }
+
+    final sortedIncidents = List.from(incidents)
+      ..sort((a, b) => _toMinute(a['time']).compareTo(_toMinute(b['time'])));
 
     return SliverList(
       delegate: SliverChildBuilderDelegate(
             (context, index) {
           final incident = sortedIncidents[index];
-          final isHome = incident['isHome'] ?? true;
+          final isHome = incident['isHome'];
           final time = incident['time'] ?? '';
           final type = incident['incidentType'] ?? '';
           final incidentClass = incident['incidentClass'] ?? '';
 
           IconData icon = Icons.info_outline;
-          Color iconColor = Colors.grey;
-          String title = '';
-          String subtitle = '';
+          Color iconColor = Colors.black54;
+          String text = '';
+          bool isNeutral = false;
 
           if (type == 'goal') {
             icon = Icons.sports_soccer;
-            iconColor = isHome ? Colors.blue : Colors.red;
-            title = 'Tor für ${isHome ? 'Heim' : 'Auswärts'}';
-            subtitle = incident['player']?['name'] ?? 'Eigentor/Unbekannt';
+            iconColor = Colors.green.shade700;
+            text = incident['player']?['name'] ?? 'Eigentor/Unbekannt';
           } else if (type == 'card') {
-            icon = Icons.style;
+            icon = Icons.crop_portrait;
             iconColor = incidentClass == 'yellow' ? Colors.amber : Colors.red;
-            title = incidentClass == 'yellow' ? 'Gelbe Karte' : 'Rote Karte';
-            subtitle = incident['player']?['name'] ?? 'Unbekannt';
+            text = incident['player']?['name'] ?? 'Unbekannt';
           } else if (type == 'substitution') {
-            icon = Icons.sync;
+            icon = Icons.swap_horiz;
             iconColor = Colors.green;
-            title = 'Auswechslung';
-            subtitle =
-            '${incident['playerIn']?['shortName']} für ${incident['playerOut']?['shortName']}';
+            text =
+            '${incident['playerIn']?['shortName'] ?? 'Unbekannt'} für ${incident['playerOut']?['shortName'] ?? 'Unbekannt'}';
           } else if (type == 'period') {
             icon = Icons.timer;
             iconColor = Colors.black;
-            title = incident['text'] == 'HT' ? 'Halbzeit' : 'Spielende';
-            subtitle =
-            'Ergebnis: ${incident['homeScore']} : ${incident['awayScore']}';
+            text = incident['text'] == 'HT' ? 'Halbzeit' : 'Spielende';
+            isNeutral = true;
           } else {
             return const SizedBox
                 .shrink(); // Versteckt unwichtige Events wie Verletzungszeit
           }
 
-          return Card(
-            elevation: 2,
-            margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-            child: ListTile(
-              leading: CircleAvatar(
-                backgroundColor: iconColor.withOpacity(0.2),
-                child: Icon(icon, color: iconColor),
+          final eventLine = Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, color: iconColor, size: 18),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  text,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
               ),
-              title: Text(
-                  title, style: const TextStyle(fontWeight: FontWeight.bold)),
-              subtitle: Text(subtitle),
-              trailing: Text('$time\'', style: const TextStyle(
-                  fontSize: 16, fontWeight: FontWeight.bold)),
+            ],
+          );
+
+          if (isNeutral) {
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
+              child: Center(
+                child: Row(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      '$time\'',
+                      style: const TextStyle(
+                        fontSize: 14,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black54,
+                      ),
+                    ),
+                    const SizedBox(width: 8),
+                    eventLine,
+                  ],
+                ),
+              ),
+            );
+          }
+
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: isHome == true ? eventLine : const SizedBox.shrink(),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Text(
+                    '$time\'',
+                    style: const TextStyle(
+                      fontSize: 14,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black54,
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: Align(
+                    alignment:
+                        isHome == false ? Alignment.centerRight : Alignment.centerLeft,
+                    child: isHome == false ? eventLine : const SizedBox.shrink(),
+                  ),
+                ),
+              ],
             ),
           );
         },
