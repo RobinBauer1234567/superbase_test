@@ -302,7 +302,8 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                 flexibleSpace: LayoutBuilder(
                   builder: (context, constraints) {
                     final safeAreaTop = MediaQuery.of(context).padding.top;
-                    const collapsedBottomHeight = 48.0; // Höhe der TabBar
+                    const collapsedBottomHeight =
+                        kTextTabBarHeight; // Höhe der TabBar
                     final collapsedHeight = kToolbarHeight + collapsedBottomHeight + safeAreaTop;
                     const expandedHeight = 200.0;
 
@@ -362,14 +363,12 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                 ),
                 bottom: TabBar(
                   controller: _tabController,
-                  labelColor: Colors.black87,
-                  indicatorColor: Colors.black87,
                   isScrollable: true,
                   tabAlignment: TabAlignment.start,
                   labelPadding: const EdgeInsets.symmetric(horizontal: 16.0),
                   tabs: const [
-                    Tab(icon: Icon(Icons.sports_soccer), text: "Spielfeld"),
-                    Tab(icon: Icon(Icons.timeline), text: "Verlauf"),
+                    Tab(text: "Spielfeld"),
+                    Tab(text: "Verlauf"),
                   ],
                 ),
               ),
@@ -413,6 +412,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
 
                   return CustomScrollView(
                       key: const PageStorageKey<String>('gamePitchTab'),
+                      physics: const AlwaysScrollableScrollPhysics(),
                       slivers: [
                         SliverOverlapInjector(handle: NestedScrollView.sliverOverlapAbsorberHandleFor(context)),
                         SliverToBoxAdapter(
@@ -558,6 +558,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                 builder: (context) {
                   return CustomScrollView(
                       key: const PageStorageKey<String>('gameIncidentsTab'),
+                      physics: const AlwaysScrollableScrollPhysics(),
                       slivers: [
                         SliverOverlapInjector(handle: NestedScrollView.sliverOverlapAbsorberHandleFor(context)),
                         SliverPadding(
