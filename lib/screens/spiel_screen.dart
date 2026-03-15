@@ -587,17 +587,99 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
       return int.tryParse(value?.toString() ?? '') ?? -1;
     }
 
-    final sortedIncidents = List.from(incidents)
-      ..sort((a, b) => _toMinute(a['time']).compareTo(_toMinute(b['time'])));
+    ({int minute, int? addedTime}) _extractMinuteData(Map<String, dynamic> incident) {
+      final rawTime = incident['time'];
+      int minute = _toMinute(rawTime);
+      int? addedTime;
+
+      if (rawTime is String && rawTime.contains('+')) {
+        final parts = rawTime.split('+');
+        minute = int.tryParse(parts.first.trim()) ?? minute;
+        addedTime = int.tryParse(parts.last.trim());
+      }
+
+      addedTime ??= _toMinute(incident['addedTime']) >= 0 ? _toMinute(incident['addedTime']) : null;
+      addedTime ??= _toMinute(incident['injuryTime']) >= 0 ? _toMinute(incident['injuryTime']) : null;
+
+      return (minute: minute, addedTime: addedTime);
+    }
+
+    bool _isFirstHalfStoppage(Map<String, dynamic> incident) {
+      final minuteData = _extractMinuteData(incident);
+      return minuteData.minute == 45 && (minuteData.addedTime ?? 0) > 0;
+    }
+
+    bool _isSecondHalfStoppage(Map<String, dynamic> incident) {
+      final minuteData = _extractMinuteData(incident);
+      return minuteData.minute == 90 && (minuteData.addedTime ?? 0) > 0;
+    }
+
+    int _incidentSortBucket(Map<String, dynamic> incident) {
+      final type = incident['incidentType'];
+      final text = incident['text'];
+      final minuteData = _extractMinuteData(incident);
+      final minute = minuteData.minute;
+
+      if (type == 'period' && text == 'HT') return 1;
+      if (_isFirstHalfStoppage(incident)) return 2;
+      if (minute <= 45) return 0;
+
+      if (type == 'period' && text != 'HT') return 4;
+      if (_isSecondHalfStoppage(incident)) return 5;
+      if (minute <= 90) return 3;
+
+      return 6;
+    }
+
+    String _formatMinute(Map<String, dynamic> incident) {
+      final minuteData = _extractMinuteData(incident);
+      final minute = minuteData.minute;
+      final addedTime = minuteData.addedTime;
+
+      if (minute < 0) return '';
+      if (addedTime != null && addedTime > 0) {
+        return "$minute'+$addedTime";
+      }
+      return "$minute'";
+    }
+
+    Widget _playerAvatar(Map<String, dynamic> playerData) {
+      final playerId = playerData['id'];
+      final imageUrl = playerId == null
+          ? null
+          : 'https://www.sofascore.com/api/v1/player/$playerId/image';
+
+      return CircleAvatar(
+        radius: 10,
+        backgroundColor: Colors.grey.shade300,
+        backgroundImage: imageUrl != null ? NetworkImage(imageUrl) : null,
+        child: imageUrl == null
+            ? const Icon(Icons.person, size: 12, color: Colors.white)
+            : null,
+      );
+    }
+
+    final sortedIncidents = List<Map<String, dynamic>>.from(incidents)
+      ..sort((a, b) {
+        final bucketCompare = _incidentSortBucket(a).compareTo(_incidentSortBucket(b));
+        if (bucketCompare != 0) return bucketCompare;
+
+        final aMinuteData = _extractMinuteData(a);
+        final bMinuteData = _extractMinuteData(b);
+        final minuteCompare = aMinuteData.minute.compareTo(bMinuteData.minute);
+        if (minuteCompare != 0) return minuteCompare;
+
+        return (aMinuteData.addedTime ?? 0).compareTo(bMinuteData.addedTime ?? 0);
+      });
 
     return SliverList(
       delegate: SliverChildBuilderDelegate(
             (context, index) {
           final incident = sortedIncidents[index];
           final isHome = incident['isHome'];
-          final time = incident['time'] ?? '';
           final type = incident['incidentType'] ?? '';
           final incidentClass = incident['incidentClass'] ?? '';
+          final formattedTime = _formatMinute(incident);
 
           IconData icon = Icons.info_outline;
           Color iconColor = Colors.black54;
@@ -630,6 +712,13 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
           final eventLine = Row(
             mainAxisSize: MainAxisSize.min,
             children: [
+              if (!isNeutral) ...[
+                _playerAvatar((type == 'substitution'
+                        ? incident['playerIn']
+                        : incident['player']) ??
+                    {}),
+                const SizedBox(width: 6),
+              ],
               Icon(icon, color: iconColor, size: 18),
               const SizedBox(width: 6),
               Flexible(
@@ -651,7 +740,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      '$time\'',
+                      formattedTime,
                       style: const TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.bold,
@@ -676,7 +765,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 8),
                   child: Text(
-                    '$time\'',
+                    formattedTime,
                     style: const TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.bold,
