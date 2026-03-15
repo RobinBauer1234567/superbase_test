@@ -582,11 +582,13 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
       );
     }
 
-    // Wir drehen die Liste um, damit die neuesten Ereignisse (Minute 90) oben stehen
-    final sortedIncidents = List
-        .from(incidents)
-        .reversed
-        .toList();
+    // Chronologische Reihenfolge (früheste Minute zuerst)
+    final sortedIncidents = List.from(incidents)
+      ..sort((a, b) {
+        final aTime = (a['time'] as num?)?.toInt() ?? 0;
+        final bTime = (b['time'] as num?)?.toInt() ?? 0;
+        return aTime.compareTo(bTime);
+      });
 
     return SliverList(
       delegate: SliverChildBuilderDelegate(
@@ -599,49 +601,87 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
 
           IconData icon = Icons.info_outline;
           Color iconColor = Colors.grey;
-          String title = '';
-          String subtitle = '';
+          String text = '';
+          bool isNeutralEvent = false;
 
           if (type == 'goal') {
             icon = Icons.sports_soccer;
-            iconColor = isHome ? Colors.blue : Colors.red;
-            title = 'Tor für ${isHome ? 'Heim' : 'Auswärts'}';
-            subtitle = incident['player']?['name'] ?? 'Eigentor/Unbekannt';
+            iconColor = const Color(0xFF2E7D32);
+            text = incident['player']?['name'] ?? 'Eigentor/Unbekannt';
           } else if (type == 'card') {
             icon = Icons.style;
             iconColor = incidentClass == 'yellow' ? Colors.amber : Colors.red;
-            title = incidentClass == 'yellow' ? 'Gelbe Karte' : 'Rote Karte';
-            subtitle = incident['player']?['name'] ?? 'Unbekannt';
+            text = incident['player']?['name'] ?? 'Unbekannt';
           } else if (type == 'substitution') {
             icon = Icons.sync;
             iconColor = Colors.green;
-            title = 'Auswechslung';
-            subtitle =
-            '${incident['playerIn']?['shortName']} für ${incident['playerOut']?['shortName']}';
+            text = '${incident['playerIn']?['shortName'] ?? '-'} für ${incident['playerOut']?['shortName'] ?? '-'}';
           } else if (type == 'period') {
             icon = Icons.timer;
             iconColor = Colors.black;
-            title = incident['text'] == 'HT' ? 'Halbzeit' : 'Spielende';
-            subtitle =
-            'Ergebnis: ${incident['homeScore']} : ${incident['awayScore']}';
+            text = incident['text'] == 'HT'
+                ? 'Halbzeit'
+                : 'Spielende ${incident['homeScore']} : ${incident['awayScore']}';
+            isNeutralEvent = true;
           } else {
             return const SizedBox
                 .shrink(); // Versteckt unwichtige Events wie Verletzungszeit
           }
 
-          return Card(
-            elevation: 2,
-            margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-            child: ListTile(
-              leading: CircleAvatar(
-                backgroundColor: iconColor.withOpacity(0.2),
-                child: Icon(icon, color: iconColor),
+          final eventLine = Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Icon(icon, color: iconColor, size: 16),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  text,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
               ),
-              title: Text(
-                  title, style: const TextStyle(fontWeight: FontWeight.bold)),
-              subtitle: Text(subtitle),
-              trailing: Text('$time\'', style: const TextStyle(
-                  fontSize: 16, fontWeight: FontWeight.bold)),
+            ],
+          );
+
+          Widget sideAlignedEvent = const SizedBox.shrink();
+
+          if (isNeutralEvent) {
+            sideAlignedEvent = Center(child: eventLine);
+          } else if (isHome) {
+            sideAlignedEvent = Align(
+              alignment: Alignment.centerLeft,
+              child: eventLine,
+            );
+          } else {
+            sideAlignedEvent = Align(
+              alignment: Alignment.centerRight,
+              child: eventLine,
+            );
+          }
+
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
+            child: Column(
+              children: [
+                Row(
+                  children: [
+                    Expanded(
+                      child: Text(
+                        '$time\'',
+                        style: const TextStyle(
+                          fontSize: 13,
+                          fontWeight: FontWeight.w700,
+                          color: Colors.black54,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 2),
+                sideAlignedEvent,
+                const Divider(height: 14),
+              ],
             ),
           );
         },
