@@ -582,66 +582,139 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
       );
     }
 
-    // Wir drehen die Liste um, damit die neuesten Ereignisse (Minute 90) oben stehen
-    final sortedIncidents = List
-        .from(incidents)
-        .reversed
-        .toList();
+    int parseMinute(dynamic value) {
+      if (value == null) return -1;
+      if (value is num) return value.toInt();
+      final text = value.toString();
+      final baseMatch = RegExp(r'\d+').firstMatch(text);
+      if (baseMatch == null) return -1;
+      final base = int.tryParse(baseMatch.group(0) ?? '') ?? -1;
+      final extraMatch = RegExp(r'\+(\d+)').firstMatch(text);
+      final extra = int.tryParse(extraMatch?.group(1) ?? '0') ?? 0;
+      return base + extra;
+    }
+
+    final sortedIncidents = incidents
+        .asMap()
+        .entries
+        .toList()
+      ..sort((a, b) {
+        final minuteA = parseMinute(a.value['time']);
+        final minuteB = parseMinute(b.value['time']);
+        if (minuteA != minuteB) {
+          return minuteA.compareTo(minuteB);
+        }
+        return a.key.compareTo(b.key);
+      });
 
     return SliverList(
       delegate: SliverChildBuilderDelegate(
             (context, index) {
-          final incident = sortedIncidents[index];
-          final isHome = incident['isHome'] ?? true;
+          final incident = sortedIncidents[index].value;
+          final isHome = incident['isHome'];
           final time = incident['time'] ?? '';
           final type = incident['incidentType'] ?? '';
           final incidentClass = incident['incidentClass'] ?? '';
 
           IconData icon = Icons.info_outline;
-          Color iconColor = Colors.grey;
-          String title = '';
-          String subtitle = '';
+          Color iconColor = Colors.grey.shade700;
+          String text = '';
+          bool isCentered = false;
 
           if (type == 'goal') {
             icon = Icons.sports_soccer;
-            iconColor = isHome ? Colors.blue : Colors.red;
-            title = 'Tor für ${isHome ? 'Heim' : 'Auswärts'}';
-            subtitle = incident['player']?['name'] ?? 'Eigentor/Unbekannt';
+            iconColor = Colors.green.shade700;
+            text = incident['player']?['name'] ?? 'Eigentor/Unbekannt';
           } else if (type == 'card') {
             icon = Icons.style;
             iconColor = incidentClass == 'yellow' ? Colors.amber : Colors.red;
-            title = incidentClass == 'yellow' ? 'Gelbe Karte' : 'Rote Karte';
-            subtitle = incident['player']?['name'] ?? 'Unbekannt';
+            text = incident['player']?['name'] ?? 'Unbekannt';
           } else if (type == 'substitution') {
             icon = Icons.sync;
             iconColor = Colors.green;
-            title = 'Auswechslung';
-            subtitle =
-            '${incident['playerIn']?['shortName']} für ${incident['playerOut']?['shortName']}';
+            text =
+            '${incident['playerIn']?['shortName'] ?? 'Unbekannt'} für ${incident['playerOut']?['shortName'] ?? 'Unbekannt'}';
           } else if (type == 'period') {
             icon = Icons.timer;
-            iconColor = Colors.black;
-            title = incident['text'] == 'HT' ? 'Halbzeit' : 'Spielende';
-            subtitle =
-            'Ergebnis: ${incident['homeScore']} : ${incident['awayScore']}';
+            iconColor = Colors.black87;
+            text = incident['text'] == 'HT' ? 'Halbzeit' : 'Spielende';
+            isCentered = true;
           } else {
             return const SizedBox
                 .shrink(); // Versteckt unwichtige Events wie Verletzungszeit
           }
 
-          return Card(
-            elevation: 2,
-            margin: const EdgeInsets.symmetric(vertical: 4, horizontal: 8),
-            child: ListTile(
-              leading: CircleAvatar(
-                backgroundColor: iconColor.withOpacity(0.2),
-                child: Icon(icon, color: iconColor),
+          Widget eventLine({required bool rightAligned}) {
+            final rowChildren = <Widget>[
+              Icon(icon, color: iconColor, size: 18),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  text,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  textAlign: rightAligned ? TextAlign.right : TextAlign.left,
+                  style: const TextStyle(fontWeight: FontWeight.w500),
+                ),
               ),
-              title: Text(
-                  title, style: const TextStyle(fontWeight: FontWeight.bold)),
-              subtitle: Text(subtitle),
-              trailing: Text('$time\'', style: const TextStyle(
-                  fontSize: 16, fontWeight: FontWeight.bold)),
+            ];
+
+            return Row(
+              mainAxisSize: MainAxisSize.min,
+              mainAxisAlignment:
+              rightAligned ? MainAxisAlignment.end : MainAxisAlignment.start,
+              children: rightAligned ? rowChildren.reversed.toList() : rowChildren,
+            );
+          }
+
+          if (isCentered) {
+            return Padding(
+              padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
+              child: Row(
+                children: [
+                  Expanded(child: Center(child: eventLine(rightAligned: false))),
+                  Padding(
+                    padding: const EdgeInsets.symmetric(horizontal: 8),
+                    child: Text(
+                      "$time'",
+                      style: const TextStyle(
+                        fontSize: 13,
+                        fontWeight: FontWeight.bold,
+                        color: Colors.black54,
+                      ),
+                    ),
+                  ),
+                ],
+              ),
+            );
+          }
+
+          return Padding(
+            padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
+            child: Row(
+              children: [
+                Expanded(
+                  child: isHome == true
+                      ? eventLine(rightAligned: false)
+                      : const SizedBox.shrink(),
+                ),
+                Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 8),
+                  child: Text(
+                    "$time'",
+                    style: const TextStyle(
+                      fontSize: 13,
+                      fontWeight: FontWeight.bold,
+                      color: Colors.black54,
+                    ),
+                  ),
+                ),
+                Expanded(
+                  child: isHome == false
+                      ? eventLine(rightAligned: true)
+                      : const SizedBox.shrink(),
+                ),
+              ],
             ),
           );
         },
