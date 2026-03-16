@@ -167,7 +167,7 @@ class ActivityFeedTab extends StatelessWidget {
           onTap: () {
             final tabController = DefaultTabController.maybeOf(context);
             if (tabController != null) {
-              tabController.animateTo(3);
+              tabController.animateTo(1);
               if (playerId != 0) {
                 Future.delayed(const Duration(milliseconds: 100), () {
                   TransferMarketScreenState.instance?.scrollToPlayer(playerId);

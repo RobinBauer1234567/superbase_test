@@ -1138,9 +1138,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                         ),
                         bottom: TabBar(
                           controller: _tabController,
-                          isScrollable: true,
-                          tabAlignment: TabAlignment.start, // Richtet die Tabs linksbündig aus
-                          labelPadding: const EdgeInsets.symmetric(horizontal: 16.0), // Etwas Luft zwischen den Tabs
+                          isScrollable: false,
                           tabs: const [
                             Tab(text: 'Übersicht'),
                             Tab(text: 'Saisonspiele'),
