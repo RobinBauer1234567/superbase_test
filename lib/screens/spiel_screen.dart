@@ -659,130 +659,133 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                         SliverToBoxAdapter(
                           child: SizedBox(
                             height: collapsedViewportHeight,
-                            child: Column(
+                            child: Stack(
                               children: [
-                                Expanded(
-                                  child: (homePlayers.length >= 11 && awayPlayers.length >= 11)
-                                      ? Center(
-                                          child: MatchFormationDisplay(
-                                            homeFormation: homeFormation,
-                                            homePlayers: homePlayers,
-                                            homeColor: homeColor,
-                                            homeGoalkeeperColor: homeGkColor,
-                                            awayFormation: awayFormation,
-                                            awayPlayers: awayPlayers,
-                                            awayColor: awayColor,
-                                            awayGoalkeeperColor: awayGkColor,
-                                            onPlayerTap: (playerId, radius) {
-                                              Navigator.push(
-                                                context,
-                                                MaterialPageRoute(
-                                                  builder: (context) =>
-                                                      PlayerScreen(
-                                                          playerId: playerId),
-                                                ),
-                                              );
-                                            },
-                                          ),
-                                        )
-                                      : const Center(
-                                          child: Text(
-                                            "Nicht genügend Spielerdaten für die Formationsanzeige.",
-                                          ),
-                                        ),
-                                ),
-                                AnimatedContainer(
-                                  duration: const Duration(milliseconds: 200),
-                                  curve: Curves.easeInOut,
-                                  height: benchHeight,
-                                  child: AnimatedSwitcher(
-                                    duration: const Duration(milliseconds: 200),
-                                    child: _expandedBench == 'home'
-                                        ? _buildSubstitutesContent(
-                                            homeSubstitutes, homeColor)
-                                        : _expandedBench == 'away'
-                                            ? _buildSubstitutesContent(
-                                                awaySubstitutes, awayColor)
-                                            : const SizedBox.shrink(),
-                                  ),
-                                ),
-                                SizedBox(
-                                  height: benchToggleHeight,
-                                  child: Row(
-                                    children: [
-                                      if (homeSubstitutes.isNotEmpty)
-                                        Expanded(
-                                          child: GestureDetector(
-                                            onTap: () => setState(() =>
-                                                _expandedBench =
-                                                    (_expandedBench == 'home')
-                                                        ? null
-                                                        : 'home'),
-                                            child: Card(
-                                              margin: EdgeInsets.zero,
-                                              elevation: 4,
-                                              child: Container(
-                                                alignment: Alignment.center,
-                                                child: Row(
-                                                  mainAxisAlignment:
-                                                      MainAxisAlignment.center,
-                                                  children: [
-                                                    const Text(
-                                                      "Bank Heim",
-                                                      style: TextStyle(
-                                                          fontSize: 14,
-                                                          fontWeight:
-                                                              FontWeight.bold),
+                                Column(
+                                  children: [
+                                    Expanded(
+                                      child: (homePlayers.length >= 11 && awayPlayers.length >= 11)
+                                          ? Center(
+                                              child: MatchFormationDisplay(
+                                                homeFormation: homeFormation,
+                                                homePlayers: homePlayers,
+                                                homeColor: homeColor,
+                                                homeGoalkeeperColor: homeGkColor,
+                                                awayFormation: awayFormation,
+                                                awayPlayers: awayPlayers,
+                                                awayColor: awayColor,
+                                                awayGoalkeeperColor: awayGkColor,
+                                                onPlayerTap: (playerId, radius) {
+                                                  Navigator.push(
+                                                    context,
+                                                    MaterialPageRoute(
+                                                      builder: (context) =>
+                                                          PlayerScreen(playerId: playerId),
                                                     ),
-                                                    Icon(_expandedBench ==
-                                                            'home'
-                                                        ? Icons
-                                                            .keyboard_arrow_down
-                                                        : Icons
-                                                            .keyboard_arrow_up),
-                                                  ],
+                                                  );
+                                                },
+                                              ),
+                                            )
+                                          : const Center(
+                                              child: Text(
+                                                "Nicht genügend Spielerdaten für die Formationsanzeige.",
+                                              ),
+                                            ),
+                                    ),
+                                    SizedBox(
+                                      height: benchToggleHeight,
+                                      child: Row(
+                                        children: [
+                                          if (homeSubstitutes.isNotEmpty)
+                                            Expanded(
+                                              child: GestureDetector(
+                                                onTap: () => setState(() =>
+                                                    _expandedBench =
+                                                        (_expandedBench == 'home')
+                                                            ? null
+                                                            : 'home'),
+                                                child: Card(
+                                                  margin: EdgeInsets.zero,
+                                                  elevation: 4,
+                                                  child: Container(
+                                                    alignment: Alignment.center,
+                                                    child: Row(
+                                                      mainAxisAlignment:
+                                                          MainAxisAlignment.center,
+                                                      children: [
+                                                        const Text(
+                                                          "Bank Heim",
+                                                          style: TextStyle(
+                                                              fontSize: 14,
+                                                              fontWeight:
+                                                                  FontWeight.bold),
+                                                        ),
+                                                        Icon(_expandedBench == 'home'
+                                                            ? Icons.keyboard_arrow_down
+                                                            : Icons.keyboard_arrow_up),
+                                                      ],
+                                                    ),
+                                                  ),
                                                 ),
                                               ),
                                             ),
-                                          ),
-                                        ),
-                                      if (awaySubstitutes.isNotEmpty)
-                                        Expanded(
-                                          child: GestureDetector(
-                                            onTap: () => setState(() =>
-                                                _expandedBench =
-                                                    (_expandedBench == 'away')
-                                                        ? null
-                                                        : 'away'),
-                                            child: Card(
-                                              margin: EdgeInsets.zero,
-                                              elevation: 4,
-                                              child: Container(
-                                                alignment: Alignment.center,
-                                                child: Row(
-                                                  mainAxisAlignment:
-                                                      MainAxisAlignment.center,
-                                                  children: [
-                                                    const Text(
-                                                      "Bank Auswärts",
-                                                      style: TextStyle(
-                                                          fontSize: 14,
-                                                          fontWeight:
-                                                              FontWeight.bold),
+                                          if (awaySubstitutes.isNotEmpty)
+                                            Expanded(
+                                              child: GestureDetector(
+                                                onTap: () => setState(() =>
+                                                    _expandedBench =
+                                                        (_expandedBench == 'away')
+                                                            ? null
+                                                            : 'away'),
+                                                child: Card(
+                                                  margin: EdgeInsets.zero,
+                                                  elevation: 4,
+                                                  child: Container(
+                                                    alignment: Alignment.center,
+                                                    child: Row(
+                                                      mainAxisAlignment:
+                                                          MainAxisAlignment.center,
+                                                      children: [
+                                                        const Text(
+                                                          "Bank Auswärts",
+                                                          style: TextStyle(
+                                                              fontSize: 14,
+                                                              fontWeight:
+                                                                  FontWeight.bold),
+                                                        ),
+                                                        Icon(_expandedBench == 'away'
+                                                            ? Icons.keyboard_arrow_down
+                                                            : Icons.keyboard_arrow_up),
+                                                      ],
                                                     ),
-                                                    Icon(_expandedBench ==
-                                                            'away'
-                                                        ? Icons
-                                                            .keyboard_arrow_down
-                                                        : Icons
-                                                            .keyboard_arrow_up),
-                                                  ],
+                                                  ),
                                                 ),
                                               ),
                                             ),
-                                          ),
-                                        ),
-                                    ],
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                Positioned(
+                                  left: 0,
+                                  right: 0,
+                                  bottom: benchToggleHeight,
+                                  child: IgnorePointer(
+                                    ignoring: _expandedBench == null,
+                                    child: AnimatedContainer(
+                                      duration: const Duration(milliseconds: 200),
+                                      curve: Curves.easeInOut,
+                                      height: benchHeight,
+                                      child: AnimatedSwitcher(
+                                        duration: const Duration(milliseconds: 200),
+                                        child: _expandedBench == 'home'
+                                            ? _buildSubstitutesContent(homeSubstitutes, homeColor)
+                                            : _expandedBench == 'away'
+                                                ? _buildSubstitutesContent(awaySubstitutes, awayColor)
+                                                : const SizedBox.shrink(),
+                                      ),
+                                    ),
                                   ),
                                 ),
                               ],
