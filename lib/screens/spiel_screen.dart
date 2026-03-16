@@ -8,7 +8,6 @@ import 'package:premier_league/screens/screenelements/match_screen/matchrating_s
 import 'package:premier_league/utils/color_helper.dart';
 import 'package:intl/intl.dart';
 import 'dart:math' as math;
-import 'package:premier_league/screens/premier_league/matches_screen.dart';
 
 class GameScreen extends StatefulWidget {
   final dynamic spiel;
@@ -259,6 +258,206 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
     );
   }
 
+  DateTime _matchDateTime() {
+    try {
+      return DateTime.parse(currentSpielData['datum']);
+    } catch (_) {
+      return DateTime.now();
+    }
+  }
+
+  int _headerMinute(dynamic value) {
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '') ?? -1;
+  }
+
+  int _headerAddedTime(dynamic value) {
+    if (value is num) return value.toInt();
+    final parsed = int.tryParse(value?.toString() ?? '') ?? 0;
+    return (parsed > 0 && parsed <= 30) ? parsed : 0;
+  }
+
+  String _headerIncidentMinute(dynamic incident) {
+    final minute = _headerMinute(incident['time']);
+    final added = _headerAddedTime(incident['addedTime']);
+    if (minute < 0) return "";
+    if (added > 0) return "$minute'+$added";
+    return "$minute'";
+  }
+
+  String _playerNameFromIncident(dynamic incident) {
+    final player = incident['player'];
+    final fullName = (player?['name'] ?? player?['shortName'] ?? 'Unbekannt').toString().trim();
+    if (fullName.isEmpty) return 'Unbekannt';
+    return fullName;
+  }
+
+  Widget _buildGoalLine({required dynamic incident, required bool isHome}) {
+    final minute = _headerIncidentMinute(incident);
+    final playerName = _playerNameFromIncident(incident);
+    final playerImage = incident['player']?['profileImage'] ?? incident['player']?['profilbild_url'] ?? '';
+    final textBlock = Row(
+      mainAxisAlignment: isHome ? MainAxisAlignment.end : MainAxisAlignment.start,
+      mainAxisSize: MainAxisSize.min,
+      children: [
+        if (!isHome) ...[
+          CircleAvatar(
+            radius: 10,
+            backgroundColor: Colors.grey.shade300,
+            backgroundImage: (playerImage is String && playerImage.isNotEmpty)
+                ? NetworkImage(playerImage)
+                : null,
+            child: (playerImage is String && playerImage.isNotEmpty)
+                ? null
+                : const Icon(Icons.person, size: 12, color: Colors.black54),
+          ),
+          const SizedBox(width: 6),
+        ],
+        Flexible(
+          child: Text(
+            '$playerName $minute',
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            textAlign: isHome ? TextAlign.right : TextAlign.left,
+            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+          ),
+        ),
+        if (isHome) ...[
+          const SizedBox(width: 6),
+          CircleAvatar(
+            radius: 10,
+            backgroundColor: Colors.grey.shade300,
+            backgroundImage: (playerImage is String && playerImage.isNotEmpty)
+                ? NetworkImage(playerImage)
+                : null,
+            child: (playerImage is String && playerImage.isNotEmpty)
+                ? null
+                : const Icon(Icons.person, size: 12, color: Colors.black54),
+          ),
+        ],
+      ],
+    );
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 2),
+      child: Row(
+        children: [
+          Expanded(
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: isHome ? textBlock : const SizedBox.shrink(),
+            ),
+          ),
+          Padding(
+            padding: const EdgeInsets.symmetric(horizontal: 8),
+            child: Icon(Icons.sports_soccer, size: 16, color: Colors.green.shade700),
+          ),
+          Expanded(
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: isHome ? const SizedBox.shrink() : textBlock,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHeaderSummary({
+    required dynamic heimTeam,
+    required dynamic auswaertsTeam,
+    required String ergebnis,
+    required bool isNotStarted,
+    required String status,
+    required List<dynamic> incidents,
+  }) {
+    final datum = _matchDateTime();
+    final datumsString = DateFormat('dd.MM.yyyy').format(datum);
+    final uhrzeit = DateFormat('HH:mm').format(datum);
+
+    final goalIncidents = incidents.where((incident) => incident['incidentType'] == 'goal').toList()
+      ..sort((a, b) {
+        final minuteCmp = _headerMinute(a['time']).compareTo(_headerMinute(b['time']));
+        if (minuteCmp != 0) return minuteCmp;
+        return _headerAddedTime(a['addedTime']).compareTo(_headerAddedTime(b['addedTime']));
+      });
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 6, 12, 8),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            '$datumsString • $uhrzeit',
+            style: const TextStyle(fontSize: 12, color: Colors.black54),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Image.network(heimTeam['image_url'] ?? '', width: 34, height: 34, errorBuilder: (c, e, s) => const Icon(Icons.shield, size: 28)),
+                    const SizedBox(height: 4),
+                    Text(
+                      heimTeam['name'] ?? '...',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      isNotStarted ? '- : -' : ergebnis,
+                      style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      isNotStarted ? 'Anstoß $uhrzeit' : status,
+                      style: const TextStyle(fontSize: 11, color: Colors.black54),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Image.network(auswaertsTeam['image_url'] ?? '', width: 34, height: 34, errorBuilder: (c, e, s) => const Icon(Icons.shield, size: 28)),
+                    const SizedBox(height: 4),
+                    Text(
+                      auswaertsTeam['name'] ?? '...',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (goalIncidents.isNotEmpty) ...[
+            const SizedBox(height: 10),
+            ...goalIncidents.map((incident) => _buildGoalLine(
+              incident: incident,
+              isHome: incident['isHome'] == true,
+            )),
+          ],
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final heimTeam = currentSpielData['heimteam'] ?? {};
@@ -287,7 +486,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
             SliverOverlapAbsorber(
               handle: NestedScrollView.sliverOverlapAbsorberHandleFor(context),
               sliver: SliverAppBar(
-                expandedHeight: 200, // Höhe für die MatchCard
+                expandedHeight: 240,
                 pinned: true,
                 backgroundColor: Colors.white,
                 foregroundColor: Colors.black87,
@@ -317,20 +516,22 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                     return Stack(
                       fit: StackFit.expand,
                       children: [
-                        // --- EXPANDED STATE (MatchCard) ---
+                        // --- EXPANDED STATE (Spielkopf ohne MatchCard-Layout) ---
                         Positioned(
-                          top: safeAreaTop + 40,
+                          top: safeAreaTop + 32,
                           left: 0,
                           right: 0,
                           child: IgnorePointer(
                             ignoring: fade < 0.5,
                             child: Opacity(
                               opacity: fade,
-                              child: Center(
-                                child: MatchCard(
-                                  spiel: currentSpielData,
-                                  onRefresh: _loadMatchData,
-                                ),
+                              child: _buildHeaderSummary(
+                                heimTeam: heimTeam,
+                                auswaertsTeam: auswaertsTeam,
+                                ergebnis: ergebnis,
+                                isNotStarted: isNotStarted,
+                                status: status,
+                                incidents: incidents,
                               ),
                             ),
                           ),
