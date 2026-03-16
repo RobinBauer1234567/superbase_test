@@ -814,11 +814,6 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                     const SizedBox(width: 4),
                     Icon(icon, color: iconColor, size: 18),
                     const SizedBox(width: 4),
-                    Text(
-                      'für',
-                      style: TextStyle(fontSize: timelineFontSize, fontWeight: FontWeight.w600),
-                    ),
-                    const SizedBox(width: 4),
                     Flexible(
                       child: Align(
                         alignment: Alignment.centerLeft,
