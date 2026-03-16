@@ -656,49 +656,47 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
 
     Widget _buildPlayerChip(
       dynamic player, {
-      double maxWidth = 120,
       required double nameFontSize,
     }) {
       final playerId = player?['id'] as int?;
       final lastName = _lastName(player);
       final fallback = lastName.isNotEmpty ? lastName.characters.first.toUpperCase() : '?';
+      final playerInfo = _findPlayerInfoById(playerId);
+      final imageUrl = playerInfo?.profileImageUrl;
 
       return InkWell(
         borderRadius: BorderRadius.circular(50),
         onTap: playerId == null ? null : () => _openRadarOverlayForPlayer(player),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
-          child: ConstrainedBox(
-            constraints: BoxConstraints(maxWidth: maxWidth),
-            child: Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                CircleAvatar(
-                  radius: 10,
-                  backgroundColor: Colors.grey.shade300,
-                  foregroundImage: playerId == null
-                      ? null
-                      : NetworkImage('https://www.sofascore.com/api/v1/player/$playerId/image'),
-                  child: Text(
-                    fallback,
-                    style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w700),
+          child: Row(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              CircleAvatar(
+                radius: 10,
+                backgroundColor: Colors.grey.shade300,
+                foregroundImage: (imageUrl != null && imageUrl.isNotEmpty)
+                    ? NetworkImage(imageUrl)
+                    : null,
+                child: Text(
+                  fallback,
+                  style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w700),
+                ),
+              ),
+              const SizedBox(width: 6),
+              Flexible(
+                child: Text(
+                  lastName,
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  softWrap: false,
+                  style: TextStyle(
+                    fontWeight: FontWeight.w600,
+                    fontSize: nameFontSize,
                   ),
                 ),
-                const SizedBox(width: 6),
-                Expanded(
-                  child: Text(
-                    lastName,
-                    maxLines: 1,
-                    overflow: TextOverflow.ellipsis,
-                    softWrap: false,
-                    style: TextStyle(
-                      fontWeight: FontWeight.w600,
-                      fontSize: nameFontSize,
-                    ),
-                  ),
-                ),
-              ],
-            ),
+              ),
+            ],
           ),
         ),
       );
@@ -799,34 +797,27 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
 
           final Widget eventLine;
           if (type == 'substitution') {
-            eventLine = LayoutBuilder(
-              builder: (context, constraints) {
-                final chipMaxWidth = ((constraints.maxWidth - 80) / 2).clamp(56.0, 120.0).toDouble();
-                return Row(
-                  children: [
-                    Flexible(
-                      child: _buildPlayerChip(
-                        incident['playerIn'],
-                        maxWidth: chipMaxWidth,
-                        nameFontSize: timelineFontSize,
-                      ),
+            eventLine = Row(
+              children: [
+                Expanded(
+                  child: _buildPlayerChip(
+                    incident['playerIn'],
+                    nameFontSize: timelineFontSize,
+                  ),
+                ),
+                const SizedBox(width: 4),
+                Icon(icon, color: iconColor, size: 18),
+                const SizedBox(width: 4),
+                Expanded(
+                  child: Align(
+                    alignment: Alignment.centerLeft,
+                    child: _buildPlayerChip(
+                      incident['playerOut'],
+                      nameFontSize: timelineFontSize,
                     ),
-                    const SizedBox(width: 4),
-                    Icon(icon, color: iconColor, size: 18),
-                    const SizedBox(width: 4),
-                    Flexible(
-                      child: Align(
-                        alignment: Alignment.centerLeft,
-                        child: _buildPlayerChip(
-                          incident['playerOut'],
-                          maxWidth: chipMaxWidth,
-                          nameFontSize: timelineFontSize,
-                        ),
-                      ),
-                    ),
-                  ],
-                );
-              },
+                  ),
+                ),
+              ],
             );
           } else {
             eventLine = Row(
@@ -835,7 +826,6 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                 if (!isNeutral) ...[
                   _buildPlayerChip(
                     incident['player'],
-                    maxWidth: 130,
                     nameFontSize: timelineFontSize,
                   ),
                   const SizedBox(width: 6),
@@ -882,7 +872,12 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
           }
 
           return Padding(
-            padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 8),
+            padding: EdgeInsets.only(
+              top: 6,
+              bottom: 6,
+              left: isHome == true ? 8 : 0,
+              right: isHome == false ? 0 : 8,
+            ),
             child: Row(
               children: [
                 Expanded(
