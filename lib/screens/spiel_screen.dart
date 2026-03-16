@@ -287,29 +287,67 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
 
   String _playerNameFromIncident(dynamic incident) {
     final player = incident['player'];
-    final fullName = (player?['name'] ?? player?['shortName'] ?? 'Unbekannt').toString().trim();
+    final fullName =
+        (player?['name'] ?? player?['shortName'] ?? 'Unbekannt').toString().trim();
     if (fullName.isEmpty) return 'Unbekannt';
     return fullName;
+  }
+
+  String? _playerImageFromIncident(dynamic incident) {
+    final dynamic player = incident['player'];
+    final int? playerId = player?['id'] as int?;
+
+    final candidateFields = [
+      player?['profileImage'],
+      player?['profile_image'],
+      player?['profilePicture'],
+      player?['profile_picture'],
+      player?['profilbild_url'],
+      player?['image_url'],
+    ];
+
+    for (final value in candidateFields) {
+      if (value is String && value.trim().isNotEmpty) {
+        return value.trim();
+      }
+    }
+
+    if (playerId != null) {
+      final allPlayers = [
+        ...homePlayers,
+        ...homeSubstitutes,
+        ...awayPlayers,
+        ...awaySubstitutes,
+      ];
+      for (final playerInfo in allPlayers) {
+        if (playerInfo.id == playerId) {
+          final image = playerInfo.profileImageUrl;
+          if (image != null && image.trim().isNotEmpty) {
+            return image.trim();
+          }
+        }
+      }
+    }
+
+    return null;
   }
 
   Widget _buildGoalLine({required dynamic incident, required bool isHome}) {
     final minute = _headerIncidentMinute(incident);
     final playerName = _playerNameFromIncident(incident);
-    final playerImage = incident['player']?['profileImage'] ?? incident['player']?['profilbild_url'] ?? '';
+    final playerImage = _playerImageFromIncident(incident);
     final textBlock = Row(
       mainAxisAlignment: isHome ? MainAxisAlignment.end : MainAxisAlignment.start,
       mainAxisSize: MainAxisSize.min,
       children: [
         if (!isHome) ...[
           CircleAvatar(
-            radius: 10,
+            radius: 9,
             backgroundColor: Colors.grey.shade300,
-            backgroundImage: (playerImage is String && playerImage.isNotEmpty)
-                ? NetworkImage(playerImage)
-                : null,
-            child: (playerImage is String && playerImage.isNotEmpty)
+            backgroundImage: playerImage != null ? NetworkImage(playerImage) : null,
+            child: playerImage != null
                 ? null
-                : const Icon(Icons.person, size: 12, color: Colors.black54),
+                : const Icon(Icons.person, size: 11, color: Colors.black54),
           ),
           const SizedBox(width: 6),
         ],
@@ -319,27 +357,25 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
             maxLines: 1,
             overflow: TextOverflow.ellipsis,
             textAlign: isHome ? TextAlign.right : TextAlign.left,
-            style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
           ),
         ),
         if (isHome) ...[
           const SizedBox(width: 6),
           CircleAvatar(
-            radius: 10,
+            radius: 9,
             backgroundColor: Colors.grey.shade300,
-            backgroundImage: (playerImage is String && playerImage.isNotEmpty)
-                ? NetworkImage(playerImage)
-                : null,
-            child: (playerImage is String && playerImage.isNotEmpty)
+            backgroundImage: playerImage != null ? NetworkImage(playerImage) : null,
+            child: playerImage != null
                 ? null
-                : const Icon(Icons.person, size: 12, color: Colors.black54),
+                : const Icon(Icons.person, size: 11, color: Colors.black54),
           ),
         ],
       ],
     );
 
     return Padding(
-      padding: const EdgeInsets.symmetric(vertical: 2),
+      padding: const EdgeInsets.symmetric(vertical: 1),
       child: Row(
         children: [
           Expanded(
@@ -350,7 +386,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
           ),
           Padding(
             padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: Icon(Icons.sports_soccer, size: 16, color: Colors.green.shade700),
+            child: Icon(Icons.sports_soccer, size: 14, color: Colors.green.shade700),
           ),
           Expanded(
             child: Align(
@@ -447,7 +483,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
             ],
           ),
           if (goalIncidents.isNotEmpty) ...[
-            const SizedBox(height: 10),
+            const SizedBox(height: 8),
             ...goalIncidents.map((incident) => _buildGoalLine(
               incident: incident,
               isHome: incident['isHome'] == true,
@@ -477,6 +513,10 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
     final awayFormation = currentSpielData['awayteam_formation'] ?? 'N/A';
     List<dynamic> incidents = currentSpielData['incidents'] ?? [];
 
+    final goalCount = incidents.where((incident) => incident['incidentType'] == 'goal').length;
+    final expandedAppBarHeight =
+        (205.0 + (goalCount * 22.0)).clamp(230.0, 420.0).toDouble();
+
     return Scaffold(
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -486,7 +526,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
             SliverOverlapAbsorber(
               handle: NestedScrollView.sliverOverlapAbsorberHandleFor(context),
               sliver: SliverAppBar(
-                expandedHeight: 240,
+                expandedHeight: expandedAppBarHeight,
                 pinned: true,
                 backgroundColor: Colors.white,
                 foregroundColor: Colors.black87,
@@ -505,7 +545,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                     const collapsedBottomHeight =
                         kTextTabBarHeight; // Höhe der TabBar
                     final collapsedHeight = kToolbarHeight + collapsedBottomHeight + safeAreaTop;
-                    const expandedHeight = 200.0;
+                    final expandedHeight = expandedAppBarHeight;
 
                     var fade = 1.0;
                     if (expandedHeight > collapsedHeight) {
@@ -518,7 +558,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                       children: [
                         // --- EXPANDED STATE (Spielkopf ohne MatchCard-Layout) ---
                         Positioned(
-                          top: safeAreaTop + 32,
+                          top: safeAreaTop + 28,
                           left: 0,
                           right: 0,
                           child: IgnorePointer(
