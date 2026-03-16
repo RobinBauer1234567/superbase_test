@@ -8,7 +8,6 @@ import 'package:premier_league/screens/screenelements/match_screen/matchrating_s
 import 'package:premier_league/utils/color_helper.dart';
 import 'package:intl/intl.dart';
 import 'dart:math' as math;
-import 'package:premier_league/screens/premier_league/matches_screen.dart';
 
 class GameScreen extends StatefulWidget {
   final dynamic spiel;
@@ -259,6 +258,134 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
     );
   }
 
+  String _formatKickoffDateTime(dynamic rawDate) {
+    DateTime parsedDate;
+    try {
+      parsedDate = DateTime.parse(rawDate?.toString() ?? '');
+    } catch (_) {
+      parsedDate = DateTime.now();
+    }
+    return DateFormat('dd.MM.yyyy • HH:mm').format(parsedDate);
+  }
+
+  String _formatMinuteWithAddedTime(dynamic minuteValue, dynamic addedTimeValue) {
+    final minute = minuteValue is num
+        ? minuteValue.toInt()
+        : int.tryParse(minuteValue?.toString() ?? '') ?? -1;
+    if (minute < 0) return '';
+
+    final added = addedTimeValue is num
+        ? addedTimeValue.toInt()
+        : int.tryParse(addedTimeValue?.toString() ?? '') ?? 0;
+
+    if (added > 0 && added <= 30) return "$minute'+$added";
+    return "$minute'";
+  }
+
+  String _playerName(dynamic player) {
+    if (player is! Map) return 'Unbekannt';
+    final fullName = (player['name'] ?? player['shortName'] ?? '').toString().trim();
+    if (fullName.isEmpty) return 'Unbekannt';
+    return fullName;
+  }
+
+  String? _playerAvatar(dynamic player) {
+    if (player is! Map) return null;
+    final candidates = [
+      player['profilbild_url'],
+      player['profilePicture'],
+      player['image_url'],
+      player['photo'],
+    ];
+    for (final value in candidates) {
+      final asString = value?.toString();
+      if (asString != null && asString.isNotEmpty) return asString;
+    }
+    return null;
+  }
+
+  Widget _buildGoalScorerRows(List<dynamic> incidents) {
+    final goalEvents = incidents
+        .where((incident) => incident['incidentType'] == 'goal')
+        .toList()
+      ..sort((a, b) {
+        final minuteA = a['time'] is num
+            ? (a['time'] as num).toInt()
+            : int.tryParse(a['time']?.toString() ?? '') ?? 0;
+        final minuteB = b['time'] is num
+            ? (b['time'] as num).toInt()
+            : int.tryParse(b['time']?.toString() ?? '') ?? 0;
+        return minuteA.compareTo(minuteB);
+      });
+
+    if (goalEvents.isEmpty) {
+      return const Padding(
+        padding: EdgeInsets.only(top: 8.0),
+        child: Text(
+          'Noch keine Torschützen',
+          style: TextStyle(fontSize: 12, color: Colors.black54),
+        ),
+      );
+    }
+
+    return Column(
+      children: goalEvents.map((incident) {
+        final isHome = incident['isHome'] == true;
+        final player = incident['player'];
+        final name = _playerName(player);
+        final minute = _formatMinuteWithAddedTime(incident['time'], incident['addedTime']);
+        final avatarUrl = _playerAvatar(player);
+
+        Widget playerText = Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            CircleAvatar(
+              radius: 10,
+              backgroundColor: Colors.grey.shade200,
+              backgroundImage: avatarUrl != null ? NetworkImage(avatarUrl) : null,
+              child: avatarUrl == null
+                  ? const Icon(Icons.person, size: 12, color: Colors.black54)
+                  : null,
+            ),
+            const SizedBox(width: 6),
+            Flexible(
+              child: Text(
+                '$name $minute',
+                overflow: TextOverflow.ellipsis,
+                maxLines: 1,
+                style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w500),
+              ),
+            ),
+          ],
+        );
+
+        return Padding(
+          padding: const EdgeInsets.symmetric(vertical: 2.0),
+          child: Row(
+            children: [
+              Expanded(
+                child: Align(
+                  alignment: isHome ? Alignment.centerLeft : Alignment.centerRight,
+                  child: isHome ? playerText : const SizedBox.shrink(),
+                ),
+              ),
+              const Padding(
+                padding: EdgeInsets.symmetric(horizontal: 8.0),
+                child: Icon(Icons.sports_soccer, size: 16, color: Colors.black87),
+              ),
+              Expanded(
+                child: Align(
+                  alignment: isHome ? Alignment.centerLeft : Alignment.centerRight,
+                  child: !isHome ? playerText : const SizedBox.shrink(),
+                ),
+              ),
+            ],
+          ),
+        );
+      }).toList(),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final heimTeam = currentSpielData['heimteam'] ?? {};
@@ -287,7 +414,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
             SliverOverlapAbsorber(
               handle: NestedScrollView.sliverOverlapAbsorberHandleFor(context),
               sliver: SliverAppBar(
-                expandedHeight: 200, // Höhe für die MatchCard
+                expandedHeight: 220,
                 pinned: true,
                 backgroundColor: Colors.white,
                 foregroundColor: Colors.black87,
@@ -300,67 +427,63 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                     },
                   ),
                 ],
-                flexibleSpace: LayoutBuilder(
-                  builder: (context, constraints) {
-                    final safeAreaTop = MediaQuery.of(context).padding.top;
-                    const collapsedBottomHeight =
-                        kTextTabBarHeight; // Höhe der TabBar
-                    final collapsedHeight = kToolbarHeight + collapsedBottomHeight + safeAreaTop;
-                    const expandedHeight = 200.0;
-
-                    var fade = 1.0;
-                    if (expandedHeight > collapsedHeight) {
-                      fade = (constraints.maxHeight - collapsedHeight) / (expandedHeight - collapsedHeight);
-                      fade = fade.clamp(0.0, 1.0);
-                    }
-
-                    return Stack(
-                      fit: StackFit.expand,
-                      children: [
-                        // --- EXPANDED STATE (MatchCard) ---
-                        Positioned(
-                          top: safeAreaTop + 40,
-                          left: 0,
-                          right: 0,
-                          child: IgnorePointer(
-                            ignoring: fade < 0.5,
-                            child: Opacity(
-                              opacity: fade,
-                              child: Center(
-                                child: MatchCard(
-                                  spiel: currentSpielData,
-                                  onRefresh: _loadMatchData,
+                flexibleSpace: FlexibleSpaceBar(
+                  background: SafeArea(
+                    child: Padding(
+                      padding: const EdgeInsets.fromLTRB(12, 44, 12, 8),
+                      child: Column(
+                        mainAxisSize: MainAxisSize.min,
+                        children: [
+                          Text(
+                            _formatKickoffDateTime(currentSpielData['datum']),
+                            style: const TextStyle(
+                              fontSize: 13,
+                              color: Colors.black54,
+                              fontWeight: FontWeight.w500,
+                            ),
+                            textAlign: TextAlign.center,
+                          ),
+                          const SizedBox(height: 8),
+                          Row(
+                            children: [
+                              Expanded(
+                                child: Align(
+                                  alignment: Alignment.centerRight,
+                                  child: Image.network(
+                                    heimTeam['image_url'] ?? '',
+                                    width: 28,
+                                    height: 28,
+                                    errorBuilder: (c, e, s) => const Icon(Icons.shield, size: 24),
+                                    fit: BoxFit.contain,
+                                  ),
                                 ),
                               ),
-                            ),
-                          ),
-                        ),
-                        // --- COLLAPSED STATE (Nur Wappen & Ergebnis) ---
-                        Positioned(
-                          top: safeAreaTop,
-                          left: 48,
-                          right: 48,
-                          height: kToolbarHeight,
-                          child: IgnorePointer(
-                            ignoring: fade > 0.5,
-                            child: Opacity(
-                              opacity: 1.0 - fade,
-                              child: Row(
-                                mainAxisAlignment: MainAxisAlignment.center,
-                                children: [
-                                  Image.network(heimTeam['image_url'] ?? '', width: 24, height: 24, errorBuilder: (c,e,s) => const Icon(Icons.shield, size: 24), fit: BoxFit.contain),
-                                  const SizedBox(width: 12),
-                                  Text(isNotStarted ? '- : -' : ergebnis, style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-                                  const SizedBox(width: 12),
-                                  Image.network(auswaertsTeam['image_url'] ?? '', width: 24, height: 24, errorBuilder: (c,e,s) => const Icon(Icons.shield, size: 24), fit: BoxFit.contain),
-                                ],
+                              const SizedBox(width: 12),
+                              Text(
+                                isNotStarted ? '- : -' : ergebnis,
+                                style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
                               ),
-                            ),
+                              const SizedBox(width: 12),
+                              Expanded(
+                                child: Align(
+                                  alignment: Alignment.centerLeft,
+                                  child: Image.network(
+                                    auswaertsTeam['image_url'] ?? '',
+                                    width: 28,
+                                    height: 28,
+                                    errorBuilder: (c, e, s) => const Icon(Icons.shield, size: 24),
+                                    fit: BoxFit.contain,
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
-                        ),
-                      ],
-                    );
-                  },
+                          const SizedBox(height: 10),
+                          _buildGoalScorerRows(incidents),
+                        ],
+                      ),
+                    ),
+                  ),
                 ),
                 bottom: TabBar(
                   controller: _tabController,
