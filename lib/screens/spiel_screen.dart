@@ -8,7 +8,6 @@ import 'package:premier_league/screens/screenelements/match_screen/matchrating_s
 import 'package:premier_league/utils/color_helper.dart';
 import 'package:intl/intl.dart';
 import 'dart:math' as math;
-import 'package:premier_league/screens/premier_league/matches_screen.dart';
 
 class GameScreen extends StatefulWidget {
   final dynamic spiel;
@@ -259,6 +258,245 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
     );
   }
 
+  DateTime _matchDateTime() {
+    try {
+      return DateTime.parse(currentSpielData['datum']);
+    } catch (_) {
+      return DateTime.now();
+    }
+  }
+
+  int _headerMinute(dynamic value) {
+    if (value is num) return value.toInt();
+    return int.tryParse(value?.toString() ?? '') ?? -1;
+  }
+
+  int _headerAddedTime(dynamic value) {
+    if (value is num) return value.toInt();
+    final parsed = int.tryParse(value?.toString() ?? '') ?? 0;
+    return (parsed > 0 && parsed <= 30) ? parsed : 0;
+  }
+
+  String _headerIncidentMinute(dynamic incident) {
+    final minute = _headerMinute(incident['time']);
+    final added = _headerAddedTime(incident['addedTime']);
+    if (minute < 0) return "";
+    if (added > 0) return "$minute'+$added";
+    return "$minute'";
+  }
+
+  String _playerNameFromIncident(dynamic incident) {
+    final player = incident['player'];
+    final fullName =
+        (player?['name'] ?? player?['shortName'] ?? 'Unbekannt').toString().trim();
+    if (fullName.isEmpty) return 'Unbekannt';
+    return fullName;
+  }
+
+  String? _playerImageFromIncident(dynamic incident) {
+    final dynamic player = incident['player'];
+    final int? playerId = player?['id'] as int?;
+
+    final candidateFields = [
+      player?['profileImage'],
+      player?['profile_image'],
+      player?['profilePicture'],
+      player?['profile_picture'],
+      player?['profilbild_url'],
+      player?['image_url'],
+    ];
+
+    for (final value in candidateFields) {
+      if (value is String && value.trim().isNotEmpty) {
+        return value.trim();
+      }
+    }
+
+    if (playerId != null) {
+      final allPlayers = [
+        ...homePlayers,
+        ...homeSubstitutes,
+        ...awayPlayers,
+        ...awaySubstitutes,
+      ];
+      for (final playerInfo in allPlayers) {
+        if (playerInfo.id == playerId) {
+          final image = playerInfo.profileImageUrl;
+          if (image != null && image.trim().isNotEmpty) {
+            return image.trim();
+          }
+        }
+      }
+    }
+
+    return null;
+  }
+
+  Widget _buildGoalLine({required dynamic incident, required bool isHome, bool showCenterBall = false}) {
+    final minute = _headerIncidentMinute(incident);
+    final playerName = _playerNameFromIncident(incident);
+    final playerImage = _playerImageFromIncident(incident);
+
+    final avatar = CircleAvatar(
+      radius: 9,
+      backgroundColor: Colors.grey.shade300,
+      backgroundImage: playerImage != null ? NetworkImage(playerImage) : null,
+      child: playerImage != null
+          ? null
+          : const Icon(Icons.person, size: 11, color: Colors.black54),
+    );
+
+    final text = Flexible(
+      child: Text(
+        '$playerName $minute',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        textAlign: isHome ? TextAlign.right : TextAlign.left,
+        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
+      ),
+    );
+
+    return Padding(
+      padding: const EdgeInsets.symmetric(vertical: 1),
+      child: Row(
+        children: [
+          Expanded(
+            child: Align(
+              alignment: Alignment.centerRight,
+              child: isHome
+                  ? Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        text,
+                        const SizedBox(width: 6),
+                        avatar,
+                      ],
+                    )
+                  : const SizedBox.shrink(),
+            ),
+          ),
+          showCenterBall
+              ? Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: Icon(Icons.sports_soccer, size: 14, color: Colors.green.shade700),
+                )
+              : const SizedBox(width: 22),
+          Expanded(
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: !isHome
+                  ? Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        avatar,
+                        const SizedBox(width: 6),
+                        text,
+                      ],
+                    )
+                  : const SizedBox.shrink(),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildHeaderSummary({
+    required dynamic heimTeam,
+    required dynamic auswaertsTeam,
+    required String ergebnis,
+    required bool isNotStarted,
+    required String status,
+    required List<dynamic> incidents,
+  }) {
+    final datum = _matchDateTime();
+    final datumsString = DateFormat('dd.MM.yyyy').format(datum);
+    final uhrzeit = DateFormat('HH:mm').format(datum);
+
+    final goalIncidents = incidents.where((incident) => incident['incidentType'] == 'goal').toList()
+      ..sort((a, b) {
+        final minuteCmp = _headerMinute(a['time']).compareTo(_headerMinute(b['time']));
+        if (minuteCmp != 0) return minuteCmp;
+        return _headerAddedTime(a['addedTime']).compareTo(_headerAddedTime(b['addedTime']));
+      });
+
+    return Padding(
+      padding: const EdgeInsets.fromLTRB(12, 6, 12, 8),
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Text(
+            '$datumsString • $uhrzeit',
+            style: const TextStyle(fontSize: 12, color: Colors.black54),
+            textAlign: TextAlign.center,
+          ),
+          const SizedBox(height: 8),
+          Row(
+            children: [
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Image.network(heimTeam['image_url'] ?? '', width: 34, height: 34, errorBuilder: (c, e, s) => const Icon(Icons.shield, size: 28)),
+                    const SizedBox(height: 4),
+                    Text(
+                      heimTeam['name'] ?? '...',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                    ),
+                  ],
+                ),
+              ),
+              Padding(
+                padding: const EdgeInsets.symmetric(horizontal: 12),
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Text(
+                      isNotStarted ? '- : -' : ergebnis,
+                      style: const TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                    ),
+                    const SizedBox(height: 2),
+                    Text(
+                      isNotStarted ? 'Anstoß $uhrzeit' : status,
+                      style: const TextStyle(fontSize: 11, color: Colors.black54),
+                    ),
+                  ],
+                ),
+              ),
+              Expanded(
+                child: Column(
+                  mainAxisSize: MainAxisSize.min,
+                  children: [
+                    Image.network(auswaertsTeam['image_url'] ?? '', width: 34, height: 34, errorBuilder: (c, e, s) => const Icon(Icons.shield, size: 28)),
+                    const SizedBox(height: 4),
+                    Text(
+                      auswaertsTeam['name'] ?? '...',
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                    ),
+                  ],
+                ),
+              ),
+            ],
+          ),
+          if (goalIncidents.isNotEmpty) ...[
+            const SizedBox(height: 8),
+            ...goalIncidents.asMap().entries.map((entry) => _buildGoalLine(
+              incident: entry.value,
+              isHome: entry.value['isHome'] == true,
+              showCenterBall: entry.key == 0,
+            )),
+          ],
+        ],
+      ),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final heimTeam = currentSpielData['heimteam'] ?? {};
@@ -278,6 +516,10 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
     final awayFormation = currentSpielData['awayteam_formation'] ?? 'N/A';
     List<dynamic> incidents = currentSpielData['incidents'] ?? [];
 
+    final goalCount = incidents.where((incident) => incident['incidentType'] == 'goal').length;
+    final expandedAppBarHeight =
+        (164.0 + (goalCount * 18.0)).clamp(196.0, 328.0).toDouble();
+
     return Scaffold(
       body: isLoading
           ? const Center(child: CircularProgressIndicator())
@@ -287,7 +529,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
             SliverOverlapAbsorber(
               handle: NestedScrollView.sliverOverlapAbsorberHandleFor(context),
               sliver: SliverAppBar(
-                expandedHeight: 200, // Höhe für die MatchCard
+                expandedHeight: expandedAppBarHeight,
                 pinned: true,
                 backgroundColor: Colors.white,
                 foregroundColor: Colors.black87,
@@ -306,7 +548,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                     const collapsedBottomHeight =
                         kTextTabBarHeight; // Höhe der TabBar
                     final collapsedHeight = kToolbarHeight + collapsedBottomHeight + safeAreaTop;
-                    const expandedHeight = 200.0;
+                    final expandedHeight = expandedAppBarHeight;
 
                     var fade = 1.0;
                     if (expandedHeight > collapsedHeight) {
@@ -317,20 +559,22 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                     return Stack(
                       fit: StackFit.expand,
                       children: [
-                        // --- EXPANDED STATE (MatchCard) ---
+                        // --- EXPANDED STATE (Spielkopf ohne MatchCard-Layout) ---
                         Positioned(
-                          top: safeAreaTop + 40,
+                          top: safeAreaTop + 18,
                           left: 0,
                           right: 0,
                           child: IgnorePointer(
                             ignoring: fade < 0.5,
                             child: Opacity(
                               opacity: fade,
-                              child: Center(
-                                child: MatchCard(
-                                  spiel: currentSpielData,
-                                  onRefresh: _loadMatchData,
-                                ),
+                              child: _buildHeaderSummary(
+                                heimTeam: heimTeam,
+                                auswaertsTeam: auswaertsTeam,
+                                ergebnis: ergebnis,
+                                isNotStarted: isNotStarted,
+                                status: status,
+                                incidents: incidents,
                               ),
                             ),
                           ),
@@ -364,9 +608,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                 ),
                 bottom: TabBar(
                   controller: _tabController,
-                  isScrollable: true,
-                  tabAlignment: TabAlignment.start,
-                  labelPadding: const EdgeInsets.symmetric(horizontal: 16.0),
+                  isScrollable: false,
                   tabs: const [
                     Tab(text: "Spielfeld"),
                     Tab(text: "Verlauf"),
@@ -378,7 +620,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
         },
         body: TabBarView(
           controller: _tabController,
-          physics: const NeverScrollableScrollPhysics(), // Verhindert seitliches Wischen beim Drag&Drop
+          physics: const PageScrollPhysics(),
           children: [
             // TAB 1: DAS SPIELFELD
             Builder(
@@ -419,130 +661,133 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                         SliverToBoxAdapter(
                           child: SizedBox(
                             height: collapsedViewportHeight,
-                            child: Column(
+                            child: Stack(
                               children: [
-                                Expanded(
-                                  child: (homePlayers.length >= 11 && awayPlayers.length >= 11)
-                                      ? Center(
-                                          child: MatchFormationDisplay(
-                                            homeFormation: homeFormation,
-                                            homePlayers: homePlayers,
-                                            homeColor: homeColor,
-                                            homeGoalkeeperColor: homeGkColor,
-                                            awayFormation: awayFormation,
-                                            awayPlayers: awayPlayers,
-                                            awayColor: awayColor,
-                                            awayGoalkeeperColor: awayGkColor,
-                                            onPlayerTap: (playerId, radius) {
-                                              Navigator.push(
-                                                context,
-                                                MaterialPageRoute(
-                                                  builder: (context) =>
-                                                      PlayerScreen(
-                                                          playerId: playerId),
-                                                ),
-                                              );
-                                            },
-                                          ),
-                                        )
-                                      : const Center(
-                                          child: Text(
-                                            "Nicht genügend Spielerdaten für die Formationsanzeige.",
-                                          ),
-                                        ),
-                                ),
-                                AnimatedContainer(
-                                  duration: const Duration(milliseconds: 200),
-                                  curve: Curves.easeInOut,
-                                  height: benchHeight,
-                                  child: AnimatedSwitcher(
-                                    duration: const Duration(milliseconds: 200),
-                                    child: _expandedBench == 'home'
-                                        ? _buildSubstitutesContent(
-                                            homeSubstitutes, homeColor)
-                                        : _expandedBench == 'away'
-                                            ? _buildSubstitutesContent(
-                                                awaySubstitutes, awayColor)
-                                            : const SizedBox.shrink(),
-                                  ),
-                                ),
-                                SizedBox(
-                                  height: benchToggleHeight,
-                                  child: Row(
-                                    children: [
-                                      if (homeSubstitutes.isNotEmpty)
-                                        Expanded(
-                                          child: GestureDetector(
-                                            onTap: () => setState(() =>
-                                                _expandedBench =
-                                                    (_expandedBench == 'home')
-                                                        ? null
-                                                        : 'home'),
-                                            child: Card(
-                                              margin: EdgeInsets.zero,
-                                              elevation: 4,
-                                              child: Container(
-                                                alignment: Alignment.center,
-                                                child: Row(
-                                                  mainAxisAlignment:
-                                                      MainAxisAlignment.center,
-                                                  children: [
-                                                    const Text(
-                                                      "Bank Heim",
-                                                      style: TextStyle(
-                                                          fontSize: 14,
-                                                          fontWeight:
-                                                              FontWeight.bold),
+                                Column(
+                                  children: [
+                                    Expanded(
+                                      child: (homePlayers.length >= 11 && awayPlayers.length >= 11)
+                                          ? Center(
+                                              child: MatchFormationDisplay(
+                                                homeFormation: homeFormation,
+                                                homePlayers: homePlayers,
+                                                homeColor: homeColor,
+                                                homeGoalkeeperColor: homeGkColor,
+                                                awayFormation: awayFormation,
+                                                awayPlayers: awayPlayers,
+                                                awayColor: awayColor,
+                                                awayGoalkeeperColor: awayGkColor,
+                                                onPlayerTap: (playerId, radius) {
+                                                  Navigator.push(
+                                                    context,
+                                                    MaterialPageRoute(
+                                                      builder: (context) =>
+                                                          PlayerScreen(playerId: playerId),
                                                     ),
-                                                    Icon(_expandedBench ==
-                                                            'home'
-                                                        ? Icons
-                                                            .keyboard_arrow_down
-                                                        : Icons
-                                                            .keyboard_arrow_up),
-                                                  ],
+                                                  );
+                                                },
+                                              ),
+                                            )
+                                          : const Center(
+                                              child: Text(
+                                                "Nicht genügend Spielerdaten für die Formationsanzeige.",
+                                              ),
+                                            ),
+                                    ),
+                                    SizedBox(
+                                      height: benchToggleHeight,
+                                      child: Row(
+                                        children: [
+                                          if (homeSubstitutes.isNotEmpty)
+                                            Expanded(
+                                              child: GestureDetector(
+                                                onTap: () => setState(() =>
+                                                    _expandedBench =
+                                                        (_expandedBench == 'home')
+                                                            ? null
+                                                            : 'home'),
+                                                child: Card(
+                                                  margin: EdgeInsets.zero,
+                                                  elevation: 4,
+                                                  child: Container(
+                                                    alignment: Alignment.center,
+                                                    child: Row(
+                                                      mainAxisAlignment:
+                                                          MainAxisAlignment.center,
+                                                      children: [
+                                                        const Text(
+                                                          "Bank Heim",
+                                                          style: TextStyle(
+                                                              fontSize: 14,
+                                                              fontWeight:
+                                                                  FontWeight.bold),
+                                                        ),
+                                                        Icon(_expandedBench == 'home'
+                                                            ? Icons.keyboard_arrow_down
+                                                            : Icons.keyboard_arrow_up),
+                                                      ],
+                                                    ),
+                                                  ),
                                                 ),
                                               ),
                                             ),
-                                          ),
-                                        ),
-                                      if (awaySubstitutes.isNotEmpty)
-                                        Expanded(
-                                          child: GestureDetector(
-                                            onTap: () => setState(() =>
-                                                _expandedBench =
-                                                    (_expandedBench == 'away')
-                                                        ? null
-                                                        : 'away'),
-                                            child: Card(
-                                              margin: EdgeInsets.zero,
-                                              elevation: 4,
-                                              child: Container(
-                                                alignment: Alignment.center,
-                                                child: Row(
-                                                  mainAxisAlignment:
-                                                      MainAxisAlignment.center,
-                                                  children: [
-                                                    const Text(
-                                                      "Bank Auswärts",
-                                                      style: TextStyle(
-                                                          fontSize: 14,
-                                                          fontWeight:
-                                                              FontWeight.bold),
+                                          if (awaySubstitutes.isNotEmpty)
+                                            Expanded(
+                                              child: GestureDetector(
+                                                onTap: () => setState(() =>
+                                                    _expandedBench =
+                                                        (_expandedBench == 'away')
+                                                            ? null
+                                                            : 'away'),
+                                                child: Card(
+                                                  margin: EdgeInsets.zero,
+                                                  elevation: 4,
+                                                  child: Container(
+                                                    alignment: Alignment.center,
+                                                    child: Row(
+                                                      mainAxisAlignment:
+                                                          MainAxisAlignment.center,
+                                                      children: [
+                                                        const Text(
+                                                          "Bank Auswärts",
+                                                          style: TextStyle(
+                                                              fontSize: 14,
+                                                              fontWeight:
+                                                                  FontWeight.bold),
+                                                        ),
+                                                        Icon(_expandedBench == 'away'
+                                                            ? Icons.keyboard_arrow_down
+                                                            : Icons.keyboard_arrow_up),
+                                                      ],
                                                     ),
-                                                    Icon(_expandedBench ==
-                                                            'away'
-                                                        ? Icons
-                                                            .keyboard_arrow_down
-                                                        : Icons
-                                                            .keyboard_arrow_up),
-                                                  ],
+                                                  ),
                                                 ),
                                               ),
                                             ),
-                                          ),
-                                        ),
-                                    ],
+                                        ],
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                                Positioned(
+                                  left: 0,
+                                  right: 0,
+                                  bottom: benchToggleHeight,
+                                  child: IgnorePointer(
+                                    ignoring: _expandedBench == null,
+                                    child: AnimatedContainer(
+                                      duration: const Duration(milliseconds: 200),
+                                      curve: Curves.easeInOut,
+                                      height: benchHeight,
+                                      child: AnimatedSwitcher(
+                                        duration: const Duration(milliseconds: 200),
+                                        child: _expandedBench == 'home'
+                                            ? _buildSubstitutesContent(homeSubstitutes, homeColor)
+                                            : _expandedBench == 'away'
+                                                ? _buildSubstitutesContent(awaySubstitutes, awayColor)
+                                                : const SizedBox.shrink(),
+                                      ),
+                                    ),
                                   ),
                                 ),
                               ],
@@ -800,9 +1045,13 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
             eventLine = Row(
               children: [
                 Expanded(
-                  child: _buildPlayerChip(
-                    incident['playerIn'],
-                    nameFontSize: timelineFontSize,
+                  child: Align(
+                    alignment:
+                        isHome == true ? Alignment.centerLeft : Alignment.centerRight,
+                    child: _buildPlayerChip(
+                      incident['playerIn'],
+                      nameFontSize: timelineFontSize,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 4),
@@ -810,7 +1059,8 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                 const SizedBox(width: 4),
                 Expanded(
                   child: Align(
-                    alignment: Alignment.centerLeft,
+                    alignment:
+                        isHome == true ? Alignment.centerLeft : Alignment.centerRight,
                     child: _buildPlayerChip(
                       incident['playerOut'],
                       nameFontSize: timelineFontSize,
