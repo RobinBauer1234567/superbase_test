@@ -322,6 +322,8 @@ class _TeamScreenState extends State<TeamScreen> with SingleTickerProviderStateM
                 ),
                 bottom: TabBar(
                   controller: _tabController,
+                  isScrollable: false,
+                  indicatorSize: TabBarIndicatorSize.tab,
                   tabs: const [
                     Tab(text: 'Spiele'),
                     Tab(text: 'Kader'),

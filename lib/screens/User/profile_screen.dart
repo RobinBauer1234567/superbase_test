@@ -408,8 +408,8 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                       children: [
                         TabBar(
                           controller: _tabController,
-                          isScrollable: true,
-                          tabAlignment: TabAlignment.center,
+                          isScrollable: false,
+                          indicatorSize: TabBarIndicatorSize.tab,
                           labelColor: primaryColor,
                           unselectedLabelColor: Colors.grey,
                           indicatorColor: primaryColor,
