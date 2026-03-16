@@ -336,42 +336,24 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
     final minute = _headerIncidentMinute(incident);
     final playerName = _playerNameFromIncident(incident);
     final playerImage = _playerImageFromIncident(incident);
-    final textBlock = Row(
-      mainAxisAlignment: isHome ? MainAxisAlignment.end : MainAxisAlignment.start,
-      mainAxisSize: MainAxisSize.min,
-      children: [
-        if (!isHome) ...[
-          CircleAvatar(
-            radius: 9,
-            backgroundColor: Colors.grey.shade300,
-            backgroundImage: playerImage != null ? NetworkImage(playerImage) : null,
-            child: playerImage != null
-                ? null
-                : const Icon(Icons.person, size: 11, color: Colors.black54),
-          ),
-          const SizedBox(width: 6),
-        ],
-        Flexible(
-          child: Text(
-            '$playerName $minute',
-            maxLines: 1,
-            overflow: TextOverflow.ellipsis,
-            textAlign: isHome ? TextAlign.right : TextAlign.left,
-            style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
-          ),
-        ),
-        if (isHome) ...[
-          const SizedBox(width: 6),
-          CircleAvatar(
-            radius: 9,
-            backgroundColor: Colors.grey.shade300,
-            backgroundImage: playerImage != null ? NetworkImage(playerImage) : null,
-            child: playerImage != null
-                ? null
-                : const Icon(Icons.person, size: 11, color: Colors.black54),
-          ),
-        ],
-      ],
+
+    final avatar = CircleAvatar(
+      radius: 9,
+      backgroundColor: Colors.grey.shade300,
+      backgroundImage: playerImage != null ? NetworkImage(playerImage) : null,
+      child: playerImage != null
+          ? null
+          : const Icon(Icons.person, size: 11, color: Colors.black54),
+    );
+
+    final text = Flexible(
+      child: Text(
+        '$playerName $minute',
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        textAlign: isHome ? TextAlign.right : TextAlign.left,
+        style: const TextStyle(fontSize: 11, fontWeight: FontWeight.w500),
+      ),
     );
 
     return Padding(
@@ -381,17 +363,32 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
           Expanded(
             child: Align(
               alignment: Alignment.centerRight,
-              child: isHome ? textBlock : const SizedBox.shrink(),
+              child: isHome
+                  ? Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        text,
+                        const SizedBox(width: 6),
+                        avatar,
+                      ],
+                    )
+                  : const SizedBox.shrink(),
             ),
           ),
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 8),
-            child: Icon(Icons.sports_soccer, size: 14, color: Colors.green.shade700),
-          ),
+          const SizedBox(width: 22),
           Expanded(
             child: Align(
               alignment: Alignment.centerLeft,
-              child: isHome ? const SizedBox.shrink() : textBlock,
+              child: !isHome
+                  ? Row(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        avatar,
+                        const SizedBox(width: 6),
+                        text,
+                      ],
+                    )
+                  : const SizedBox.shrink(),
             ),
           ),
         ],
@@ -484,6 +481,8 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
           ),
           if (goalIncidents.isNotEmpty) ...[
             const SizedBox(height: 8),
+            Icon(Icons.sports_soccer, size: 14, color: Colors.green.shade700),
+            const SizedBox(height: 2),
             ...goalIncidents.map((incident) => _buildGoalLine(
               incident: incident,
               isHome: incident['isHome'] == true,
@@ -515,7 +514,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
 
     final goalCount = incidents.where((incident) => incident['incidentType'] == 'goal').length;
     final expandedAppBarHeight =
-        (205.0 + (goalCount * 22.0)).clamp(230.0, 420.0).toDouble();
+        (176.0 + (goalCount * 18.0)).clamp(208.0, 340.0).toDouble();
 
     return Scaffold(
       body: isLoading
@@ -558,7 +557,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                       children: [
                         // --- EXPANDED STATE (Spielkopf ohne MatchCard-Layout) ---
                         Positioned(
-                          top: safeAreaTop + 28,
+                          top: safeAreaTop + 18,
                           left: 0,
                           right: 0,
                           child: IgnorePointer(
