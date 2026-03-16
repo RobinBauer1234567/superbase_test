@@ -332,7 +332,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
     return null;
   }
 
-  Widget _buildGoalLine({required dynamic incident, required bool isHome}) {
+  Widget _buildGoalLine({required dynamic incident, required bool isHome, bool showCenterBall = false}) {
     final minute = _headerIncidentMinute(incident);
     final playerName = _playerNameFromIncident(incident);
     final playerImage = _playerImageFromIncident(incident);
@@ -375,7 +375,12 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                   : const SizedBox.shrink(),
             ),
           ),
-          const SizedBox(width: 22),
+          showCenterBall
+              ? Padding(
+                  padding: const EdgeInsets.symmetric(horizontal: 4),
+                  child: Icon(Icons.sports_soccer, size: 14, color: Colors.green.shade700),
+                )
+              : const SizedBox(width: 22),
           Expanded(
             child: Align(
               alignment: Alignment.centerLeft,
@@ -481,11 +486,10 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
           ),
           if (goalIncidents.isNotEmpty) ...[
             const SizedBox(height: 8),
-            Icon(Icons.sports_soccer, size: 14, color: Colors.green.shade700),
-            const SizedBox(height: 2),
-            ...goalIncidents.map((incident) => _buildGoalLine(
-              incident: incident,
-              isHome: incident['isHome'] == true,
+            ...goalIncidents.asMap().entries.map((entry) => _buildGoalLine(
+              incident: entry.value,
+              isHome: entry.value['isHome'] == true,
+              showCenterBall: entry.key == 0,
             )),
           ],
         ],
@@ -514,7 +518,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
 
     final goalCount = incidents.where((incident) => incident['incidentType'] == 'goal').length;
     final expandedAppBarHeight =
-        (176.0 + (goalCount * 18.0)).clamp(208.0, 340.0).toDouble();
+        (164.0 + (goalCount * 18.0)).clamp(196.0, 328.0).toDouble();
 
     return Scaffold(
       body: isLoading
@@ -618,7 +622,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
         },
         body: TabBarView(
           controller: _tabController,
-          physics: const NeverScrollableScrollPhysics(), // Verhindert seitliches Wischen beim Drag&Drop
+          physics: const PageScrollPhysics(),
           children: [
             // TAB 1: DAS SPIELFELD
             Builder(
@@ -1043,9 +1047,13 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
             eventLine = Row(
               children: [
                 Expanded(
-                  child: _buildPlayerChip(
-                    incident['playerIn'],
-                    nameFontSize: timelineFontSize,
+                  child: Align(
+                    alignment:
+                        isHome == true ? Alignment.centerLeft : Alignment.centerRight,
+                    child: _buildPlayerChip(
+                      incident['playerIn'],
+                      nameFontSize: timelineFontSize,
+                    ),
                   ),
                 ),
                 const SizedBox(width: 4),
@@ -1053,7 +1061,8 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                 const SizedBox(width: 4),
                 Expanded(
                   child: Align(
-                    alignment: Alignment.centerLeft,
+                    alignment:
+                        isHome == true ? Alignment.centerLeft : Alignment.centerRight,
                     child: _buildPlayerChip(
                       incident['playerOut'],
                       nameFontSize: timelineFontSize,
