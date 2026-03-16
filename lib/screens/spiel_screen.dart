@@ -608,9 +608,8 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                 ),
                 bottom: TabBar(
                   controller: _tabController,
-                  isScrollable: true,
-                  tabAlignment: TabAlignment.start,
-                  labelPadding: const EdgeInsets.symmetric(horizontal: 16.0),
+                  isScrollable: false,
+                  indicatorSize: TabBarIndicatorSize.tab,
                   tabs: const [
                     Tab(text: "Spielfeld"),
                     Tab(text: "Verlauf"),

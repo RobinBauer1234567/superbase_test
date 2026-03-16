@@ -355,6 +355,8 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Single
                     color: Colors.white,
                     child: TabBar(
                       controller: _tabController,
+                      isScrollable: false,
+                      indicatorSize: TabBarIndicatorSize.tab,
                       labelColor: primaryColor,
                       unselectedLabelColor: Colors.grey,
                       indicatorColor: primaryColor,
