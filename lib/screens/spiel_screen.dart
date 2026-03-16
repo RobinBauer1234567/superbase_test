@@ -654,7 +654,11 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
       );
     }
 
-    Widget _buildPlayerChip(dynamic player) {
+    Widget _buildPlayerChip(
+      dynamic player, {
+      double maxWidth = 120,
+      required double nameFontSize,
+    }) {
       final playerId = player?['id'] as int?;
       final lastName = _lastName(player);
       final fallback = lastName.isNotEmpty ? lastName.characters.first.toUpperCase() : '?';
@@ -664,26 +668,37 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
         onTap: playerId == null ? null : () => _openRadarOverlayForPlayer(player),
         child: Padding(
           padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
-          child: Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              CircleAvatar(
-                radius: 10,
-                backgroundColor: Colors.grey.shade300,
-                foregroundImage: playerId == null
-                    ? null
-                    : NetworkImage('https://www.sofascore.com/api/v1/player/$playerId/image'),
-                child: Text(
-                  fallback,
-                  style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w700),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: maxWidth),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircleAvatar(
+                  radius: 10,
+                  backgroundColor: Colors.grey.shade300,
+                  foregroundImage: playerId == null
+                      ? null
+                      : NetworkImage('https://www.sofascore.com/api/v1/player/$playerId/image'),
+                  child: Text(
+                    fallback,
+                    style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w700),
+                  ),
                 ),
-              ),
-              const SizedBox(width: 6),
-              Text(
-                lastName,
-                style: const TextStyle(fontWeight: FontWeight.w600),
-              ),
-            ],
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    lastName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    softWrap: false,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: nameFontSize,
+                    ),
+                  ),
+                ),
+              ],
+            ),
           ),
         ),
       );
@@ -747,6 +762,9 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
     final sortedIncidents = List.from(incidents)
       ..sort((a, b) => _sortOrderForIncident(a).compareTo(_sortOrderForIncident(b)));
 
+    final screenWidth = MediaQuery.of(context).size.width;
+    final timelineFontSize = (screenWidth * 0.033).clamp(11.5, 13.5).toDouble();
+
     return SliverList(
       delegate: SliverChildBuilderDelegate(
         (context, index) {
@@ -781,24 +799,50 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
 
           final Widget eventLine;
           if (type == 'substitution') {
-            eventLine = Row(
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                _buildPlayerChip(incident['playerIn']),
-                const SizedBox(width: 4),
-                Icon(icon, color: iconColor, size: 18),
-                const SizedBox(width: 4),
-                const Text('für'),
-                const SizedBox(width: 4),
-                _buildPlayerChip(incident['playerOut']),
-              ],
+            eventLine = LayoutBuilder(
+              builder: (context, constraints) {
+                final chipMaxWidth = ((constraints.maxWidth - 80) / 2).clamp(56.0, 120.0).toDouble();
+                return Row(
+                  children: [
+                    Flexible(
+                      child: _buildPlayerChip(
+                        incident['playerIn'],
+                        maxWidth: chipMaxWidth,
+                        nameFontSize: timelineFontSize,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Icon(icon, color: iconColor, size: 18),
+                    const SizedBox(width: 4),
+                    Text(
+                      'für',
+                      style: TextStyle(fontSize: timelineFontSize, fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(width: 4),
+                    Flexible(
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: _buildPlayerChip(
+                          incident['playerOut'],
+                          maxWidth: chipMaxWidth,
+                          nameFontSize: timelineFontSize,
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              },
             );
           } else {
             eventLine = Row(
               mainAxisSize: MainAxisSize.min,
               children: [
                 if (!isNeutral) ...[
-                  _buildPlayerChip(incident['player']),
+                  _buildPlayerChip(
+                    incident['player'],
+                    maxWidth: 130,
+                    nameFontSize: timelineFontSize,
+                  ),
                   const SizedBox(width: 6),
                 ],
                 Icon(icon, color: iconColor, size: 18),
@@ -809,7 +853,10 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                       neutralText,
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
-                      style: const TextStyle(fontWeight: FontWeight.w600),
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: timelineFontSize,
+                      ),
                     ),
                   ),
               ],
@@ -825,8 +872,8 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                   children: [
                     Text(
                       formattedTime,
-                      style: const TextStyle(
-                        fontSize: 14,
+                      style: TextStyle(
+                        fontSize: timelineFontSize,
                         fontWeight: FontWeight.bold,
                         color: Colors.black54,
                       ),
@@ -850,8 +897,8 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                   padding: const EdgeInsets.symmetric(horizontal: 8),
                   child: Text(
                     formattedTime,
-                    style: const TextStyle(
-                      fontSize: 14,
+                    style: TextStyle(
+                      fontSize: timelineFontSize,
                       fontWeight: FontWeight.bold,
                       color: Colors.black54,
                     ),
