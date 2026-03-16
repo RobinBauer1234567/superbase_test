@@ -587,15 +587,64 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
       return int.tryParse(value?.toString() ?? '') ?? -1;
     }
 
+    int _toAddedTime(dynamic value) {
+      if (value is num) return value.toInt();
+      return int.tryParse(value?.toString() ?? '') ?? 0;
+    }
+
+    int _sortOrderForIncident(dynamic incident) {
+      final type = incident['incidentType']?.toString() ?? '';
+      final marker = incident['text']?.toString() ?? '';
+      final minute = _toMinute(incident['time']);
+      final addedTime = _toAddedTime(incident['addedTime']);
+
+      // Speziell gewünscht: Nachspielzeit-Ereignisse sollen NACH HT/FT angezeigt werden.
+      if (type == 'period') {
+        if (marker == 'HT') return 45 * 100 + 40;
+        return 90 * 100 + 40;
+      }
+
+      if (addedTime > 0 && minute <= 45) return 45 * 100 + 50 + addedTime;
+      if (addedTime > 0 && minute >= 90) return 90 * 100 + 50 + addedTime;
+
+      return minute * 100 + addedTime;
+    }
+
+    String _formatIncidentTime(dynamic incident) {
+      final minute = _toMinute(incident['time']);
+      final addedTime = _toAddedTime(incident['addedTime']);
+      if (minute < 0) return '';
+      if (addedTime > 0) return "$minute'+$addedTime";
+      return "$minute'";
+    }
+
+    Widget _buildPlayerAvatar(dynamic player) {
+      final playerId = player?['id'];
+      final playerName = (player?['shortName'] ?? player?['name'] ?? '').toString();
+      final fallback = playerName.isNotEmpty ? playerName.characters.first.toUpperCase() : '?';
+
+      return CircleAvatar(
+        radius: 10,
+        backgroundColor: Colors.grey.shade300,
+        foregroundImage: playerId == null
+            ? null
+            : NetworkImage('https://www.sofascore.com/api/v1/player/$playerId/image'),
+        child: Text(
+          fallback,
+          style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w700),
+        ),
+      );
+    }
+
     final sortedIncidents = List.from(incidents)
-      ..sort((a, b) => _toMinute(a['time']).compareTo(_toMinute(b['time'])));
+      ..sort((a, b) => _sortOrderForIncident(a).compareTo(_sortOrderForIncident(b)));
 
     return SliverList(
       delegate: SliverChildBuilderDelegate(
             (context, index) {
           final incident = sortedIncidents[index];
           final isHome = incident['isHome'];
-          final time = incident['time'] ?? '';
+          final formattedTime = _formatIncidentTime(incident);
           final type = incident['incidentType'] ?? '';
           final incidentClass = incident['incidentClass'] ?? '';
 
@@ -627,9 +676,27 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                 .shrink(); // Versteckt unwichtige Events wie Verletzungszeit
           }
 
+          Widget playerAvatars = const SizedBox.shrink();
+          if (type == 'substitution') {
+            playerAvatars = Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                _buildPlayerAvatar(incident['playerIn']),
+                const SizedBox(width: 4),
+                _buildPlayerAvatar(incident['playerOut']),
+              ],
+            );
+          } else if (!isNeutral) {
+            playerAvatars = _buildPlayerAvatar(incident['player']);
+          }
+
           final eventLine = Row(
             mainAxisSize: MainAxisSize.min,
             children: [
+              if (!isNeutral) ...[
+                playerAvatars,
+                const SizedBox(width: 6),
+              ],
               Icon(icon, color: iconColor, size: 18),
               const SizedBox(width: 6),
               Flexible(
@@ -651,7 +718,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      '$time\'',
+                      formattedTime,
                       style: const TextStyle(
                         fontSize: 14,
                         fontWeight: FontWeight.bold,
@@ -676,7 +743,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 8),
                   child: Text(
-                    '$time\'',
+                    formattedTime,
                     style: const TextStyle(
                       fontSize: 14,
                       fontWeight: FontWeight.bold,
