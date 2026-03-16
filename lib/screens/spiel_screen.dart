@@ -4,6 +4,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:premier_league/screens/screenelements/match_screen/formations.dart';
 import 'package:premier_league/viewmodels/data_viewmodel.dart';
 import 'package:premier_league/screens/player_screen.dart';
+import 'package:premier_league/screens/screenelements/match_screen/matchrating_screen.dart';
 import 'package:premier_league/utils/color_helper.dart';
 import 'package:intl/intl.dart';
 import 'dart:math' as math;
@@ -587,61 +588,280 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
       return int.tryParse(value?.toString() ?? '') ?? -1;
     }
 
+    int _toAddedTime(dynamic value) {
+      if (value is num) return value.toInt();
+      return int.tryParse(value?.toString() ?? '') ?? 0;
+    }
+
+    int _sanitizeAddedTime(dynamic value) {
+      final parsed = _toAddedTime(value);
+      return (parsed > 0 && parsed <= 30) ? parsed : 0;
+    }
+
+    String _lastName(dynamic player) {
+      final fullName = (player?['name'] ?? player?['shortName'] ?? '').toString().trim();
+      if (fullName.isEmpty) return 'Unbekannt';
+      final parts = fullName.split(RegExp(r'\s+'));
+      return parts.isNotEmpty ? parts.last : fullName;
+    }
+
+    PlayerInfo? _findPlayerInfoById(int? playerId) {
+      if (playerId == null) return null;
+      final allPlayers = [...homePlayers, ...homeSubstitutes, ...awayPlayers, ...awaySubstitutes];
+      for (final player in allPlayers) {
+        if (player.id == playerId) return player;
+      }
+      return null;
+    }
+
+    Map<String, dynamic>? _findMatchStatsByPlayerId(int? playerId) {
+      if (playerId == null) return null;
+      final allPlayers = [...homePlayers, ...homeSubstitutes, ...awayPlayers, ...awaySubstitutes];
+      for (final player in allPlayers) {
+        if (player.id == playerId) {
+          return {
+            'goals': player.goals,
+            'assists': player.assists,
+            'ownGoals': player.ownGoals,
+          };
+        }
+      }
+      return null;
+    }
+
+    void _openRadarOverlayForPlayer(dynamic player) {
+      final playerId = player?['id'] as int?;
+      if (playerId == null) return;
+
+      final playerInfo = _findPlayerInfoById(playerId);
+      final stats = _findMatchStatsByPlayerId(playerId) ?? {};
+
+      if (playerInfo == null || stats.isEmpty) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(content: Text('Keine Spieldaten für diesen Spieler verfügbar.')),
+        );
+        return;
+      }
+
+      showDialog(
+        context: context,
+        builder: (BuildContext context) {
+          return MatchRatingScreen(
+            playerInfo: playerInfo,
+            matchStatistics: stats,
+          );
+        },
+      );
+    }
+
+    Widget _buildPlayerChip(
+      dynamic player, {
+      double maxWidth = 120,
+      required double nameFontSize,
+    }) {
+      final playerId = player?['id'] as int?;
+      final lastName = _lastName(player);
+      final fallback = lastName.isNotEmpty ? lastName.characters.first.toUpperCase() : '?';
+
+      return InkWell(
+        borderRadius: BorderRadius.circular(50),
+        onTap: playerId == null ? null : () => _openRadarOverlayForPlayer(player),
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 2, vertical: 2),
+          child: ConstrainedBox(
+            constraints: BoxConstraints(maxWidth: maxWidth),
+            child: Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                CircleAvatar(
+                  radius: 10,
+                  backgroundColor: Colors.grey.shade300,
+                  foregroundImage: playerId == null
+                      ? null
+                      : NetworkImage('https://www.sofascore.com/api/v1/player/$playerId/image'),
+                  child: Text(
+                    fallback,
+                    style: const TextStyle(fontSize: 9, fontWeight: FontWeight.w700),
+                  ),
+                ),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                    lastName,
+                    maxLines: 1,
+                    overflow: TextOverflow.ellipsis,
+                    softWrap: false,
+                    style: TextStyle(
+                      fontWeight: FontWeight.w600,
+                      fontSize: nameFontSize,
+                    ),
+                  ),
+                ),
+              ],
+            ),
+          ),
+        ),
+      );
+    }
+
+    int _periodEndMinute(String marker) {
+      int bestBase = marker == 'HT' ? 45 : 90;
+      int bestAdded = 0;
+
+      for (final dynamic incident in incidents) {
+        if (incident['incidentType'] == 'period') continue;
+
+        final minute = _toMinute(incident['time']);
+        final added = _sanitizeAddedTime(incident['addedTime']);
+
+        final isFirstHalf = marker == 'HT' && minute <= 45;
+        final isSecondHalf = marker != 'HT' && minute >= 90;
+        if (!isFirstHalf && !isSecondHalf) continue;
+
+        if (minute > bestBase || (minute == bestBase && added > bestAdded)) {
+          bestBase = minute;
+          bestAdded = added;
+        }
+      }
+
+      return bestBase * 100 + bestAdded;
+    }
+
+    String _formatIncidentTime(dynamic incident) {
+      final type = incident['incidentType']?.toString() ?? '';
+      if (type == 'period') {
+        final marker = incident['text']?.toString() ?? '';
+        final endValue = _periodEndMinute(marker);
+        final minute = endValue ~/ 100;
+        final added = endValue % 100;
+        if (added > 0) return "$minute'+$added";
+        return "$minute'";
+      }
+
+      final minute = _toMinute(incident['time']);
+      final addedTime = _sanitizeAddedTime(incident['addedTime']);
+      if (minute < 0) return '';
+      if (addedTime > 0) return "$minute'+$addedTime";
+      return "$minute'";
+    }
+
+    int _sortOrderForIncident(dynamic incident) {
+      final type = incident['incidentType']?.toString() ?? '';
+      if (type == 'period') {
+        final marker = incident['text']?.toString() ?? '';
+        final endValue = _periodEndMinute(marker);
+        // Abpfiff IMMER nach allen Events in der Halbzeit (auch Nachspielzeit)
+        return endValue + 99;
+      }
+
+      final minute = _toMinute(incident['time']);
+      final addedTime = _sanitizeAddedTime(incident['addedTime']);
+      return minute * 100 + addedTime;
+    }
+
     final sortedIncidents = List.from(incidents)
-      ..sort((a, b) => _toMinute(a['time']).compareTo(_toMinute(b['time'])));
+      ..sort((a, b) => _sortOrderForIncident(a).compareTo(_sortOrderForIncident(b)));
+
+    final screenWidth = MediaQuery.of(context).size.width;
+    final timelineFontSize = (screenWidth * 0.033).clamp(11.5, 13.5).toDouble();
 
     return SliverList(
       delegate: SliverChildBuilderDelegate(
-            (context, index) {
+        (context, index) {
           final incident = sortedIncidents[index];
           final isHome = incident['isHome'];
-          final time = incident['time'] ?? '';
+          final formattedTime = _formatIncidentTime(incident);
           final type = incident['incidentType'] ?? '';
           final incidentClass = incident['incidentClass'] ?? '';
 
           IconData icon = Icons.info_outline;
           Color iconColor = Colors.black54;
-          String text = '';
+          String neutralText = '';
           bool isNeutral = false;
 
           if (type == 'goal') {
             icon = Icons.sports_soccer;
             iconColor = Colors.green.shade700;
-            text = incident['player']?['name'] ?? 'Eigentor/Unbekannt';
           } else if (type == 'card') {
             icon = Icons.crop_portrait;
             iconColor = incidentClass == 'yellow' ? Colors.amber : Colors.red;
-            text = incident['player']?['name'] ?? 'Unbekannt';
           } else if (type == 'substitution') {
             icon = Icons.swap_horiz;
             iconColor = Colors.green;
-            text =
-            '${incident['playerIn']?['shortName'] ?? 'Unbekannt'} für ${incident['playerOut']?['shortName'] ?? 'Unbekannt'}';
           } else if (type == 'period') {
             icon = Icons.timer;
             iconColor = Colors.black;
-            text = incident['text'] == 'HT' ? 'Halbzeit' : 'Spielende';
+            neutralText = incident['text'] == 'HT' ? 'Halbzeit' : 'Spielende';
             isNeutral = true;
           } else {
-            return const SizedBox
-                .shrink(); // Versteckt unwichtige Events wie Verletzungszeit
+            return const SizedBox.shrink();
           }
 
-          final eventLine = Row(
-            mainAxisSize: MainAxisSize.min,
-            children: [
-              Icon(icon, color: iconColor, size: 18),
-              const SizedBox(width: 6),
-              Flexible(
-                child: Text(
-                  text,
-                  maxLines: 1,
-                  overflow: TextOverflow.ellipsis,
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
-              ),
-            ],
-          );
+          final Widget eventLine;
+          if (type == 'substitution') {
+            eventLine = LayoutBuilder(
+              builder: (context, constraints) {
+                final chipMaxWidth = ((constraints.maxWidth - 80) / 2).clamp(56.0, 120.0).toDouble();
+                return Row(
+                  children: [
+                    Flexible(
+                      child: _buildPlayerChip(
+                        incident['playerIn'],
+                        maxWidth: chipMaxWidth,
+                        nameFontSize: timelineFontSize,
+                      ),
+                    ),
+                    const SizedBox(width: 4),
+                    Icon(icon, color: iconColor, size: 18),
+                    const SizedBox(width: 4),
+                    Text(
+                      'für',
+                      style: TextStyle(fontSize: timelineFontSize, fontWeight: FontWeight.w600),
+                    ),
+                    const SizedBox(width: 4),
+                    Flexible(
+                      child: Align(
+                        alignment: Alignment.centerLeft,
+                        child: _buildPlayerChip(
+                          incident['playerOut'],
+                          maxWidth: chipMaxWidth,
+                          nameFontSize: timelineFontSize,
+                        ),
+                      ),
+                    ),
+                  ],
+                );
+              },
+            );
+          } else {
+            eventLine = Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                if (!isNeutral) ...[
+                  _buildPlayerChip(
+                    incident['player'],
+                    maxWidth: 130,
+                    nameFontSize: timelineFontSize,
+                  ),
+                  const SizedBox(width: 6),
+                ],
+                Icon(icon, color: iconColor, size: 18),
+                if (isNeutral) const SizedBox(width: 6),
+                if (isNeutral)
+                  Flexible(
+                    child: Text(
+                      neutralText,
+                      maxLines: 1,
+                      overflow: TextOverflow.ellipsis,
+                      style: TextStyle(
+                        fontWeight: FontWeight.w600,
+                        fontSize: timelineFontSize,
+                      ),
+                    ),
+                  ),
+              ],
+            );
+          }
 
           if (isNeutral) {
             return Padding(
@@ -651,9 +871,9 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                   mainAxisSize: MainAxisSize.min,
                   children: [
                     Text(
-                      '$time\'',
-                      style: const TextStyle(
-                        fontSize: 14,
+                      formattedTime,
+                      style: TextStyle(
+                        fontSize: timelineFontSize,
                         fontWeight: FontWeight.bold,
                         color: Colors.black54,
                       ),
@@ -676,9 +896,9 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                 Padding(
                   padding: const EdgeInsets.symmetric(horizontal: 8),
                   child: Text(
-                    '$time\'',
-                    style: const TextStyle(
-                      fontSize: 14,
+                    formattedTime,
+                    style: TextStyle(
+                      fontSize: timelineFontSize,
                       fontWeight: FontWeight.bold,
                       color: Colors.black54,
                     ),
@@ -699,6 +919,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
       ),
     );
   }
+
 
 // NEU: Das Widget für den Spielverlauf
 }
