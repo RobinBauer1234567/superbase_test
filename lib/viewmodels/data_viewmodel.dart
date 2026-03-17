@@ -28,7 +28,7 @@ class DataManagement {
       // 1. Das Update durchführen
       await updateData();
 
-      final int syncLockMinutes = 2;
+      final int syncLockMinutes = 0;
 
       final int randomSeconds = Random().nextInt(121);
 
