@@ -4,11 +4,11 @@ import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:math';
 import 'package:premier_league/models/league_activity.dart';
+import 'package:pool/pool.dart';
 
 class ApiService {
   final String baseUrl = 'https://www.sofascore.com/api/v1';
   final SupabaseService supabaseService = SupabaseService();
-  final String tournamentId = '17';
   final Map<String, String> _headers = {
     // Ein sehr gängiger iPhone-User-Agent (damit das Handy nicht behauptet, ein Windows-PC zu sein)
     'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
@@ -23,7 +23,7 @@ class ApiService {
     'Sec-Fetch-Site': 'same-origin',
   };
 
-  Future<void> fetchAndStoreTeams(String seasonId) async {
+  Future<void> fetchAndStoreTeams(int tournamentId, int seasonId) async {
     final url = '$baseUrl/unique-tournament/$tournamentId/season/$seasonId/teams';
     final response = await http.get(Uri.parse(url));
 
@@ -62,16 +62,15 @@ class ApiService {
         }
 
         await supabaseService.saveTeam(teamId, teamName, logoUrl);
-        // NEU: Speichere die Beziehung in season_teams
-        await supabaseService.saveSeasonTeam(int.parse(seasonId), teamId);
+        await supabaseService.saveSeasonTeam(seasonId, teamId);
       }
-      print('Alle Teams wurden erfolgreich in der Datenbank gespeichert.');
+      print('✅ Alle Teams (Turnier: $tournamentId, Saison: $seasonId) wurden gespeichert.');
     } else {
       throw Exception("Fehler beim Abrufen der Teams: ${response.statusCode}");
     }
   }
 
-  Future<void> fetchAndStoreSpieltage(String seasonId) async {
+  Future<void> fetchAndStoreSpieltage(int tournamentId, int seasonId) async {
     final url = '$baseUrl/unique-tournament/$tournamentId/season/$seasonId/rounds';
     final response = await http.get(Uri.parse(url));
 
@@ -81,14 +80,15 @@ class ApiService {
 
       for (var round in roundsJson) {
         int roundNumber = int.tryParse(round['round'].toString()) ?? 0;
-        await supabaseService.saveSpieltag(roundNumber, 'nicht gestartet', int.parse(seasonId));
+        await supabaseService.saveSpieltag(roundNumber, 'nicht gestartet', seasonId);
       }
+      print('✅ Spieltage (Turnier: $tournamentId, Saison: $seasonId) wurden gespeichert.');
     } else {
       throw Exception("Fehler beim Abrufen der Spieltage: ${response.statusCode}");
     }
   }
 
-  Future<void> fetchAndStoreSpiele(int round, String seasonId) async {
+  Future<void> fetchAndStoreSpiele(int tournamentId, int seasonId, int round) async {
     final url = '$baseUrl/unique-tournament/$tournamentId/season/$seasonId/events/round/$round';
     final response = await http.get(Uri.parse(url));
 
@@ -109,6 +109,7 @@ class ApiService {
         String ergebnis = (event['homeScore'] == null || event['awayScore'] == null)
             ? "Noch kein Ergebnis"
             : "$homeScore:$awayScore";
+
         await supabaseService.saveSpiel(
           matchId,
           startTimeString,
@@ -117,7 +118,7 @@ class ApiService {
           ergebnis,
           status,
           round,
-          int.parse(seasonId), // HINZUGEFÜGT
+          seasonId,
         );
       }
     } else {
@@ -925,73 +926,73 @@ class ApiService {
       int? foundIndex;
       String? fallbackPos;
 
-      int currentPage = 0;
-      bool hasNextPage = true;
       bool positionFound = false;
 
-      while (hasNextPage) {
-        final response = await _throttledGet('https://www.sofascore.com/api/v1/player/$playerId/events/last/$currentPage');
-        if (response.statusCode != 200) break;
+      // Wir holen die letzten ~20 Spiele des Spielers
+      final response = await _throttledGet('https://www.sofascore.com/api/v1/player/$playerId/events/last/0');
 
+      if (response.statusCode == 200) {
         final data = json.decode(response.body);
-        // SICHERHEIT: Prüfen ob das JSON wirklich eine Map ist und nicht leer
-        if (data == null || data is! Map) break;
 
-        final List<dynamic> events = data['events'] as List<dynamic>? ?? [];
-        hasNextPage = data['hasNextPage'] ?? false;
+        if (data != null && data is Map) {
+          final List<dynamic> events = data['events'] as List<dynamic>? ?? [];
 
-        for (var event in events) {
-          // SICHERHEIT: Leere Events oder fehlende IDs filtern
-          if (event == null || event is! Map || event['id'] == null) continue;
+          for (var event in events) {
 
-          String eventId = event['id'].toString();
+            // --- DIE NEUE ABBRUCHBEDINGUNG ---
+            // Wir brechen erst ab, wenn wir MINDESTENS 5 Ratings haben
+            // UND die echte Startelf-Position gefunden wurde.
+            if (ratings.length >= 5 && positionFound) {
+              break;
+            }
 
-          final lineupResp = await _throttledGet('https://www.sofascore.com/api/v1/event/$eventId/lineups');
-          if (lineupResp.statusCode == 200) {
-            final lineupData = json.decode(lineupResp.body);
-            if (lineupData == null || lineupData is! Map) continue;
+            if (event == null || event is! Map || event['id'] == null) continue;
 
-            for (var teamKey in ['home', 'away']) {
-              final teamData = lineupData[teamKey];
-              if (teamData == null || teamData is! Map) continue;
+            String eventId = event['id'].toString();
 
-              final players = teamData['players'] as List<dynamic>? ?? [];
-              final formation = teamData['formation'] as String?;
+            final lineupResp = await _throttledGet('https://www.sofascore.com/api/v1/event/$eventId/lineups');
+            if (lineupResp.statusCode == 200) {
+              final lineupData = json.decode(lineupResp.body);
+              if (lineupData == null || lineupData is! Map) continue;
 
-              for (int i = 0; i < players.length; i++) {
-                final p = players[i];
-                // SICHERHEIT: Null-Spieler aus dem Array werfen
-                if (p == null || p is! Map) continue;
+              for (var teamKey in ['home', 'away']) {
+                final teamData = lineupData[teamKey];
+                if (teamData == null || teamData is! Map) continue;
 
-                final playerMap = p['player'];
-                if (playerMap != null && playerMap is Map && playerMap['id'] == playerId) {
+                final players = teamData['players'] as List<dynamic>? ?? [];
+                final formation = teamData['formation'] as String?;
 
-                  // Rating für Marktwert
-                  if (currentPage == 0 && p['statistics'] != null && p['statistics'] is Map) {
-                    final stats = p['statistics'];
-                    if (stats['rating'] != null) {
-                      ratings.add((stats['rating'] as num).toDouble());
+                for (int i = 0; i < players.length; i++) {
+                  final p = players[i];
+                  if (p == null || p is! Map) continue;
+
+                  final playerMap = p['player'];
+                  if (playerMap != null && playerMap is Map && playerMap['id'] == playerId) {
+
+                    // 1. RATING SAMMELN (Immer, wenn eines vorhanden ist, auch bei Einwechslung!)
+                    if (p['statistics'] != null && p['statistics'] is Map) {
+                      final stats = p['statistics'];
+                      if (stats['rating'] != null) {
+                        ratings.add((stats['rating'] as num).toDouble());
+                      }
                     }
-                  }
 
-                  // Startelf-Check
-                  if (i <= 10 && !positionFound && formation != null) {
-                    foundFormation = formation;
-                    foundIndex = i;
-                    positionFound = true;
+                    // 2. POSITION FINDEN (Nur speichern, wenn wir sie noch nicht haben und er Startelf spielt)
+                    if (i <= 10 && !positionFound && formation != null) {
+                      foundFormation = formation;
+                      foundIndex = i;
+                      positionFound = true;
+                    }
                   }
                 }
               }
             }
           }
         }
-
-        if (currentPage >= 0 && positionFound) {
-          break;
-        }
-        currentPage++;
       }
 
+      // Fallback: Wenn er in den letzten ~20 Spielen NIE in der Startelf stand,
+      // holen wir uns seine grobe Position aus dem Spielerprofil.
       if (!positionFound) {
         try {
           final playerInfoResp = await _throttledGet('https://www.sofascore.com/api/v1/player/$playerId');
@@ -1006,6 +1007,7 @@ class ApiService {
         }
       }
 
+      // Speichern in der Datenbank
       await supabaseService.supabase.rpc('init_player_from_sofascore', params: {
         'p_player_id': playerId,
         'p_season_id': seasonId,
@@ -1015,7 +1017,7 @@ class ApiService {
         'p_ratings': ratings,
       });
 
-      print('✅ Spieler $playerId erfolgreich via DB initialisiert!');
+      print('✅ Spieler $playerId via DB initialisiert! (Gefundene Ratings: ${ratings.length})');
 
     } catch (e) {
       if (e.toString().contains('API_LIMIT_REACHED')) rethrow;
@@ -1072,11 +1074,295 @@ class ApiService {
       print('❌ Fehler beim Verarbeiten der Transfers für Team $teamId: $e');
     }
   }
+
+  Future<void> runGlobalLeagueScout() async {
+    print('🌍 Starte Global League Scout...');
+
+    // 1. Alle Kategorien (Länder) abrufen
+    final categoriesUrl = '$baseUrl/sport/football/categories/all';
+    try {
+      final catResponse = await _throttledGet(categoriesUrl);
+      if (catResponse.statusCode != 200) return;
+
+      final catData = json.decode(catResponse.body);
+      final categories = catData['categories'] as List<dynamic>? ?? [];
+
+      for (var cat in categories) {
+        int categoryId = cat['id'];
+        String categoryName = cat['name'] ?? 'Unbekannt';
+
+        // Optionale Filterung: Wir überspringen eSoccer, Virtual Leagues etc.
+        if (categoryName == 'Virtual Leagues' || categoryName == 'eSoccer' || categoryName == 'Simulated Reality Women') {
+          continue;
+        }
+
+        print('📍 Analysiere Land/Kategorie: $categoryName ($categoryId)');
+
+        // 2. Alle Turniere für dieses Land abrufen
+        final tourneysUrl = '$baseUrl/category/$categoryId/unique-tournaments';
+        try {
+          final tourneysResponse = await _throttledGet(tourneysUrl);
+          if (tourneysResponse.statusCode != 200) continue;
+
+          final tourneysData = json.decode(tourneysResponse.body);
+          final groups = tourneysData['groups'] as List<dynamic>? ?? [];
+
+          for (var group in groups) {
+            final uniqueTournaments = group['uniqueTournaments'] as List<dynamic>? ?? [];
+            for (var t in uniqueTournaments) {
+              int tId = t['id'];
+              // 3. Jedes gefundene Turnier einzeln prüfen
+              await _checkAndSaveLeague(tId);
+            }
+          }
+        } catch (e) {
+          if (e.toString().contains('API_LIMIT_REACHED')) rethrow;
+          print('⚠️ Fehler bei Kategorie $categoryId: $e');
+        }
+      }
+      print('✅ Global League Scout erfolgreich abgeschlossen!');
+    } catch (e) {
+      print('❌ Kritischer Fehler im Global Scout: $e');
+    }
+  }
+
+  Future<void> _checkAndSaveLeague(int tournamentId) async {
+    final detailUrl = '$baseUrl/unique-tournament/$tournamentId';
+    try {
+      final detailResp = await _throttledGet(detailUrl);
+      if (detailResp.statusCode != 200) return;
+
+      final detailData = json.decode(detailResp.body);
+      final t = detailData['uniqueTournament'];
+      if (t == null) return;
+
+      String name = t['name'] ?? 'Unbekannt';
+
+      // --- 1. FILTER: Namens-Blacklist (Spart API-Aufrufe) ---
+      final nameLower = name.toLowerCase();
+      if (nameLower.contains('cup') ||
+          nameLower.contains('pokal') ||
+          nameLower.contains('copa') ||
+          nameLower.contains('coppa') ||
+          nameLower.contains('coupe') ||
+          nameLower.contains('taça') ||
+          nameLower.contains('trophy') ||
+          nameLower.contains('shield') ||
+          nameLower.contains('supercopa')) {
+        // print('⏭️ Überspringe $name: Name deutet auf Pokal hin.');
+        return;
+      }
+
+      // --- 2. FILTER: Grundlegende Form ---
+      bool hasRounds = t['hasRounds'] == true;
+      bool hasGroups = t['hasGroups'] == true;
+      bool hasPlayoffSeries = t['hasPlayoffSeries'] == true;
+
+      if (hasRounds && !hasGroups && !hasPlayoffSeries) {
+
+        // Aktuellste Season ID abrufen
+        final seasonUrl = '$baseUrl/unique-tournament/$tournamentId/seasons';
+        final seasonResp = await _throttledGet(seasonUrl);
+        if (seasonResp.statusCode != 200) return;
+
+        final seasonData = json.decode(seasonResp.body);
+        final seasons = seasonData['seasons'] as List<dynamic>? ?? [];
+        if (seasons.isEmpty) return;
+
+        final currentSeason = seasons.first;
+        int seasonId = currentSeason['id'];
+        String seasonYear = currentSeason['year'];
+
+        // --- 3. FILTER: Der "Tabellen-Beweis" (Standings Check) ---
+        // Hat dieses Turnier in dieser Saison wirklich eine echte Ligatabelle?
+        final standingsUrl = '$baseUrl/unique-tournament/$tournamentId/season/$seasonId/standings/total';
+        final standingsResp = await _throttledGet(standingsUrl);
+
+        if (standingsResp.statusCode != 200) {
+          // Keine Tabelle gefunden -> Es ist ein getarnter Pokal!
+          // print('⏭️ Überspringe $name: Hat keine klassische Ligatabelle (Standings).');
+          return;
+        }
+
+        // --- 4. FILTER: Gibt es Spielerbewertungen (Ratings)? ---
+        bool hasStats = false;
+        String eventsUrl = '$baseUrl/unique-tournament/$tournamentId/season/$seasonId/events/last/0';
+        var eventsResp = await _throttledGet(eventsUrl);
+
+        if (eventsResp.statusCode == 200) {
+          var eventsData = json.decode(eventsResp.body);
+          var eventsList = eventsData['events'] as List<dynamic>? ?? [];
+
+          if (eventsList.isEmpty) {
+            eventsUrl = '$baseUrl/unique-tournament/$tournamentId/season/$seasonId/events/next/0';
+            eventsResp = await _throttledGet(eventsUrl);
+            if (eventsResp.statusCode == 200) {
+              eventsData = json.decode(eventsResp.body);
+              eventsList = eventsData['events'] as List<dynamic>? ?? [];
+            }
+          }
+
+          if (eventsList.isNotEmpty) {
+            hasStats = eventsList.first['hasEventPlayerStatistics'] == true ||
+                eventsList.first['tournament']?['uniqueTournament']?['hasEventPlayerStatistics'] == true;
+          }
+        }
+
+        if (!hasStats) {
+          // print('⏭️ Überspringe $name: Keine Spielerbewertungen verfügbar.');
+          return;
+        }
+
+        print('🌟 PERFEKTE LIGA GEFUNDEN: $name ($seasonYear). Lade Logo...');
+
+        // --- BILD-DOWNLOAD ---
+        String? countryName = t['category']?['country']?['name'] ?? t['category']?['name'];
+        String? imageUrl;
+        try {
+          final imageUrlString = '$baseUrl/unique-tournament/$tournamentId/image';
+          final imageResponse = await _throttledGet(imageUrlString);
+
+          if (imageResponse.statusCode == 200) {
+            final imagePath = '$tournamentId.png';
+
+            await supabaseService.supabase.storage
+                .from('tournament_images')
+                .uploadBinary(
+              imagePath,
+              imageResponse.bodyBytes,
+              fileOptions: const FileOptions(cacheControl: '3600', upsert: true),
+            );
+
+            imageUrl = supabaseService.supabase.storage
+                .from('tournament_images')
+                .getPublicUrl(imagePath);
+          }
+        } catch (e) {
+          print('⚠️ Fehler beim Bild-Download für $name: $e');
+        }
+
+        // --- SPEICHERN ---
+        await supabaseService.saveDiscoveredLeague(
+            tournamentId, name, countryName, imageUrl, seasonId, seasonYear
+        );
+        print('✅ $name erfolgreich in DB gespeichert!');
+      }
+    } catch (e) {
+      if (e.toString().contains('API_LIMIT_REACHED')) rethrow;
+      print('Fehler bei Liga-Prüfung ($tournamentId): $e');
+    }
+  }
+  /// Holt den kompletten Kader für EIN TEAM und speichert die Spieler MASSIV PARALLEL.
+  Future<void> fetchAndStoreSingleSquad(int teamId, int seasonId) async {
+    print('👥 Lade Kader für Team $teamId (Saison $seasonId)...');
+
+    final squadUrl = '$baseUrl/team/$teamId/players';
+
+    try {
+      final squadResp = await _throttledGet(squadUrl);
+      if (squadResp.statusCode == 200) {
+        final parsedJson = json.decode(squadResp.body);
+        final playersList = parsedJson['players'] as List<dynamic>? ?? [];
+
+        // --- DIE MAGIE: WIR NUTZEN EINEN POOL FÜR PARALLELE VERARBEITUNG ---
+        // 5 Spieler werden gleichzeitig verarbeitet.
+        // (Nicht zu hoch ansetzen, sonst streikt die Sofascore API trotz _throttledGet)
+        final pool = Pool(5);
+        final List<Future<void>> tasks = [];
+
+        for (var playerObj in playersList) {
+          final player = playerObj['player'];
+          if (player == null) continue;
+
+          // Wir legen die Aufgabe in den Pool, starten sie aber sofort im Hintergrund
+          tasks.add(pool.withResource(() => processSquadPlayer(player, teamId, seasonId)));
+        }
+
+        // Wir warten erst ganz am Ende, bis ALLE Aufgaben aus dem Pool fertig sind
+        await Future.wait(tasks);
+
+        print('✅ Kader für Team $teamId komplett.');
+      }
+    } catch (e) {
+      if (e.toString().contains('API_LIMIT_REACHED')) rethrow;
+      print('⚠️ Fehler beim Abrufen des Kaders für Team $teamId: $e');
+    }
+  }
+  Future<void> processSquadPlayer(Map<String, dynamic> player, int teamId, int seasonId) async {
+    int playerId = player['id'];
+    String playerName = player['name'] ?? 'Unbekannt';
+
+    // Die Sofascore Kader-API liefert eine grobe Position (G, D, M, F).
+    // Wir wandeln diese als ersten Fallback um.
+    String rawPosition = player['position'] ?? '';
+    String initialPosition = 'N/V';
+    if (rawPosition == 'G') initialPosition = 'TW';
+    else if (rawPosition == 'D') initialPosition = 'IV';
+    else if (rawPosition == 'M') initialPosition = 'ZM';
+    else if (rawPosition == 'F') initialPosition = 'ST';
+
+    try {
+      // 1. Spieler in die Datenbank einfügen (damit die Zeile existiert und verknüpft werden kann)
+      await supabaseService.saveSpieler(
+        playerId,
+        playerName,
+        initialPosition,
+        null, // Bild kommt in Schritt 4
+        null, // Marktwert wird über RPC berechnet
+        seasonId,
+      );
+
+      // 2. Spieler-Team-Verknüpfung speichern (sodass er einem Verein zugeordnet ist)
+      await supabaseService.saveSeasonPlayer(seasonId, playerId, teamId);
+
+      // 3. Marktwert und exakte Position über die letzten Spiele berechnen lassen.
+      // Diese Methode führt dein SQL-RPC 'init_player_from_sofascore' aus.
+      await initializePlayerInDB(playerId, seasonId);
+
+      // 4. Profilbild herunterladen und speichern (Logik aus fixIncompletePlayers)
+      String? imageUrl;
+      try {
+        final imageResponse = await _throttledGet('https://www.sofascore.com/api/v1/player/$playerId/image');
+        if (imageResponse.statusCode == 200) {
+          final imagePath = 'spielerbilder/$playerId.jpg';
+
+          await supabaseService.supabase.storage
+              .from('spielerbilder')
+              .uploadBinary(
+            imagePath,
+            imageResponse.bodyBytes,
+            fileOptions: const FileOptions(cacheControl: '3600', upsert: true),
+          );
+
+          imageUrl = supabaseService.supabase.storage
+              .from('spielerbilder')
+              .getPublicUrl(imagePath);
+        }
+      } catch (e) {
+        print('⚠️ Fehler beim Bild-Download für $playerName ($playerId): $e');
+      }
+
+      // 5. Wenn wir ein Bild haben, aktualisieren wir den zuvor angelegten Spieler in der Datenbank
+      if (imageUrl != null) {
+        await supabaseService.supabase
+            .from('spieler')
+            .update({'profilbild_url': imageUrl})
+            .eq('id', playerId);
+      }
+
+      print('   👤 Spieler $playerName ($playerId) komplett initialisiert.');
+
+    } catch (e) {
+      if (e.toString().contains('API_LIMIT_REACHED')) rethrow;
+      print('❌ Fehler bei der Verarbeitung von Kader-Spieler $playerName ($playerId): $e');
+    }
+  }
 }
 
 class SupabaseService {
   final SupabaseClient supabase = Supabase.instance.client;
   final Map<int, DateTime> _lastActivityPings = {};
+
   Future<void> updateLeagueActivity(int leagueId) async {
     final now = DateTime.now();
 
@@ -1808,6 +2094,7 @@ class SupabaseService {
       return 1; // Sicherer Fallback
     }
   }
+
   Future<Map<String, dynamic>> fetchMatchdayState({required String userId, required int leagueId, required int seasonId, required int round,}) async {
     try {
       // 1. Zeitfenster aus 'spieltag' holen
@@ -2096,5 +2383,34 @@ class SupabaseService {
     }
 
     return List<Map<String, dynamic>>.from(bidsRes);
+  }
+  /// Speichert eine neu entdeckte Liga (mit Bild) und ihre aktuellste Saison in der Datenbank
+  Future<void> saveDiscoveredLeague(
+      int tournamentId,
+      String name,
+      String? countryName,
+      String? imageUrl,
+      int seasonId,
+      String seasonYear) async {
+    try {
+      // 1. Das Turnier speichern
+      await supabase.from('tournaments').upsert({
+        'id': tournamentId,
+        'name': name,
+        'country_name': countryName,
+        'image_url': imageUrl,
+      }, onConflict: 'id');
+print ('$seasonId, $seasonYear, $tournamentId');
+      // 2. Die aktuellste Saison dazu speichern
+      await supabase.from('season').upsert({
+        'id': seasonId,
+        'name': seasonYear,
+        'tournament_id': tournamentId,
+        'is_active': false
+      }, onConflict: 'id');
+
+    } catch (error) {
+      print('❌ Fehler beim Speichern der Liga $name: $error');
+    }
   }
 }

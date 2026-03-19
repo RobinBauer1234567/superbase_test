@@ -39,8 +39,6 @@ void main() async {
   );
 }
 
-// lib/main.dart (Ausschnitt)
-
 class AppRoot extends StatelessWidget {
   const AppRoot({super.key});
 
@@ -50,7 +48,7 @@ class AppRoot extends StatelessWidget {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider<AuthService>(create: (_) => AuthService()),
-        Provider<DataManagement>(create: (_) => DataManagement(seasonId: 76986)),
+        Provider<DataManagement>(create: (_) => DataManagement(tournamentId: 17, seasonId: 76986)),
       ],
       child: MaterialApp(
         title: 'Managerspiel',
