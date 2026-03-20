@@ -15,6 +15,7 @@ import 'package:premier_league/screens/player_screen.dart';
 import 'package:premier_league/screens/leagues/matchday_team_overlay.dart';
 import 'package:premier_league/screens/screenelements/league_logo.dart';
 import 'package:premier_league/screens/screenelements/transfer_activity_card.dart';
+import 'package:premier_league/utils/match_time_helper.dart';
 
 class ProfileScreen extends StatefulWidget {
   // NEU: Optionale Parameter, um fremde Profile und eine bestimmte Liga direkt zu öffnen
@@ -849,7 +850,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                           padding: const EdgeInsets.symmetric(horizontal: 12),
                           child: TransferActivityCard(
                             content: content,
-                            createdAt: DateTime.parse(transfer['created_at']).toLocal(),
+                            createdAt: MatchTimeHelper.parseToLocal(transfer['created_at']) ?? DateTime.now(),
                             datePattern: 'dd.MM.yyyy HH:mm',
                             showDetailsTap: false,
                             onPlayerTap: () {

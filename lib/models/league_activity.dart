@@ -1,3 +1,5 @@
+import 'package:premier_league/utils/match_time_helper.dart';
+
 class LeagueActivity {
   final int id;
   final int leagueId;
@@ -19,7 +21,7 @@ class LeagueActivity {
       leagueId: json['league_id'],
       type: json['type'],
       content: json['content'],
-      createdAt: DateTime.parse(json['created_at']).toLocal(),
+      createdAt: MatchTimeHelper.parseToLocal(json['created_at']) ?? DateTime.now(),
     );
   }
 }

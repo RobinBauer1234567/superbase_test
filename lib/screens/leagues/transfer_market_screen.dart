@@ -7,6 +7,7 @@ import 'package:premier_league/screens/screenelements/player_list_item.dart';
 import 'package:premier_league/screens/player_screen.dart';
 import 'package:premier_league/screens/screenelements/transaction_overlay.dart';
 import 'package:premier_league/screens/screenelements/match_screen/formations.dart';
+import 'package:premier_league/utils/match_time_helper.dart';
 import 'dart:async';
 
 enum MarketMode { all, ownBids, ownOffers }
@@ -443,7 +444,7 @@ class TransferMarketScreenState extends State<TransferMarketScreen> {
                   final bool hasBid = myBid != null;
                   final int? myBidAmount = hasBid ? myBid['amount'] as int : null;
 
-                  final expires = DateTime.parse(offer['expires_at']);
+                  final expires = MatchTimeHelper.parseToLocal(offer['expires_at']) ?? DateTime.now();
                   final timeLeft = expires.difference(DateTime.now());
                   String timeString = timeLeft.inHours > 0 ? "${timeLeft.inHours} Std" : "${timeLeft.inMinutes} Min";
                   Color timeColor = timeLeft.inHours < 2 ? Colors.red : Colors.orange.shade800;
