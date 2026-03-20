@@ -17,6 +17,8 @@ import 'package:image_picker/image_picker.dart';
 import 'package:premier_league/screens/User/profile_screen.dart'; // NEU hinzufügen
 import 'package:premier_league/screens/leagues/league_settings_screen.dart';
 import 'package:premier_league/screens/screenelements/league_logo.dart';
+import 'package:premier_league/viewmodels/tournament_viewmodel.dart';
+import 'package:premier_league/screens/screenelements/main_screen/tournament_switcher_sheet.dart';
 
 enum SearchFilter { players, teams }
 
@@ -278,12 +280,7 @@ class _MainScreenState extends State<MainScreen> {
     return 0;
   }
 
-  Widget _buildImagePreview({
-    required IconData fallbackIcon,
-    required String? imageUrl,
-    required Uint8List? previewBytes,
-    double radius = 22,
-  }) {
+  Widget _buildImagePreview({required IconData fallbackIcon, required String? imageUrl, required Uint8List? previewBytes, double radius = 22,}) {
     ImageProvider? provider;
     if (previewBytes != null) {
       provider = MemoryImage(previewBytes);
@@ -386,12 +383,26 @@ class _MainScreenState extends State<MainScreen> {
       return const Scaffold(body: Center(child: CircularProgressIndicator()));
     }
 
+    // ✅ NEU: Den globalen Turnier-State abgreifen
+    final tournamentViewModel = context.watch<TournamentViewModel>();
+    final bool isTournamentTab = _selectedIndex == 0;
+
     const double actionTabWidth = 64.0;
 
-    // --- Dynamischer Aufbau (unverändert) ---
     final List<Widget> screens = [ const PremierLeagueScreen() ];
+
+    // ✅ NEU: Das Icon und der Text für den ersten Tab sind jetzt dynamisch!
+    // Wir kürzen den Namen auf max. 10 Zeichen, damit die Leiste nicht platzt.
+    String shortTournamentName = tournamentViewModel.currentTournamentName;
+    if (shortTournamentName.length > 10) {
+      shortTournamentName = '${shortTournamentName.substring(0, 8)}...';
+    }
+
     final List<NavItem> navItems = [
-      NavItem(icon: const Icon(Icons.sports_soccer), label: 'PL')
+      NavItem(
+          icon: LeagueLogo(imageUrl: tournamentViewModel.currentTournamentLogo, radius: _bottomNavLeagueLogoRadius),
+          label: shortTournamentName
+      )
     ];
     final int visibleLeagueCount = min(_userLeagues.length, 3);
     for (int i = 0; i < visibleLeagueCount; i++) {
@@ -434,12 +445,25 @@ class _MainScreenState extends State<MainScreen> {
             Padding(
               padding: const EdgeInsets.only(left: 4, right: 8),
               child: IconButton(
+                // ✅ NEU: Dynamisches Logo je nach ausgewähltem Tab
                 icon: LeagueLogo(
-                  imageUrl: _leagueImageUrls[_selectedLeagueId],
+                  imageUrl: isTournamentTab
+                      ? tournamentViewModel.currentTournamentLogo
+                      : _leagueImageUrls[_selectedLeagueId],
                   radius: _topBarImageRadius,
                 ),
                 onPressed: () {
-                  if (_selectedLeagueId != 0) {
+                  // ✅ NEU: Wenn wir im Turnier-Tab sind, öffne den Switcher!
+                  if (isTournamentTab) {
+                    showModalBottomSheet(
+                      context: context,
+                      isScrollControlled: true,
+                      backgroundColor: Colors.transparent,
+                      builder: (context) => const TournamentSwitcherSheet(),
+                    );
+                  }
+                  // Sonst (wie bisher) in die Liga-Einstellungen
+                  else if (_selectedLeagueId != 0) {
                     Navigator.push(
                       context,
                       MaterialPageRoute(

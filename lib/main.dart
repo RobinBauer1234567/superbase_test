@@ -11,6 +11,7 @@ import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:http/http.dart' as http;
 import 'package:premier_league/main.dart';
+import 'package:premier_league/viewmodels/tournament_viewmodel.dart';
 import 'http/http_factory.dart'
 if (dart.library.html) 'http/http_factory_web.dart'
 if (dart.library.io) 'http/http_factory_io.dart';
@@ -48,7 +49,10 @@ class AppRoot extends StatelessWidget {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider<AuthService>(create: (_) => AuthService()),
-        Provider<DataManagement>(create: (_) => DataManagement(tournamentId: 8, seasonId: 77559)),
+        // ✅ NEU: Unser zentraler Turnier-Manager
+        ChangeNotifierProvider<TournamentViewModel>(create: (_) => TournamentViewModel()),
+        // ✅ GEÄNDERT: DataManagement braucht keine IDs mehr
+        Provider<DataManagement>(create: (_) => DataManagement()),
       ],
       child: MaterialApp(
         title: 'Managerspiel',

@@ -9,10 +9,8 @@ class DataManagement {
   final ApiService apiService = ApiService();
   final SupabaseService supabaseService = SupabaseService();
 
-  final int seasonId;
-  final int tournamentId;
 
-  DataManagement({required this.seasonId, required this.tournamentId});
+  DataManagement();
 
   bool _isAutoSyncRunning = false;
 
@@ -60,8 +58,8 @@ class DataManagement {
       final task = tasks.first;
       String taskId = task['id'].toString();
       String taskType = task['task_type'];
-      int tId = task['tournament_id'] ?? tournamentId;
-      int sId = task['season_id'] ?? seasonId;
+      int tId = task['tournament_id'];
+      int sId = task['season_id'];
 
       print('👷 WORKER: Starte Aufgabe [$taskType] (Prio: ${task['priority']})');
 
@@ -202,8 +200,7 @@ class DataManagement {
     return spielstatus;
   }
 
-  Future<void> updateRatingsForSingleGame(int spielId, String? currentStatus) async {
-    print('👆 Anforderung: Update für Spiel $spielId (Status: $currentStatus)');
+  Future<void> updateRatingsForSingleGame(int spielId, String? currentStatus, int seasonId) async {    print('👆 Anforderung: Update für Spiel $spielId (Status: $currentStatus)');
 
     if (await _isDeviceBanned()) {
       print('📵 Update blockiert: Gerät hat API-Sperre.');
