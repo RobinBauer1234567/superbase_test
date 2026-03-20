@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:premier_league/viewmodels/data_viewmodel.dart';
+import 'package:premier_league/viewmodels/tournament_viewmodel.dart';
 import 'package:premier_league/screens/screenelements/match_screen/formations.dart';
 import 'package:premier_league/screens/screenelements/matchday_team_shared.dart';
 import 'package:premier_league/screens/player_screen.dart';
@@ -46,7 +47,8 @@ class _MatchdayTeamOverlayState extends State<MatchdayTeamOverlay> {
   Future<void> _loadTeamData() async {
     try {
       final dataManagement = context.read<DataManagement>();
-      final seasonId = dataManagement.seasonId;
+      final seasonId = context.read<TournamentViewModel>().currentSeasonId;
+      if (seasonId == null) return;
 
       _allFormations = await dataManagement.supabaseService.fetchFormationsFromDb();
 

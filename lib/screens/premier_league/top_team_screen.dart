@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:premier_league/data_service.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:premier_league/viewmodels/data_viewmodel.dart';
+import 'package:premier_league/viewmodels/tournament_viewmodel.dart';
 import 'package:premier_league/screens/player_screen.dart';
 import 'package:premier_league/screens/screenelements/player_list_item.dart';
 import 'package:premier_league/screens/screenelements/match_screen/formations.dart';
@@ -70,8 +70,8 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
   }
 
   Future<void> _fetchFilterData() async {
-    final dataManagement = Provider.of<DataManagement>(context, listen: false);
-    final seasonId = dataManagement.seasonId;
+    final seasonId = context.read<TournamentViewModel>().currentSeasonId;
+    if (seasonId == null) return;
 
     final teamsResponse = await Supabase.instance.client
         .from('season_teams')
@@ -116,11 +116,11 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
   Future<void> _fetchGesamtStats() async {
     setState(() => _isLoading = true);
     try {
-      final dataManagement = Provider.of<DataManagement>(
-        context,
-        listen: false,
-      );
-      final dynamic rawSeasonId = dataManagement.seasonId;
+      final dynamic rawSeasonId = context.read<TournamentViewModel>().currentSeasonId;
+      if (rawSeasonId == null) {
+        if (mounted) setState(() => _topPlayers = []);
+        return;
+      }
       final String seasonIdStr = rawSeasonId.toString();
       final int? seasonIdInt = int.tryParse(seasonIdStr);
 
@@ -233,11 +233,11 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
       final spieltag = _selectedSpieltag;
       if (spieltag == null) return;
 
-      final dataManagement = Provider.of<DataManagement>(
-        context,
-        listen: false,
-      );
-      final seasonId = dataManagement.seasonId;
+      final seasonId = context.read<TournamentViewModel>().currentSeasonId;
+      if (seasonId == null) {
+        if (mounted) setState(() => _topPlayers = []);
+        return;
+      }
 
       var query = Supabase.instance.client
           .from('matchrating')

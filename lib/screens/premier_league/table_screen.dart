@@ -2,7 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:premier_league/viewmodels/data_viewmodel.dart';
+import 'package:premier_league/viewmodels/tournament_viewmodel.dart';
 import 'package:premier_league/screens/team_screen.dart';
 
 // Die TeamStats-Klasse bleibt unverändert
@@ -45,18 +45,22 @@ class _TableScreenState extends State<TableScreen> {
     // Diese Methode bleibt unverändert
     if (!mounted) return;
     setState(() => _isLoading = true);
-    final dataManagement = Provider.of<DataManagement>(context, listen: false);
+    final seasonId = context.read<TournamentViewModel>().currentSeasonId;
+    if (seasonId == null) {
+      if (mounted) setState(() => _isLoading = false);
+      return;
+    }
 
     try {
       final teamsResponse = await Supabase.instance.client
           .from('season_teams')
           .select('teams:team(id, name, image_url)')
-          .eq('season_id', dataManagement.seasonId);
+          .eq('season_id', seasonId);
 
       final finishedGamesResponse = await Supabase.instance.client
           .from('spiel')
           .select('heimteam_id, auswärtsteam_id, ergebnis')
-          .eq('season_id', dataManagement.seasonId)
+          .eq('season_id', seasonId)
           .neq('status', 'nicht gestartet');
 
       final Map<int, TeamStats> statsMap = {
