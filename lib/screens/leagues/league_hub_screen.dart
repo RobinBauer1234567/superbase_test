@@ -250,12 +250,21 @@ class _LeagueHubScreenState extends State<LeagueHubScreen> {
                               if (formKey.currentState!.validate()) {
                                 formKey.currentState!.save();
                                 final dataManagement = Provider.of<DataManagement>(this.context, listen: false);
+                                final currentSeasonId = context.read<TournamentViewModel>().currentSeasonId;
+                                if (currentSeasonId == null) {
+                                  if (mounted) {
+                                    ScaffoldMessenger.of(this.context).showSnackBar(
+                                      const SnackBar(content: Text('Keine Saison ausgewählt.'), backgroundColor: Colors.red),
+                                    );
+                                  }
+                                  return;
+                                }
                                 try {
                                   // 1. Liga erstellen
                                   final newLeagueId = await dataManagement.supabaseService.createLeague(
                                     name: leagueName,
                                     startingBudget: startingBudget * 1000000,
-                                    seasonId: dataManagement.seasonId,
+                                    seasonId: currentSeasonId,
                                     isPublic: isPublic,
                                     squadLimit: isSquadLimitEnabled ? squadLimit.round() : null,
                                     numStartingPlayers: numStartingPlayers.round(),

@@ -9,6 +9,7 @@ import 'package:intl/intl.dart';
 import 'package:premier_league/auth_service.dart';
 import 'package:premier_league/utils/color_helper.dart';
 import 'package:premier_league/viewmodels/data_viewmodel.dart';
+import 'package:premier_league/viewmodels/tournament_viewmodel.dart';
 import 'package:premier_league/screens/screenelements/match_screen/formations.dart';
 import 'package:premier_league/screens/screenelements/matchday_team_shared.dart';
 import 'package:premier_league/screens/player_screen.dart';
@@ -171,7 +172,9 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
 
     try {
       final dataManagement = context.read<DataManagement>();
-      final seasonId = dataManagement.seasonId;
+      final currentSeasonId = context.read<TournamentViewModel>().currentSeasonId;
+      if (currentSeasonId == null) return;
+      final seasonId = currentSeasonId;
 
       final allMatchdaysRes = await supabase
           .from('spieltag')

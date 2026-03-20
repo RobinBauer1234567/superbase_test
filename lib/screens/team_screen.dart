@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:premier_league/screens/player_screen.dart';
 import 'package:premier_league/screens/premier_league/matches_screen.dart';
 import 'package:premier_league/viewmodels/data_viewmodel.dart';
+import 'package:premier_league/viewmodels/tournament_viewmodel.dart';
 import 'package:premier_league/screens/screenelements/player_list_item.dart';
 import 'package:premier_league/utils/match_time_helper.dart';
 
@@ -82,8 +83,17 @@ class _TeamScreenState extends State<TeamScreen> with SingleTickerProviderStateM
       _errorMessage = '';
     });
 
-    final dataManagement = Provider.of<DataManagement>(context, listen: false);
-    final seasonId = dataManagement.seasonId;
+    final currentSeasonId = context.read<TournamentViewModel>().currentSeasonId;
+    if (currentSeasonId == null) {
+      if (mounted) {
+        setState(() {
+          _isLoading = false;
+          _errorMessage = 'Keine Saison ausgewählt.';
+        });
+      }
+      return;
+    }
+    final seasonId = currentSeasonId;
 
     try {
       final teamResponse = await Supabase.instance.client
