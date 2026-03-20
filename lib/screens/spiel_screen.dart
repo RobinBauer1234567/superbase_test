@@ -7,6 +7,7 @@ import 'package:premier_league/screens/player_screen.dart';
 import 'package:premier_league/screens/screenelements/match_screen/matchrating_screen.dart';
 import 'package:premier_league/utils/color_helper.dart';
 import 'package:premier_league/utils/match_time_helper.dart';
+import 'package:premier_league/viewmodels/tournament_viewmodel.dart';
 import 'package:intl/intl.dart';
 import 'dart:math' as math;
 
@@ -72,8 +73,8 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
           context, listen: false);
       final spielId = currentSpielData['id'];
       final status = currentSpielData['status'];
-
-      await dataManagement.updateRatingsForSingleGame(spielId, status);
+      final seasonId = context.watch<TournamentViewModel>().currentSeasonId ?? 0;
+      await dataManagement.updateRatingsForSingleGame(spielId, status, seasonId);
 
       final updatedSpiel = await Supabase.instance.client
           .from('spiel')
