@@ -6,6 +6,7 @@ import 'package:premier_league/screens/player_screen.dart';
 import 'package:premier_league/screens/premier_league/matches_screen.dart';
 import 'package:premier_league/viewmodels/data_viewmodel.dart';
 import 'package:premier_league/screens/screenelements/player_list_item.dart';
+import 'package:premier_league/utils/match_time_helper.dart';
 
 class TeamScreen extends StatefulWidget {
   final int teamId;
@@ -169,7 +170,7 @@ class _TeamScreenState extends State<TeamScreen> with SingleTickerProviderStateM
     WidgetsBinding.instance.addPostFrameCallback((_) {
       if (_teamMatches.isEmpty || !_matchesScrollController.hasClients) return;
 
-      final now = DateTime.now();
+      final now = DateTime.now().toUtc();
       int? upcomingMatchIndex;
 
     // Liste ist aufsteigend nach Datum sortiert -> nächstes Spiel ist das erste mit datum > now
@@ -177,8 +178,8 @@ class _TeamScreenState extends State<TeamScreen> with SingleTickerProviderStateM
         final match = _teamMatches[i];
         if (match['datum'] != null) {
           try {
-            final matchDate = DateTime.parse(match['datum']);
-            if (matchDate.isAfter(now)) {
+            final matchDate = MatchTimeHelper.parseToUtc(match['datum']);
+            if (matchDate != null && matchDate.isAfter(now)) {
               upcomingMatchIndex = i;
               break;
             }

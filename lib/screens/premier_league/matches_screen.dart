@@ -7,6 +7,7 @@ import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:premier_league/screens/team_screen.dart';
 import 'package:premier_league/viewmodels/data_viewmodel.dart';
+import 'package:premier_league/utils/match_time_helper.dart';
 
 // neu: scrollable_positioned_list
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
@@ -77,7 +78,7 @@ class _MatchesScreenState extends State<MatchesScreen> {
 
   void _updateStateWithData(List<Map<String, dynamic>> data) {
     final Map<int, List<dynamic>> groupedSpiele = {};
-    DateTime now = DateTime.now();
+    DateTime now = DateTime.now().toUtc();
     int? currentRound;
 
     for (var spiel in data) {
@@ -85,8 +86,8 @@ class _MatchesScreenState extends State<MatchesScreen> {
       groupedSpiele.putIfAbsent(round, () => []).add(spiel);
 
       try {
-        final matchDate = DateTime.parse(spiel['datum']);
-        if (matchDate.isAfter(now) && currentRound == null) {
+        final matchDate = MatchTimeHelper.parseToUtc(spiel['datum']);
+        if (matchDate != null && matchDate.isAfter(now) && currentRound == null) {
           currentRound = round;
         }
       } catch (_) {
@@ -268,7 +269,7 @@ class MatchCard extends StatelessWidget {
 
     DateTime datum;
     try {
-      datum = DateTime.parse(spiel['datum']);
+      datum = MatchTimeHelper.parseToLocal(spiel['datum']) ?? DateTime.now();
     } catch (_) {
       datum = DateTime.now();
     }

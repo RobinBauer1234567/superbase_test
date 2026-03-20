@@ -6,6 +6,7 @@ import 'package:premier_league/viewmodels/data_viewmodel.dart';
 import 'package:premier_league/screens/player_screen.dart';
 import 'package:premier_league/screens/screenelements/match_screen/matchrating_screen.dart';
 import 'package:premier_league/utils/color_helper.dart';
+import 'package:premier_league/utils/match_time_helper.dart';
 import 'package:intl/intl.dart';
 import 'dart:math' as math;
 
@@ -259,7 +260,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
 
   DateTime _matchDateTime() {
     try {
-      return DateTime.parse(currentSpielData['datum']);
+      return MatchTimeHelper.parseToLocal(currentSpielData['datum']) ?? DateTime.now();
     } catch (_) {
       return DateTime.now();
     }
