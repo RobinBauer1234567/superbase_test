@@ -315,8 +315,8 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   Future<List<Widget>> _fetchSuggestions(String query, SearchFilter filter) async {
-    final dataManagement = Provider.of<DataManagement>(context, listen: false);
-    final seasonId = dataManagement.seasonId;
+    final seasonId = context.read<TournamentViewModel>().currentSeasonId;
+    if (seasonId == null) return [];
     if (query.trim().isEmpty) return [];
 
     final completer = Completer<List<Map<String, dynamic>>>();

@@ -3,9 +3,8 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:premier_league/data_service.dart';
 import 'package:premier_league/viewmodels/data_viewmodel.dart';
-import 'package:premier_league/screens/leagues/starter_team_reveal_screen.dart';
-import 'package:provider/provider.dart';
 import 'package:premier_league/viewmodels/tournament_viewmodel.dart';
+import 'package:premier_league/screens/leagues/starter_team_reveal_screen.dart';
 
 class LeagueHubScreen extends StatefulWidget {
   const LeagueHubScreen({super.key});
@@ -250,12 +249,19 @@ class _LeagueHubScreenState extends State<LeagueHubScreen> {
                               if (formKey.currentState!.validate()) {
                                 formKey.currentState!.save();
                                 final dataManagement = Provider.of<DataManagement>(this.context, listen: false);
+                                final seasonId = context.read<TournamentViewModel>().currentSeasonId;
+                                if (seasonId == null) {
+                                  if (mounted) {
+                                    ScaffoldMessenger.of(this.context).showSnackBar(const SnackBar(content: Text('Keine Saison ausgewählt.')));
+                                  }
+                                  return;
+                                }
                                 try {
                                   // 1. Liga erstellen
                                   final newLeagueId = await dataManagement.supabaseService.createLeague(
                                     name: leagueName,
                                     startingBudget: startingBudget * 1000000,
-                                    seasonId: dataManagement.seasonId,
+                                    seasonId: seasonId,
                                     isPublic: isPublic,
                                     squadLimit: isSquadLimitEnabled ? squadLimit.round() : null,
                                     numStartingPlayers: numStartingPlayers.round(),
