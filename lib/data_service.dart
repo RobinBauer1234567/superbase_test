@@ -5,6 +5,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:math';
 import 'package:premier_league/models/league_activity.dart';
 import 'package:pool/pool.dart';
+import 'package:premier_league/utils/match_time_helper.dart';
 
 class ApiService {
   final String baseUrl = 'https://www.sofascore.com/api/v1';
@@ -100,8 +101,11 @@ class ApiService {
         int homeTeamId = event['homeTeam']['id'];
         int awayTeamId = event['awayTeam']['id'];
         int timestampInt = event['startTimestamp'];
-        DateTime startTimestamp = DateTime.fromMillisecondsSinceEpoch(timestampInt * 1000);
-        String startTimeString = startTimestamp.toIso8601String();
+        final DateTime startTimestampUtc = DateTime.fromMillisecondsSinceEpoch(
+          timestampInt * 1000,
+          isUtc: true,
+        );
+        final String startTimeString = startTimestampUtc.toIso8601String();
         String status = event['status']['description'] ?? 'nicht gestartet';
         var homeScore = event['homeScore']?['current'] ?? 0;
         var awayScore = event['awayScore']?['current'] ?? 0;
@@ -1478,7 +1482,7 @@ class SupabaseService {
 
   Future <DateTime> fetchSpieldatum (spielId) async {
     final response = await supabase.from('spiel').select('datum').eq('id', spielId).single();
-    return DateTime.parse(response['datum']);
+    return MatchTimeHelper.parseToUtc(response['datum']) ?? DateTime.now().toUtc();
   }
 
   Future<void> updateSpiel(int spielId, String ergebnis, String neuerStatus, {List<dynamic>? incidents, String? homeColorPrimary, String? homeGkColorPrimary, String? awayColorPrimary, String? awayGkColorPrimary,}) async {

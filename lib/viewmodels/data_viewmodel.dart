@@ -187,7 +187,7 @@ class DataManagement {
   Future<String> getSpielStatus(spielId) async {
     String spielstatus;
     DateTime spielDatum = await supabaseService.fetchSpieldatum(spielId);
-    DateTime jetzt = DateTime.now();
+    DateTime jetzt = DateTime.now().toUtc();
     Duration differenz = jetzt.difference(spielDatum);
 
     if (differenz.inHours <= 0) {

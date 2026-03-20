@@ -10,6 +10,7 @@ import 'package:premier_league/screens/screenelements/match_screen/formations.da
 import 'package:premier_league/screens/screenelements/match_screen/matchrating_screen.dart';
 import 'package:premier_league/screens/screenelements/player_list_item.dart';
 import 'package:premier_league/utils/color_helper.dart';
+import 'package:premier_league/utils/match_time_helper.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:premier_league/screens/screenelements/position_pitch.dart';
 class PlayerScreen extends StatefulWidget {
@@ -88,8 +89,8 @@ class _PlayerScreenState extends State<PlayerScreen>
         final match = teamMatches[i];
         if (match['datum'] != null) {
           try {
-            final matchDate = DateTime.parse(match['datum']);
-            if (matchDate.isAfter(now)) {
+            final matchDate = MatchTimeHelper.parseToUtc(match['datum']);
+            if (matchDate != null && matchDate.isAfter(now.toUtc())) {
               upcomingMatchIndex = i;
               break;
             }
@@ -213,7 +214,7 @@ class _PlayerScreenState extends State<PlayerScreen>
         if (val < tempMin) tempMin = val;
         if (val > tempMax) tempMax = val;
         historyData.add({
-          'datum': DateTime.parse(row['datum']),
+          'datum': MatchTimeHelper.parseToLocal(row['datum']) ?? DateTime.now(),
           'marktwert': val,
         });
       }
@@ -1156,11 +1157,12 @@ class _PlayerScreenState extends State<PlayerScreen>
 // --- 1. ÜBERSICHTS-TAB (Neues, logisches Layout) ---
                 Builder(
                   builder: (context) {
-                    final now = DateTime.now();
+                    final now = DateTime.now().toUtc();
                     final upcomingMatches = teamMatches.where((m) {
                       if (m['datum'] == null) return false;
                       try {
-                        return DateTime.parse(m['datum']).isAfter(now);
+                        final matchDate = MatchTimeHelper.parseToUtc(m['datum']);
+                        return matchDate != null && matchDate.isAfter(now);
                       } catch (_) { return false; }
                     }).take(3).toList();
 
@@ -1742,7 +1744,7 @@ class MatchRatingRow extends StatelessWidget {
     final auswaertsTeam = match['auswaertsteam'];
     final ergebnis = match['ergebnis'] ?? 'N/A';
     final datumString = match['datum'] ?? '';
-    final datum = DateTime.tryParse(datumString);
+    final datum = MatchTimeHelper.parseToLocal(datumString);
     final formattedDate =
         datum != null ? DateFormat('dd.MM.yy').format(datum) : 'N/A';
 
