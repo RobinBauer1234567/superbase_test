@@ -48,7 +48,7 @@ class AppRoot extends StatelessWidget {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider<AuthService>(create: (_) => AuthService()),
-        Provider<DataManagement>(create: (_) => DataManagement(tournamentId: 17, seasonId: 76986)),
+        Provider<DataManagement>(create: (_) => DataManagement(tournamentId: 8, seasonId: 77559)),
       ],
       child: MaterialApp(
         title: 'Managerspiel',

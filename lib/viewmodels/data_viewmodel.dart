@@ -20,7 +20,7 @@ class DataManagement {
   void startAutoSync() async {
     if (_isAutoSyncRunning) return;
     _isAutoSyncRunning = true;
-    // await apiService.runGlobalLeagueScout();
+    //await apiService.runGlobalLeagueScout();
     print('🔄 🟢 Auto-Sync Worker gestartet.');
 
     while (_isAutoSyncRunning) {
@@ -42,9 +42,6 @@ class DataManagement {
     print('🛑 🔴 Auto-Sync Worker gestoppt.');
   }
 
-  /// ------------------------------------------------------------------
-  /// DER WORKER: Holt sich den wichtigsten Task und führt ihn aus
-  /// ------------------------------------------------------------------
   Future<bool> processNextSyncTask() async {
     if (await _isDeviceBanned()) return false;
 
@@ -61,7 +58,7 @@ class DataManagement {
       if (tasks.isEmpty) return false; // Nichts zu tun
 
       final task = tasks.first;
-      String taskId = task['id'];
+      String taskId = task['id'].toString();
       String taskType = task['task_type'];
       int tId = task['tournament_id'] ?? tournamentId;
       int sId = task['season_id'] ?? seasonId;
@@ -71,7 +68,6 @@ class DataManagement {
       try {
         // 2. Den Auftrag ausführen
         switch (taskType) {
-// --- INITIALISIERUNG EINER NEUEN LIGA ---
           case 'FETCH_TEAMS':
             await apiService.fetchAndStoreTeams(tId, sId);
             break;
@@ -165,11 +161,6 @@ class DataManagement {
     }
   }
 
-  /// ------------------------------------------------------------------
-  /// HILFSMETHODEN
-  /// ------------------------------------------------------------------
-
-  /// Prüft, ob das Gerät gerade wegen zu vieler Anfragen pausieren muss
   Future<bool> _isDeviceBanned() async {
     final prefs = await SharedPreferences.getInstance();
     final banTimestamp = prefs.getInt('api_ban_until');

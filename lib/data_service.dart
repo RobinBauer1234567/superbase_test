@@ -213,6 +213,7 @@ class ApiService {
         // Fehler weitergeben für die lokale Sperre (API Limit)
         if (e.toString().contains('API_LIMIT_REACHED')) rethrow;
         print("!!! KRITISCHER FEHLER bei Spiel $spielId: $e");
+        rethrow;
       }
     }
   }
@@ -1022,6 +1023,7 @@ class ApiService {
     } catch (e) {
       if (e.toString().contains('API_LIMIT_REACHED')) rethrow;
       print('❌ Fehler bei der Initialisierung von $playerId: $e');
+      rethrow;
     }
   }
 
@@ -1252,7 +1254,7 @@ class ApiService {
       print('Fehler bei Liga-Prüfung ($tournamentId): $e');
     }
   }
-  /// Holt den kompletten Kader für EIN TEAM und speichert die Spieler MASSIV PARALLEL.
+
   Future<void> fetchAndStoreSingleSquad(int teamId, int seasonId) async {
     print('👥 Lade Kader für Team $teamId (Saison $seasonId)...');
 
@@ -1286,8 +1288,10 @@ class ApiService {
     } catch (e) {
       if (e.toString().contains('API_LIMIT_REACHED')) rethrow;
       print('⚠️ Fehler beim Abrufen des Kaders für Team $teamId: $e');
+      rethrow;
     }
   }
+
   Future<void> processSquadPlayer(Map<String, dynamic> player, int teamId, int seasonId) async {
     int playerId = player['id'];
     String playerName = player['name'] ?? 'Unbekannt';
@@ -1355,6 +1359,7 @@ class ApiService {
     } catch (e) {
       if (e.toString().contains('API_LIMIT_REACHED')) rethrow;
       print('❌ Fehler bei der Verarbeitung von Kader-Spieler $playerName ($playerId): $e');
+      rethrow;
     }
   }
 }
@@ -1527,6 +1532,7 @@ class SupabaseService {
 
     } catch (error) {
       print('Fehler beim Speichern des Spielers: $error');
+      throw e;
     }
   }
 
@@ -1536,9 +1542,11 @@ class SupabaseService {
         'season_id': seasonId,
         'player_id': playerId,
         'team_id': teamId,
-      }, onConflict: 'season_id, player_id');
+      },
+          onConflict: 'season_id, player_id, team_id');
     } catch (error) {
       print('Fehler beim Speichern der Spieler-Saison-Beziehung: $error');
+      throw e;
     }
   }
 
@@ -1581,17 +1589,16 @@ class SupabaseService {
 
     final data = await Supabase.instance.client
         .from('spieler')
-        .select('*, matchrating!inner(formationsindex, match_position), season_players!inner(team_id, season_id, is_active)')
+    // is_active aus dem inner join entfernt
+        .select('*, matchrating!inner(formationsindex, match_position), season_players!inner(team_id, season_id)')
         .eq('is_active', true)
         .eq('matchrating.spiel_id', spielId)
         .eq('season_players.season_id', seasonId)
-        .eq('season_players.is_active', true)
+    // .eq('season_players.is_active', true) <--- DIESE ZEILE LÖSCHEN!
         .filter('season_players.team_id', 'in', '($heimTeamId, $auswaertsTeamId)');
 
-    print("--- DEBUG: Rohdaten von Supabase erhalten (${data.length} Spieler) ---");
     return data.length;
   }
-
   Future<Map<String, List<String>>> fetchFormationsFromDb({SupabaseClient? client}) async {
     final supabase = client ?? Supabase.instance.client;
 
@@ -2385,13 +2392,7 @@ class SupabaseService {
     return List<Map<String, dynamic>>.from(bidsRes);
   }
   /// Speichert eine neu entdeckte Liga (mit Bild) und ihre aktuellste Saison in der Datenbank
-  Future<void> saveDiscoveredLeague(
-      int tournamentId,
-      String name,
-      String? countryName,
-      String? imageUrl,
-      int seasonId,
-      String seasonYear) async {
+  Future<void> saveDiscoveredLeague(int tournamentId, String name, String? countryName, String? imageUrl, int seasonId, String seasonYear) async {
     try {
       // 1. Das Turnier speichern
       await supabase.from('tournaments').upsert({

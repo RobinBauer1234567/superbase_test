@@ -106,8 +106,9 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
 
     try {
       final heimTeamId = currentSpielData['heimteam_id'];
+      final auswaertsTeamId = currentSpielData['auswärtsteam_id']; // NEU hinzugefügt
       final spielId = currentSpielData['id'];
-
+      final seasonId = currentSpielData['season_id'];
 
       int versuch = 0;
       const maxVersuche = 3;
@@ -115,16 +116,14 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
       while (versuch < maxVersuche) {
         versuch++;
 
-        final seasonId = currentSpielData['season_id'];
-
         final response = await Supabase.instance.client
             .from('matchrating')
-            .select(
-            '*, spieler!inner(*, is_active, season_players!inner(team_id, season_id, is_active))')
+            .select('*, spieler!inner(*, is_active, season_players!inner(team_id, season_id))')
             .eq('spiel_id', spielId)
             .eq('spieler.is_active', true)
             .eq('spieler.season_players.season_id', seasonId)
-            .eq('spieler.season_players.is_active', true);
+            .filter('spieler.season_players.team_id', 'in', '($heimTeamId, $auswaertsTeamId)');
+
 
         final List<dynamic> ratingsData = response as List<dynamic>;
 
