@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:premier_league/viewmodels/data_viewmodel.dart';
+import 'package:premier_league/viewmodels/tournament_viewmodel.dart';
 import 'package:premier_league/utils/color_helper.dart';
 import 'package:premier_league/screens/User/profile_screen.dart';
 import 'package:premier_league/screens/leagues/matchday_team_overlay.dart';
@@ -40,7 +41,9 @@ class _RankingScreenState extends State<RankingScreen> {
     setState(() => _isLoading = true);
     final dataManagement = Provider.of<DataManagement>(context, listen: false);
     final service = dataManagement.supabaseService;
-    final seasonId = dataManagement.seasonId;
+    final currentSeasonId = context.read<TournamentViewModel>().currentSeasonId;
+    if (currentSeasonId == null) return;
+    final seasonId = currentSeasonId;
 
     try {
       _currentRound = await service.getCurrentRound(seasonId);

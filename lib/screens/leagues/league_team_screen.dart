@@ -3,6 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:premier_league/viewmodels/data_viewmodel.dart';
+import 'package:premier_league/viewmodels/tournament_viewmodel.dart';
 import 'package:premier_league/screens/screenelements/match_screen/formations.dart';
 import 'package:premier_league/screens/screenelements/matchday_team_shared.dart';
 import 'package:premier_league/screens/player_screen.dart';
@@ -65,7 +66,9 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
   Future<void> _initMatchdayData() async {
     setState(() => _isLoading = true);
     final dataManagement = Provider.of<DataManagement>(context, listen: false);
-    final seasonId = dataManagement.seasonId;
+    final currentSeasonId = context.read<TournamentViewModel>().currentSeasonId;
+    if (currentSeasonId == null) return;
+    final seasonId = currentSeasonId;
 
     // 1. Aktuellen Spieltag abfragen (hier starten wir standardmäßig)
     final currentRound = await dataManagement.supabaseService.getCurrentRound(
@@ -119,7 +122,9 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
     setState(() => _isLoading = true);
     final dataManagement = Provider.of<DataManagement>(context, listen: false);
     final service = dataManagement.supabaseService;
-    final seasonId = dataManagement.seasonId;
+    final currentSeasonId = context.read<TournamentViewModel>().currentSeasonId;
+    if (currentSeasonId == null) return;
+    final seasonId = currentSeasonId;
 
     try {
       // 1. Alle verfügbaren Formations-Varianten laden
@@ -217,7 +222,9 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
   Future<void> _saveLineupToDb() async {
     final dataManagement = Provider.of<DataManagement>(context, listen: false);
     final service = dataManagement.supabaseService;
-    final seasonId = dataManagement.seasonId;
+    final currentSeasonId = context.read<TournamentViewModel>().currentSeasonId;
+    if (currentSeasonId == null) return;
+    final seasonId = currentSeasonId;
 
     List<Map<String, dynamic>> updates = [];
 

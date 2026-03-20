@@ -6,7 +6,7 @@ import 'package:premier_league/screens/spiel_screen.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:premier_league/screens/team_screen.dart';
-import 'package:premier_league/viewmodels/data_viewmodel.dart';
+import 'package:premier_league/viewmodels/tournament_viewmodel.dart';
 import 'package:premier_league/utils/match_time_helper.dart';
 
 // neu: scrollable_positioned_list
@@ -48,7 +48,11 @@ class _MatchesScreenState extends State<MatchesScreen> {
       setState(() => _isLoading = true);
     }
 
-    final dataManagement = Provider.of<DataManagement>(context, listen: false);
+    final currentSeasonId = context.read<TournamentViewModel>().currentSeasonId;
+    if (currentSeasonId == null) {
+      if (mounted) setState(() => _isLoading = false);
+      return;
+    }
     final supabase = Supabase.instance.client;
 
     try {
@@ -57,7 +61,7 @@ class _MatchesScreenState extends State<MatchesScreen> {
           .select(
         '*, heimteam:team!spiel_heimteam_id_fkey(id, name, image_url), auswaertsteam:team!spiel_auswärtsteam_id_fkey(id, name, image_url)',
       )
-          .eq('season_id', dataManagement.seasonId)
+          .eq('season_id', currentSeasonId)
           .order('datum', ascending: true);
 
       _updateStateWithData(List<Map<String, dynamic>>.from(data));
@@ -126,7 +130,8 @@ class _MatchesScreenState extends State<MatchesScreen> {
   }
 
   void _subscribeToChanges() {
-    final dataManagement = Provider.of<DataManagement>(context, listen: false);
+    final currentSeasonId = context.read<TournamentViewModel>().currentSeasonId;
+    if (currentSeasonId == null) return;
 
     _spieleChannel = Supabase.instance.client
         .channel('public:spiel')
@@ -137,7 +142,7 @@ class _MatchesScreenState extends State<MatchesScreen> {
       filter: PostgresChangeFilter(
         type: PostgresChangeFilterType.eq,
         column: 'season_id',
-        value: dataManagement.seasonId,
+        value: currentSeasonId,
       ),
       callback: (payload) {
         print("🔁 Echtzeit-Update erhalten → Spiele neu laden...");

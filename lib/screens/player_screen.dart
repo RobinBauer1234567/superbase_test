@@ -3,6 +3,7 @@ import 'package:intl/intl.dart';
 import 'package:premier_league/screens/screenelements/radial_chart.dart';
 import 'package:premier_league/screens/spiel_screen.dart';
 import 'package:premier_league/viewmodels/data_viewmodel.dart';
+import 'package:premier_league/viewmodels/tournament_viewmodel.dart';
 import 'package:premier_league/viewmodels/radar_chart_viewmodel.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
@@ -142,8 +143,17 @@ class _PlayerScreenState extends State<PlayerScreen>
       _errorMessage = '';
     });
 
-    final dataManagement = Provider.of<DataManagement>(context, listen: false);
-    final seasonId = dataManagement.seasonId;
+    final currentSeasonId = context.read<TournamentViewModel>().currentSeasonId;
+    if (currentSeasonId == null) {
+      if (mounted) {
+        setState(() {
+          isLoading = false;
+          _errorMessage = 'Keine Saison ausgewählt.';
+        });
+      }
+      return;
+    }
+    final seasonId = currentSeasonId;
 
     try {
       // 1. Spieler- und Teamdaten abrufen (inkl. der neuen Analytics-Felder)
