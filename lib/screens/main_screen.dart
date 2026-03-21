@@ -455,11 +455,11 @@ class _MainScreenState extends State<MainScreen> {
                 onPressed: () {
                   // ✅ NEU: Wenn wir im Turnier-Tab sind, öffne den Switcher!
                   if (isTournamentTab) {
-                    showModalBottomSheet(
-                      context: context,
-                      isScrollControlled: true,
-                      backgroundColor: Colors.transparent,
-                      builder: (context) => const LeagueSettingsScreen(isTournamentTab: true),
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => const LeagueSettingsScreen(isTournamentTab: true),
+                      ),
                     );
                   }
                   // Sonst (wie bisher) in die Liga-Einstellungen
