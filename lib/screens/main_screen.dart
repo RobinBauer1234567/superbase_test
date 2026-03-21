@@ -18,7 +18,6 @@ import 'package:premier_league/screens/User/profile_screen.dart'; // NEU hinzuf�
 import 'package:premier_league/screens/leagues/league_settings_screen.dart';
 import 'package:premier_league/screens/screenelements/league_logo.dart';
 import 'package:premier_league/viewmodels/tournament_viewmodel.dart';
-import 'package:premier_league/screens/screenelements/main_screen/tournament_switcher_sheet.dart';
 
 enum SearchFilter { players, teams }
 
@@ -455,11 +454,11 @@ class _MainScreenState extends State<MainScreen> {
                 onPressed: () {
                   // ✅ NEU: Wenn wir im Turnier-Tab sind, öffne den Switcher!
                   if (isTournamentTab) {
-                    showModalBottomSheet(
-                      context: context,
-                      isScrollControlled: true,
-                      backgroundColor: Colors.transparent,
-                      builder: (context) => const LeagueSettingsScreen(isTournamentTab: true),
+                    Navigator.push(
+                      context,
+                      MaterialPageRoute(
+                        builder: (context) => LeagueSettingsScreen(isTournamentTab: true),
+                      ),
                     );
                   }
                   // Sonst (wie bisher) in die Liga-Einstellungen
