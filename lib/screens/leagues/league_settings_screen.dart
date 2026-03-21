@@ -3,13 +3,21 @@ import 'dart:typed_data';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
+import 'package:premier_league/viewmodels/tournament_viewmodel.dart';
+import 'package:premier_league/screens/screenelements/league_logo.dart';
 
 class LeagueSettingsScreen extends StatefulWidget {
-  final int leagueId;
+  final int? leagueId;
+  final bool isTournamentTab;
 
-  const LeagueSettingsScreen({super.key, required this.leagueId});
+  const LeagueSettingsScreen({
+    super.key,
+    this.leagueId,
+    this.isTournamentTab = false,
+  });
 
   @override
   State<LeagueSettingsScreen> createState() => _LeagueSettingsScreenState();
@@ -39,7 +47,11 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Single
   void initState() {
     super.initState();
     _tabController = TabController(length: 1, vsync: this);
-    _loadLeagueData();
+    if (widget.isTournamentTab) {
+      _isLoading = false;
+    } else {
+      _loadLeagueData();
+    }
   }
 
   @override
@@ -48,14 +60,16 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Single
     super.dispose();
   }
 
-  ImageProvider? _getLeagueImageProvider() {
+  ImageProvider? _getLeagueImageProvider([Map<String, dynamic>? displayData]) {
     if (_localImageBytes != null) return MemoryImage(_localImageBytes!);
-    final url = _leagueData['image_url'] as String?;
+    final source = displayData ?? _leagueData;
+    final url = source['image_url'] as String?;
     if (url != null && url.isNotEmpty) return NetworkImage(url);
     return null;
   }
 
   Future<void> _loadLeagueData() async {
+    if (widget.leagueId == null) return;
     setState(() => _isLoading = true);
 
     try {
@@ -65,7 +79,7 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Single
       final response = await supabase
           .from('leagues')
           .select('*, admin:profiles!leagues_admin_id_fkey(username)')
-          .eq('id', widget.leagueId)
+          .eq('id', widget.leagueId!)
           .single();
 
       _leagueData = response;
@@ -104,7 +118,7 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Single
 
       final newUrl = supabase.storage.from('league_images').getPublicUrl(path);
 
-      await supabase.from('leagues').update({'image_url': newUrl}).eq('id', widget.leagueId);
+      await supabase.from('leagues').update({'image_url': newUrl}).eq('id', widget.leagueId!);
 
       if (mounted) {
         setState(() => _leagueData['image_url'] = newUrl);
@@ -121,7 +135,7 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Single
   Future<void> _updateLeagueName(String newName) async {
     if (!_isAdmin || newName.trim().isEmpty) return;
     try {
-      await supabase.from('leagues').update({'name': newName.trim()}).eq('id', widget.leagueId);
+      await supabase.from('leagues').update({'name': newName.trim()}).eq('id', widget.leagueId!);
       setState(() => _leagueData['name'] = newName.trim());
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Liganame aktualisiert!')));
     } catch (e) {
@@ -132,7 +146,7 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Single
   Future<void> _updateVisibility(bool isPublic) async {
     if (!_isAdmin) return;
     try {
-      await supabase.from('leagues').update({'is_public': isPublic}).eq('id', widget.leagueId);
+      await supabase.from('leagues').update({'is_public': isPublic}).eq('id', widget.leagueId!);
       setState(() => _leagueData['is_public'] = isPublic);
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Fehler: $e')));
@@ -142,7 +156,7 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Single
   Future<void> _updateSquadLimit(int limit) async {
     if (!_isAdmin) return;
     try {
-      await supabase.from('leagues').update({'squad_limit': limit}).eq('id', widget.leagueId);
+      await supabase.from('leagues').update({'squad_limit': limit}).eq('id', widget.leagueId!);
       setState(() => _leagueData['squad_limit'] = limit);
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Kadergröße aktualisiert!')));
     } catch (e) {
@@ -209,6 +223,15 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Single
   @override
   Widget build(BuildContext context) {
     final primaryColor = Theme.of(context).primaryColor;
+    final tournamentViewModel = context.watch<TournamentViewModel>();
+    final selectedTournament = tournamentViewModel.selectedTournament;
+    final selectedSeason = tournamentViewModel.selectedSeason;
+    final displayData = widget.isTournamentTab
+        ? <String, dynamic>{
+            'name': selectedTournament?['name'] ?? 'Turniere',
+            'image_url': selectedTournament?['image_url'],
+          }
+        : _leagueData;
     const double bottomHeight = 48.0;
 
     return Scaffold(
@@ -266,8 +289,8 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Single
                                         CircleAvatar(
                                           radius: leagueImageRadius,
                                           backgroundColor: primaryColor.withOpacity(0.1),
-                                          backgroundImage: _getLeagueImageProvider(),
-                                          child: _getLeagueImageProvider() == null
+                                          backgroundImage: _getLeagueImageProvider(displayData),
+                                          child: _getLeagueImageProvider(displayData) == null
                                               ? Icon(Icons.emoji_events, size: leagueImageRadius, color: primaryColor)
                                               : null,
                                         ),
@@ -286,13 +309,15 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Single
                                     ),
                                     const SizedBox(height: 12),
                                     Text(
-                                      _leagueData['name'] ?? 'Liga',
+                                      displayData['name'] ?? (widget.isTournamentTab ? 'Turniere' : 'Liga'),
                                       style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.black87),
                                       textAlign: TextAlign.center,
                                     ),
                                     const SizedBox(height: 4),
                                     Text(
-                                        'Gemanagt von $_adminUsername',
+                                        widget.isTournamentTab
+                                            ? 'Saison: ${selectedSeason?['name'] ?? 'Unbekannt'}'
+                                            : 'Gemanagt von $_adminUsername',
                                         style: TextStyle(fontSize: 14, color: Colors.grey.shade600)
                                     ),
                                   ],
@@ -315,8 +340,8 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Single
                                     CircleAvatar(
                                       radius: _collapsedImageRadius,
                                       backgroundColor: primaryColor.withOpacity(0.1),
-                                      backgroundImage: _getLeagueImageProvider(),
-                                      child: _getLeagueImageProvider() == null
+                                      backgroundImage: _getLeagueImageProvider(displayData),
+                                      child: _getLeagueImageProvider(displayData) == null
                                           ? Icon(Icons.emoji_events, size: _collapsedImageRadius, color: primaryColor)
                                           : null,
                                     ),
@@ -327,12 +352,14 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Single
                                         crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
                                           Text(
-                                              _leagueData['name'] ?? 'Liga',
+                                              displayData['name'] ?? (widget.isTournamentTab ? 'Turniere' : 'Liga'),
                                               style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.black87),
                                               maxLines: 1, overflow: TextOverflow.ellipsis
                                           ),
                                           Text(
-                                              'Gemanagt von $_adminUsername',
+                                              widget.isTournamentTab
+                                                  ? 'Saison: ${selectedSeason?['name'] ?? 'Unbekannt'}'
+                                                  : 'Gemanagt von $_adminUsername',
                                               style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                                               maxLines: 1, overflow: TextOverflow.ellipsis
                                           ),
@@ -374,7 +401,9 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Single
           child: TabBarView(
             controller: _tabController,
             children: [
-              _buildSettingsTab(primaryColor),
+              widget.isTournamentTab
+                  ? _buildTournamentTab(primaryColor)
+                  : _buildSettingsTab(primaryColor),
             ],
           ),
         ),
@@ -514,6 +543,168 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Single
           ],
         );
       },
+    );
+  }
+
+  Widget _buildTournamentTab(Color primaryColor) {
+    final tournamentViewModel = context.watch<TournamentViewModel>();
+    final tournaments = List<Map<String, dynamic>>.from(tournamentViewModel.allTournaments);
+    final selectedTournamentId = tournamentViewModel.currentTournamentId;
+
+    Map<String, dynamic>? selectedTournament;
+    final List<Map<String, dynamic>> activeAndInitialized = [];
+    final List<Map<String, dynamic>> inactiveOrUninitialized = [];
+
+    Map<String, dynamic>? resolveDisplaySeason(Map<String, dynamic> tournament) {
+      final seasons = List<Map<String, dynamic>>.from(tournament['season'] ?? []);
+      if (seasons.isEmpty) return null;
+      return seasons.firstWhere(
+        (s) => s['is_active'] == true,
+        orElse: () => seasons.first,
+      );
+    }
+
+    for (final tournament in tournaments) {
+      final season = resolveDisplaySeason(tournament);
+      final isSelected = tournament['id'] == selectedTournamentId;
+      final isReady = season?['is_active'] == true && season?['is_initialized'] == true;
+
+      final entry = {
+        ...tournament,
+        'display_season': season,
+        'is_ready': isReady,
+      };
+
+      if (isSelected) {
+        selectedTournament = entry;
+      } else if (isReady) {
+        activeAndInitialized.add(entry);
+      } else {
+        inactiveOrUninitialized.add(entry);
+      }
+    }
+
+    return Builder(
+      builder: (BuildContext context) {
+        return CustomScrollView(
+          key: const PageStorageKey<String>('tournamentTab'),
+          slivers: [
+            SliverOverlapInjector(handle: NestedScrollView.sliverOverlapAbsorberHandleFor(context)),
+            SliverPadding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+              sliver: SliverList(
+                delegate: SliverChildListDelegate([
+                  const Padding(
+                    padding: EdgeInsets.only(left: 8, bottom: 8),
+                    child: Text('AKTUELL AUSGEWÄHLT', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey, fontSize: 12, letterSpacing: 1.2)),
+                  ),
+                  if (selectedTournament != null)
+                    _buildTournamentCard(
+                      tournament: selectedTournament!,
+                      primaryColor: primaryColor,
+                      isSelected: true,
+                      isDisabled: false,
+                    )
+                  else
+                    const Card(child: ListTile(title: Text('Kein Turnier ausgewählt'))),
+                  const SizedBox(height: 24),
+                  const Padding(
+                    padding: EdgeInsets.only(left: 8, bottom: 8),
+                    child: Text('AKTIV & INITIALISIERT', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey, fontSize: 12, letterSpacing: 1.2)),
+                  ),
+                  if (activeAndInitialized.isEmpty)
+                    const Card(child: ListTile(title: Text('Keine aktiven Turniere gefunden')))
+                  else
+                    ...activeAndInitialized.map((t) => Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: _buildTournamentCard(
+                            tournament: t,
+                            primaryColor: primaryColor,
+                            isSelected: false,
+                            isDisabled: false,
+                          ),
+                        )),
+                  const SizedBox(height: 24),
+                  const Padding(
+                    padding: EdgeInsets.only(left: 8, bottom: 8),
+                    child: Text('NICHT AKTIV / NICHT INITIALISIERT', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey, fontSize: 12, letterSpacing: 1.2)),
+                  ),
+                  if (inactiveOrUninitialized.isEmpty)
+                    const Card(child: ListTile(title: Text('Keine weiteren Turniere')))
+                  else
+                    ...inactiveOrUninitialized.map((t) => Padding(
+                          padding: const EdgeInsets.only(bottom: 10),
+                          child: _buildTournamentCard(
+                            tournament: t,
+                            primaryColor: primaryColor,
+                            isSelected: false,
+                            isDisabled: true,
+                          ),
+                        )),
+                  const SizedBox(height: 40),
+                ]),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildTournamentCard({
+    required Map<String, dynamic> tournament,
+    required Color primaryColor,
+    required bool isSelected,
+    required bool isDisabled,
+  }) {
+    final season = tournament['display_season'] as Map<String, dynamic>?;
+    final isReady = tournament['is_ready'] == true;
+    final cardColor = isDisabled ? Colors.grey.shade200 : Colors.white;
+    final textColor = isDisabled ? Colors.grey.shade600 : Colors.black87;
+
+    return Card(
+      color: cardColor,
+      elevation: isSelected ? 3 : 1,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: isSelected ? BorderSide(color: primaryColor, width: 1.5) : BorderSide.none,
+      ),
+      child: ListTile(
+        enabled: !isDisabled,
+        onTap: isDisabled
+            ? null
+            : () {
+                final seasonId = season?['id'];
+                final tournamentId = tournament['id'];
+                if (seasonId is int && tournamentId is int) {
+                  context.read<TournamentViewModel>().selectTournament(tournamentId, seasonId);
+                }
+              },
+        leading: Opacity(
+          opacity: isDisabled ? 0.5 : 1,
+          child: LeagueLogo(
+            imageUrl: tournament['image_url'] as String?,
+            radius: 18,
+          ),
+        ),
+        title: Text(
+          tournament['name'] ?? 'Turnier',
+          style: TextStyle(
+            color: textColor,
+            fontWeight: isSelected ? FontWeight.bold : FontWeight.w600,
+          ),
+        ),
+        subtitle: Text(
+          'Saison: ${season?['name'] ?? 'Unbekannt'}',
+          style: TextStyle(color: isDisabled ? Colors.grey.shade500 : Colors.grey.shade700),
+        ),
+        trailing: isSelected
+            ? Icon(Icons.check_circle, color: primaryColor)
+            : Icon(
+                isReady ? Icons.chevron_right : Icons.block,
+                color: isDisabled ? Colors.grey : Colors.grey.shade500,
+              ),
+      ),
     );
   }
 }
