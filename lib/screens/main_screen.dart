@@ -459,7 +459,7 @@ class _MainScreenState extends State<MainScreen> {
                       context: context,
                       isScrollControlled: true,
                       backgroundColor: Colors.transparent,
-                      builder: (context) => const TournamentSwitcherSheet(),
+                      builder: (context) => const TournamentSwitcherScreen(),
                     );
                   }
                   // Sonst (wie bisher) in die Liga-Einstellungen
