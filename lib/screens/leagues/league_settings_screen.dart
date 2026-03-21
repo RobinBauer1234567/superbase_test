@@ -3,13 +3,17 @@ import 'dart:typed_data';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
+import 'package:premier_league/viewmodels/tournament_viewmodel.dart';
 
 class LeagueSettingsScreen extends StatefulWidget {
-  final int leagueId;
+  final int? leagueId;
+  final bool isTournamentTab;
 
-  const LeagueSettingsScreen({super.key, required this.leagueId});
+  const LeagueSettingsScreen({super.key, this.leagueId, this.isTournamentTab = false})
+      : assert(isTournamentTab || leagueId != null, 'leagueId darf nur im Tournament-Tab leer sein');
 
   @override
   State<LeagueSettingsScreen> createState() => _LeagueSettingsScreenState();
@@ -39,7 +43,11 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Single
   void initState() {
     super.initState();
     _tabController = TabController(length: 1, vsync: this);
-    _loadLeagueData();
+    if (widget.isTournamentTab) {
+      _isLoading = false;
+    } else {
+      _loadLeagueData();
+    }
   }
 
   @override
@@ -49,6 +57,7 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Single
   }
 
   ImageProvider? _getLeagueImageProvider() {
+    if (widget.isTournamentTab) return null;
     if (_localImageBytes != null) return MemoryImage(_localImageBytes!);
     final url = _leagueData['image_url'] as String?;
     if (url != null && url.isNotEmpty) return NetworkImage(url);
@@ -65,7 +74,7 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Single
       final response = await supabase
           .from('leagues')
           .select('*, admin:profiles!leagues_admin_id_fkey(username)')
-          .eq('id', widget.leagueId)
+          .eq('id', widget.leagueId!)
           .single();
 
       _leagueData = response;
@@ -121,7 +130,7 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Single
   Future<void> _updateLeagueName(String newName) async {
     if (!_isAdmin || newName.trim().isEmpty) return;
     try {
-      await supabase.from('leagues').update({'name': newName.trim()}).eq('id', widget.leagueId);
+      await supabase.from('leagues').update({'name': newName.trim()}).eq('id', widget.leagueId!);
       setState(() => _leagueData['name'] = newName.trim());
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Liganame aktualisiert!')));
     } catch (e) {
@@ -132,7 +141,7 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Single
   Future<void> _updateVisibility(bool isPublic) async {
     if (!_isAdmin) return;
     try {
-      await supabase.from('leagues').update({'is_public': isPublic}).eq('id', widget.leagueId);
+      await supabase.from('leagues').update({'is_public': isPublic}).eq('id', widget.leagueId!);
       setState(() => _leagueData['is_public'] = isPublic);
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Fehler: $e')));
@@ -142,7 +151,7 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Single
   Future<void> _updateSquadLimit(int limit) async {
     if (!_isAdmin) return;
     try {
-      await supabase.from('leagues').update({'squad_limit': limit}).eq('id', widget.leagueId);
+      await supabase.from('leagues').update({'squad_limit': limit}).eq('id', widget.leagueId!);
       setState(() => _leagueData['squad_limit'] = limit);
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Kadergröße aktualisiert!')));
     } catch (e) {
@@ -208,8 +217,21 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Single
 
   @override
   Widget build(BuildContext context) {
+    final tournamentViewModel = context.watch<TournamentViewModel>();
     final primaryColor = Theme.of(context).primaryColor;
     const double bottomHeight = 48.0;
+    final currentTournament = tournamentViewModel.selectedTournament;
+    final currentSeason = tournamentViewModel.selectedSeason;
+    final String headerTitle = widget.isTournamentTab
+        ? (currentTournament?['name'] ?? 'Turniere')
+        : (_leagueData['name'] ?? 'Liga');
+    final String headerSubtitle = widget.isTournamentTab
+        ? _buildTournamentStatusText(currentSeason)
+        : 'Gemanagt von $_adminUsername';
+    final String? headerImageUrl = widget.isTournamentTab
+        ? currentTournament?['image_url'] as String?
+        : _leagueData['image_url'] as String?;
+    final bool canEditImage = !widget.isTournamentTab && _isAdmin;
 
     return Scaffold(
       backgroundColor: Colors.grey.shade100,
@@ -266,12 +288,18 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Single
                                         CircleAvatar(
                                           radius: leagueImageRadius,
                                           backgroundColor: primaryColor.withOpacity(0.1),
-                                          backgroundImage: _getLeagueImageProvider(),
-                                          child: _getLeagueImageProvider() == null
+                                          backgroundImage: widget.isTournamentTab
+                                              ? ((headerImageUrl != null && headerImageUrl.isNotEmpty)
+                                              ? NetworkImage(headerImageUrl)
+                                              : null)
+                                              : _getLeagueImageProvider(),
+                                          child: ((widget.isTournamentTab
+                                              ? (headerImageUrl == null || headerImageUrl.isEmpty)
+                                              : _getLeagueImageProvider() == null))
                                               ? Icon(Icons.emoji_events, size: leagueImageRadius, color: primaryColor)
                                               : null,
                                         ),
-                                        if (_isAdmin)
+                                        if (canEditImage)
                                           Positioned(
                                             left: cameraCenterOffset,
                                             top: cameraCenterOffset,
@@ -286,13 +314,13 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Single
                                     ),
                                     const SizedBox(height: 12),
                                     Text(
-                                      _leagueData['name'] ?? 'Liga',
+                                      headerTitle,
                                       style: const TextStyle(fontSize: 22, fontWeight: FontWeight.bold, color: Colors.black87),
                                       textAlign: TextAlign.center,
                                     ),
                                     const SizedBox(height: 4),
                                     Text(
-                                        'Gemanagt von $_adminUsername',
+                                        headerSubtitle,
                                         style: TextStyle(fontSize: 14, color: Colors.grey.shade600)
                                     ),
                                   ],
@@ -315,8 +343,14 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Single
                                     CircleAvatar(
                                       radius: _collapsedImageRadius,
                                       backgroundColor: primaryColor.withOpacity(0.1),
-                                      backgroundImage: _getLeagueImageProvider(),
-                                      child: _getLeagueImageProvider() == null
+                                      backgroundImage: widget.isTournamentTab
+                                          ? ((headerImageUrl != null && headerImageUrl.isNotEmpty)
+                                          ? NetworkImage(headerImageUrl)
+                                          : null)
+                                          : _getLeagueImageProvider(),
+                                      child: ((widget.isTournamentTab
+                                          ? (headerImageUrl == null || headerImageUrl.isEmpty)
+                                          : _getLeagueImageProvider() == null))
                                           ? Icon(Icons.emoji_events, size: _collapsedImageRadius, color: primaryColor)
                                           : null,
                                     ),
@@ -327,12 +361,12 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Single
                                         crossAxisAlignment: CrossAxisAlignment.start,
                                         children: [
                                           Text(
-                                              _leagueData['name'] ?? 'Liga',
+                                              headerTitle,
                                               style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.black87),
                                               maxLines: 1, overflow: TextOverflow.ellipsis
                                           ),
                                           Text(
-                                              'Gemanagt von $_adminUsername',
+                                              headerSubtitle,
                                               style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                                               maxLines: 1, overflow: TextOverflow.ellipsis
                                           ),
@@ -359,8 +393,8 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Single
                       labelColor: primaryColor,
                       unselectedLabelColor: Colors.grey,
                       indicatorColor: primaryColor,
-                      tabs: const [
-                        Tab(text: 'Einstellungen'),
+                      tabs: [
+                        Tab(text: widget.isTournamentTab ? 'Turniere' : 'Einstellungen'),
                       ],
                     ),
                   ),
@@ -374,12 +408,22 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Single
           child: TabBarView(
             controller: _tabController,
             children: [
-              _buildSettingsTab(primaryColor),
+              widget.isTournamentTab
+                  ? _buildTournamentTab(primaryColor, tournamentViewModel)
+                  : _buildSettingsTab(primaryColor),
             ],
           ),
         ),
       ),
     );
+  }
+
+  String _buildTournamentStatusText(Map<String, dynamic>? season) {
+    if (season == null) return 'Keine Saison vorhanden';
+    final bool isActive = season['is_active'] == true;
+    final bool isInitialized = season['is_initialized'] == true;
+    final seasonLabel = season['name'] ?? season['year'] ?? 'Saison';
+    return '$seasonLabel • ${isActive ? "Aktiv" : "Inaktiv"} • ${isInitialized ? "Initialisiert" : "Nicht initialisiert"}';
   }
 
   Widget _buildEditImageButton({
@@ -511,6 +555,112 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Single
                 ]),
               ),
             ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildTournamentTab(Color primaryColor, TournamentViewModel tournamentViewModel) {
+    final selectedId = tournamentViewModel.currentTournamentId;
+    final tournaments = tournamentViewModel.allTournaments;
+
+    Map<String, dynamic> chooseSeason(Map<String, dynamic> tournament) {
+      final seasons = List<Map<String, dynamic>>.from(tournament['season'] ?? []);
+      if (seasons.isEmpty) return <String, dynamic>{};
+      return seasons.firstWhere(
+            (s) => s['is_active'] == true && s['is_initialized'] == true,
+        orElse: () => seasons.first,
+      );
+    }
+
+    bool isActiveInitialized(Map<String, dynamic> tournament) {
+      final season = chooseSeason(tournament);
+      return season['is_active'] == true && season['is_initialized'] == true;
+    }
+
+    final selectedTournament = tournaments.where((t) => t['id'] == selectedId).toList();
+    final activeInitialized = tournaments
+        .where((t) => t['id'] != selectedId && isActiveInitialized(t))
+        .toList();
+    final inactiveOrNotInitialized = tournaments
+        .where((t) => t['id'] != selectedId && !isActiveInitialized(t))
+        .toList();
+
+    final ordered = [...selectedTournament, ...activeInitialized, ...inactiveOrNotInitialized];
+
+    return Builder(
+      builder: (BuildContext context) {
+        return CustomScrollView(
+          key: const PageStorageKey<String>('tournamentTab'),
+          slivers: [
+            SliverOverlapInjector(handle: NestedScrollView.sliverOverlapAbsorberHandleFor(context)),
+            if (ordered.isEmpty)
+              const SliverFillRemaining(
+                hasScrollBody: false,
+                child: Center(child: Text('Keine Turniere gefunden.')),
+              )
+            else
+              SliverPadding(
+                padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 12),
+                sliver: SliverList(
+                  delegate: SliverChildBuilderDelegate(
+                        (context, index) {
+                      final tournament = ordered[index];
+                      final bool isSelected = tournament['id'] == selectedId;
+                      final season = chooseSeason(tournament);
+                      final bool isAvailable = season['is_active'] == true && season['is_initialized'] == true;
+                      final imageUrl = tournament['image_url'] as String?;
+
+                      return Opacity(
+                        opacity: isAvailable || isSelected ? 1 : 0.45,
+                        child: Card(
+                          elevation: isSelected ? 2 : 1,
+                          margin: const EdgeInsets.only(bottom: 12),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(16),
+                            side: isSelected
+                                ? BorderSide(color: primaryColor.withOpacity(0.5), width: 1.5)
+                                : BorderSide.none,
+                          ),
+                          child: ListTile(
+                            contentPadding: const EdgeInsets.all(12),
+                            leading: CircleAvatar(
+                              radius: 20,
+                              backgroundColor: primaryColor.withOpacity(0.1),
+                              backgroundImage: (imageUrl != null && imageUrl.isNotEmpty)
+                                  ? NetworkImage(imageUrl)
+                                  : null,
+                              child: (imageUrl == null || imageUrl.isEmpty)
+                                  ? Icon(Icons.emoji_events, color: primaryColor)
+                                  : null,
+                            ),
+                            title: Text(
+                              tournament['name'] ?? 'Unbekanntes Turnier',
+                              style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16),
+                            ),
+                            subtitle: Text(_buildTournamentStatusText(season)),
+                            trailing: isSelected
+                                ? Icon(Icons.check_circle, color: primaryColor)
+                                : Icon(
+                              isAvailable ? Icons.arrow_forward_ios : Icons.lock_outline,
+                              size: 16,
+                              color: Colors.grey,
+                            ),
+                            onTap: () {
+                              final seasonId = season['id'];
+                              if (seasonId == null) return;
+                              tournamentViewModel.selectTournament(tournament['id'] as int, seasonId as int);
+                              Navigator.pop(context);
+                            },
+                          ),
+                        ),
+                      );
+                    },
+                    childCount: ordered.length,
+                  ),
+                ),
+              ),
           ],
         );
       },
