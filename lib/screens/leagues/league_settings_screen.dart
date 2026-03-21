@@ -116,7 +116,7 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Single
 
     try {
       // Dateiname ist einfach die Liga-ID. Wird überschrieben, wenn schon vorhanden (upsert).
-      final path = '${widget.leagueId}.jpg';
+      final path = '${widget.leagueId!}.jpg';
 
       await supabase.storage.from('league_images').uploadBinary(
         path,
@@ -126,7 +126,7 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Single
 
       final newUrl = supabase.storage.from('league_images').getPublicUrl(path);
 
-      await supabase.from('leagues').update({'image_url': newUrl}).eq('id', widget.leagueId);
+      await supabase.from('leagues').update({'image_url': newUrl}).eq('id', widget.leagueId!);
 
       if (mounted) {
         setState(() => _leagueData['image_url'] = newUrl);
@@ -143,7 +143,7 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Single
   Future<void> _updateLeagueName(String newName) async {
     if (!_isAdmin || widget.isTournamentTab || newName.trim().isEmpty) return;
     try {
-      await supabase.from('leagues').update({'name': newName.trim()}).eq('id', widget.leagueId);
+      await supabase.from('leagues').update({'name': newName.trim()}).eq('id', widget.leagueId!);
       setState(() => _leagueData['name'] = newName.trim());
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Liganame aktualisiert!')));
     } catch (e) {
@@ -154,7 +154,7 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Single
   Future<void> _updateVisibility(bool isPublic) async {
     if (!_isAdmin || widget.isTournamentTab) return;
     try {
-      await supabase.from('leagues').update({'is_public': isPublic}).eq('id', widget.leagueId);
+      await supabase.from('leagues').update({'is_public': isPublic}).eq('id', widget.leagueId!);
       setState(() => _leagueData['is_public'] = isPublic);
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Fehler: $e')));
@@ -164,7 +164,7 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Single
   Future<void> _updateSquadLimit(int limit) async {
     if (!_isAdmin || widget.isTournamentTab) return;
     try {
-      await supabase.from('leagues').update({'squad_limit': limit}).eq('id', widget.leagueId);
+      await supabase.from('leagues').update({'squad_limit': limit}).eq('id', widget.leagueId!);
       setState(() => _leagueData['squad_limit'] = limit);
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Kadergröße aktualisiert!')));
     } catch (e) {
