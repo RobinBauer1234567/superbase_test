@@ -3,13 +3,21 @@ import 'dart:typed_data';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:intl/intl.dart';
+import 'package:premier_league/screens/screenelements/league_logo.dart';
+import 'package:premier_league/viewmodels/tournament_viewmodel.dart';
 
 class LeagueSettingsScreen extends StatefulWidget {
-  final int leagueId;
+  final int? leagueId;
+  final bool isTournamentTab;
 
-  const LeagueSettingsScreen({super.key, required this.leagueId});
+  const LeagueSettingsScreen({
+    super.key,
+    this.leagueId,
+    this.isTournamentTab = false,
+  }) : assert(isTournamentTab || leagueId != null, 'leagueId is required when isTournamentTab is false');
 
   @override
   State<LeagueSettingsScreen> createState() => _LeagueSettingsScreenState();
@@ -59,13 +67,27 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Single
     setState(() => _isLoading = true);
 
     try {
+      if (widget.isTournamentTab) {
+        final tournamentVm = context.read<TournamentViewModel>();
+        final tournament = tournamentVm.selectedTournament;
+
+        _leagueData = {
+          'name': tournament?['name'] ?? 'Turnier',
+          'image_url': tournament?['image_url'],
+        };
+        _adminUsername = 'System';
+
+        if (mounted) setState(() => _isLoading = false);
+        return;
+      }
+
       final currentUser = supabase.auth.currentUser;
       if (currentUser == null) return;
 
       final response = await supabase
           .from('leagues')
           .select('*, admin:profiles!leagues_admin_id_fkey(username)')
-          .eq('id', widget.leagueId)
+          .eq('id', widget.leagueId!)
           .single();
 
       _leagueData = response;
@@ -84,7 +106,7 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Single
 
   // --- BILD UPLOAD (Nur für Admin) ---
   Future<void> _pickNewLeagueImage() async {
-    if (!_isAdmin) return;
+    if (!_isAdmin || widget.isTournamentTab) return;
 
     final picked = await _imagePicker.pickImage(source: ImageSource.gallery, imageQuality: 80);
     if (picked == null) return;
@@ -94,7 +116,7 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Single
 
     try {
       // Dateiname ist einfach die Liga-ID. Wird überschrieben, wenn schon vorhanden (upsert).
-      final path = '${widget.leagueId}.jpg';
+      final path = '${widget.leagueId!}.jpg';
 
       await supabase.storage.from('league_images').uploadBinary(
         path,
@@ -104,7 +126,7 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Single
 
       final newUrl = supabase.storage.from('league_images').getPublicUrl(path);
 
-      await supabase.from('leagues').update({'image_url': newUrl}).eq('id', widget.leagueId);
+      await supabase.from('leagues').update({'image_url': newUrl}).eq('id', widget.leagueId!);
 
       if (mounted) {
         setState(() => _leagueData['image_url'] = newUrl);
@@ -119,9 +141,9 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Single
 
   // --- UPDATE FUNKTIONEN (Nur für Admin) ---
   Future<void> _updateLeagueName(String newName) async {
-    if (!_isAdmin || newName.trim().isEmpty) return;
+    if (!_isAdmin || widget.isTournamentTab || newName.trim().isEmpty) return;
     try {
-      await supabase.from('leagues').update({'name': newName.trim()}).eq('id', widget.leagueId);
+      await supabase.from('leagues').update({'name': newName.trim()}).eq('id', widget.leagueId!);
       setState(() => _leagueData['name'] = newName.trim());
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Liganame aktualisiert!')));
     } catch (e) {
@@ -130,9 +152,9 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Single
   }
 
   Future<void> _updateVisibility(bool isPublic) async {
-    if (!_isAdmin) return;
+    if (!_isAdmin || widget.isTournamentTab) return;
     try {
-      await supabase.from('leagues').update({'is_public': isPublic}).eq('id', widget.leagueId);
+      await supabase.from('leagues').update({'is_public': isPublic}).eq('id', widget.leagueId!);
       setState(() => _leagueData['is_public'] = isPublic);
     } catch (e) {
       ScaffoldMessenger.of(context).showSnackBar(SnackBar(content: Text('Fehler: $e')));
@@ -140,9 +162,9 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Single
   }
 
   Future<void> _updateSquadLimit(int limit) async {
-    if (!_isAdmin) return;
+    if (!_isAdmin || widget.isTournamentTab) return;
     try {
-      await supabase.from('leagues').update({'squad_limit': limit}).eq('id', widget.leagueId);
+      await supabase.from('leagues').update({'squad_limit': limit}).eq('id', widget.leagueId!);
       setState(() => _leagueData['squad_limit'] = limit);
       ScaffoldMessenger.of(context).showSnackBar(const SnackBar(content: Text('Kadergröße aktualisiert!')));
     } catch (e) {
@@ -292,7 +314,7 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Single
                                     ),
                                     const SizedBox(height: 4),
                                     Text(
-                                        'Gemanagt von $_adminUsername',
+                                        widget.isTournamentTab ? 'Turnierauswahl' : 'Gemanagt von $_adminUsername',
                                         style: TextStyle(fontSize: 14, color: Colors.grey.shade600)
                                     ),
                                   ],
@@ -332,7 +354,7 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Single
                                               maxLines: 1, overflow: TextOverflow.ellipsis
                                           ),
                                           Text(
-                                              'Gemanagt von $_adminUsername',
+                                              widget.isTournamentTab ? 'Turnierauswahl' : 'Gemanagt von $_adminUsername',
                                               style: TextStyle(fontSize: 12, color: Colors.grey.shade600),
                                               maxLines: 1, overflow: TextOverflow.ellipsis
                                           ),
@@ -361,7 +383,7 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Single
                       indicatorColor: primaryColor,
                       tabs: const [
                         Tab(text: 'Einstellungen'),
-                      ],
+                      ].map((tab) => widget.isTournamentTab ? const Tab(text: 'Turniere') : tab).toList(),
                     ),
                   ),
                 ),
@@ -374,7 +396,7 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Single
           child: TabBarView(
             controller: _tabController,
             children: [
-              _buildSettingsTab(primaryColor),
+              widget.isTournamentTab ? _buildTournamentTab(primaryColor) : _buildSettingsTab(primaryColor),
             ],
           ),
         ),
@@ -509,6 +531,93 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Single
                   const SizedBox(height: 40),
 
                 ]),
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildTournamentTab(Color primaryColor) {
+    final tournamentVm = context.watch<TournamentViewModel>();
+    final allTournaments = List<Map<String, dynamic>>.from(tournamentVm.allTournaments);
+    final selectedTournamentId = tournamentVm.currentTournamentId;
+
+    Map<String, dynamic>? resolveSeason(Map<String, dynamic> tournament) {
+      final seasons = List<Map<String, dynamic>>.from(tournament['season'] ?? []);
+      if (seasons.isEmpty) return null;
+      final activeInitialized = seasons.where((s) => s['is_active'] == true && s['is_initialized'] == true).toList();
+      if (activeInitialized.isNotEmpty) return activeInitialized.first;
+      final active = seasons.where((s) => s['is_active'] == true).toList();
+      if (active.isNotEmpty) return active.first;
+      return seasons.first;
+    }
+
+    bool isActiveAndInitialized(Map<String, dynamic> tournament) {
+      final season = resolveSeason(tournament);
+      return season?['is_active'] == true && season?['is_initialized'] == true;
+    }
+
+    final selectedTournament = allTournaments.where((t) => t['id'] == selectedTournamentId).toList();
+    final activeInitialized = allTournaments.where((t) => t['id'] != selectedTournamentId && isActiveAndInitialized(t)).toList();
+    final inactiveOrUninitialized = allTournaments.where((t) => t['id'] != selectedTournamentId && !isActiveAndInitialized(t)).toList();
+
+    final ordered = [...selectedTournament, ...activeInitialized, ...inactiveOrUninitialized];
+
+    return Builder(
+      builder: (BuildContext context) {
+        return CustomScrollView(
+          key: const PageStorageKey<String>('tournamentTab'),
+          slivers: [
+            SliverOverlapInjector(handle: NestedScrollView.sliverOverlapAbsorberHandleFor(context)),
+            SliverPadding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+              sliver: SliverList.builder(
+                itemCount: ordered.length,
+                itemBuilder: (context, index) {
+                  final tournament = ordered[index];
+                  final season = resolveSeason(tournament);
+                  final bool isSelected = tournament['id'] == selectedTournamentId;
+                  final bool isEnabled = isSelected || isActiveAndInitialized(tournament);
+
+                  final statusText = isSelected
+                      ? 'Aktuell ausgewählt'
+                      : (isEnabled ? 'Aktiv & initialisiert' : 'Nicht aktiv oder nicht initialisiert');
+
+                  return Opacity(
+                    opacity: isEnabled ? 1 : 0.5,
+                    child: Card(
+                      margin: const EdgeInsets.only(bottom: 12),
+                      elevation: 1,
+                      shape: RoundedRectangleBorder(
+                        borderRadius: BorderRadius.circular(16),
+                        side: isSelected ? BorderSide(color: primaryColor, width: 2) : BorderSide.none,
+                      ),
+                      child: ListTile(
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                        leading: LeagueLogo(imageUrl: tournament['image_url'] as String?, radius: 20),
+                        title: Text(
+                          tournament['name']?.toString() ?? 'Turnier',
+                          style: const TextStyle(fontWeight: FontWeight.w600),
+                        ),
+                        subtitle: Text(statusText),
+                        trailing: isSelected ? Icon(Icons.check_circle, color: primaryColor) : const Icon(Icons.chevron_right),
+                        onTap: season == null || isSelected
+                            ? null
+                            : () {
+                          tournamentVm.selectTournament(tournament['id'] as int, season['id'] as int);
+                          setState(() {
+                            _leagueData = {
+                              'name': tournament['name'],
+                              'image_url': tournament['image_url'],
+                            };
+                          });
+                        },
+                      ),
+                    ),
+                  );
+                },
               ),
             ),
           ],
