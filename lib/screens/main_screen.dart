@@ -459,7 +459,7 @@ class _MainScreenState extends State<MainScreen> {
                       context: context,
                       isScrollControlled: true,
                       backgroundColor: Colors.transparent,
-                      builder: (context) =>  LeagueSettingsScreen(),
+                      builder: (context) => const LeagueSettingsScreen(isTournamentTab: true),
                     );
                   }
                   // Sonst (wie bisher) in die Liga-Einstellungen
