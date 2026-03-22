@@ -64,6 +64,50 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
 
   int get _tabCount => widget.isTournamentTab && _showInitializationTab ? 2 : 1;
 
+  Map<String, dynamic>? _resolveSeason(Map<String, dynamic> tournament) {
+    final seasons = List<Map<String, dynamic>>.from(tournament['season'] ?? []);
+    if (seasons.isEmpty) return null;
+    final activeInitialized = seasons.where((s) => s['is_active'] == true && s['is_initialized'] == true).toList();
+    if (activeInitialized.isNotEmpty) return activeInitialized.first;
+    final active = seasons.where((s) => s['is_active'] == true).toList();
+    if (active.isNotEmpty) return active.first;
+    return seasons.first;
+  }
+
+  bool _isActiveAndInitialized(Map<String, dynamic> tournament) {
+    final season = _resolveSeason(tournament);
+    return season?['is_active'] == true && season?['is_initialized'] == true;
+  }
+
+  bool _isTournamentInitializing(Map<String, dynamic> tournament) {
+    final season = _resolveSeason(tournament);
+    return season?['is_active'] == true && season?['is_initialized'] != true;
+  }
+
+  void _restoreInitializationStateFromTournaments(List<Map<String, dynamic>> tournaments) {
+    if (!widget.isTournamentTab) return;
+
+    final inProgress = tournaments.where(_isTournamentInitializing).toList();
+    if (inProgress.isEmpty) return;
+
+    final fallbackTournament = inProgress.first;
+    final fallbackSeason = _resolveSeason(fallbackTournament);
+    if (fallbackSeason == null) return;
+
+    final currentTournament = inProgress.where((t) => t['id'] == _initializingTournamentId).toList();
+    final activeTournament = currentTournament.isNotEmpty ? currentTournament.first : fallbackTournament;
+    final activeSeason = _resolveSeason(activeTournament);
+    if (activeSeason == null) return;
+
+    _showInitializationTab = true;
+    _initializingTournamentId = activeTournament['id'] as int?;
+    _initializingSeasonId = activeSeason['id'] as int?;
+    _initializationStatus = 'Saison wird aktuell initialisiert...';
+    _initializationProgress = 0.6;
+    _isInitializingSeason = false;
+    _updateTabController();
+  }
+
   void _updateTabController({int? targetIndex}) {
     final int nextLength = _tabCount;
     if (_tabController.length == nextLength) {
@@ -97,7 +141,9 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
     try {
       if (widget.isTournamentTab) {
         final tournamentVm = context.read<TournamentViewModel>();
+        await tournamentVm.fetchTournaments();
         final tournament = tournamentVm.selectedTournament;
+        _restoreInitializationStateFromTournaments(List<Map<String, dynamic>>.from(tournamentVm.allTournaments));
 
         _leagueData = {
           'name': tournament?['name'] ?? 'Turnier',
@@ -310,6 +356,7 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
 
       final tournamentVm = context.read<TournamentViewModel>();
       await tournamentVm.fetchTournaments();
+      _restoreInitializationStateFromTournaments(List<Map<String, dynamic>>.from(tournamentVm.allTournaments));
 
       bool initialized = false;
       for (int attempt = 0; attempt < 10; attempt++) {
@@ -343,6 +390,29 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
         SnackBar(content: Text('Initialisierung fehlgeschlagen: $e')),
       );
     }
+  }
+
+  void _openInitializationTab({
+    required Map<String, dynamic> tournament,
+    required Map<String, dynamic> season,
+  }) {
+    final seasonId = season['id'] as int?;
+    final tournamentId = tournament['id'] as int?;
+    if (seasonId == null || tournamentId == null) return;
+
+    _showInitializationTab = true;
+    _updateTabController(targetIndex: 1);
+    setState(() {
+      _initializingSeasonId = seasonId;
+      _initializingTournamentId = tournamentId;
+      _isInitializingSeason = false;
+      _initializationProgress = 0.6;
+      _initializationStatus = 'Saison wird aktuell initialisiert...';
+      _leagueData = {
+        'name': tournament['name'],
+        'image_url': tournament['image_url'],
+      };
+    });
   }
 
   @override
@@ -671,26 +741,15 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
     final allTournaments = List<Map<String, dynamic>>.from(tournamentVm.allTournaments);
     final selectedTournamentId = tournamentVm.currentTournamentId;
 
-    Map<String, dynamic>? resolveSeason(Map<String, dynamic> tournament) {
-      final seasons = List<Map<String, dynamic>>.from(tournament['season'] ?? []);
-      if (seasons.isEmpty) return null;
-      final activeInitialized = seasons.where((s) => s['is_active'] == true && s['is_initialized'] == true).toList();
-      if (activeInitialized.isNotEmpty) return activeInitialized.first;
-      final active = seasons.where((s) => s['is_active'] == true).toList();
-      if (active.isNotEmpty) return active.first;
-      return seasons.first;
-    }
-
-    bool isActiveAndInitialized(Map<String, dynamic> tournament) {
-      final season = resolveSeason(tournament);
-      return season?['is_active'] == true && season?['is_initialized'] == true;
-    }
-
     final selectedTournament = allTournaments.where((t) => t['id'] == selectedTournamentId).toList();
-    final activeInitialized = allTournaments.where((t) => t['id'] != selectedTournamentId && isActiveAndInitialized(t)).toList();
-    final inactiveOrUninitialized = allTournaments.where((t) => t['id'] != selectedTournamentId && !isActiveAndInitialized(t)).toList();
+    final activeInitialized = allTournaments.where((t) => t['id'] != selectedTournamentId && _isActiveAndInitialized(t)).toList();
+    final initializing = allTournaments.where((t) => t['id'] != selectedTournamentId && _isTournamentInitializing(t)).toList();
+    final inactiveOrUninitialized = allTournaments.where((t) {
+      if (t['id'] == selectedTournamentId) return false;
+      return !_isActiveAndInitialized(t) && !_isTournamentInitializing(t);
+    }).toList();
 
-    final ordered = [...selectedTournament, ...activeInitialized, ...inactiveOrUninitialized];
+    final ordered = [...selectedTournament, ...activeInitialized, ...initializing, ...inactiveOrUninitialized];
 
     return Builder(
       builder: (BuildContext context) {
@@ -704,17 +763,20 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
                 itemCount: ordered.length,
                 itemBuilder: (context, index) {
                   final tournament = ordered[index];
-                  final season = resolveSeason(tournament);
+                  final season = _resolveSeason(tournament);
                   final bool isSelected = tournament['id'] == selectedTournamentId;
-                  final bool isEnabled = isSelected || isActiveAndInitialized(tournament);
-                  final bool needsInitialization = !isEnabled;
+                  final bool isEnabled = isSelected || _isActiveAndInitialized(tournament);
+                  final bool isInitializing = _isTournamentInitializing(tournament);
+                  final bool needsInitialization = !isEnabled && !isInitializing;
 
                   final statusText = isSelected
                       ? 'Aktuell ausgewählt'
-                      : (isEnabled ? 'Aktiv & initialisiert' : 'Nicht aktiv oder nicht initialisiert');
+                      : (isEnabled
+                      ? 'Aktiv & initialisiert'
+                      : (isInitializing ? 'Wird gerade initialisiert' : 'Nicht aktiv oder nicht initialisiert'));
 
                   return Opacity(
-                    opacity: isEnabled ? 1 : 0.5,
+                    opacity: (isEnabled || isInitializing) ? 1 : 0.5,
                     child: Card(
                       margin: const EdgeInsets.only(bottom: 12),
                       elevation: 1,
@@ -736,6 +798,11 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
                             : () {
                           if (needsInitialization) {
                             _showInitializeDialog(tournament, season);
+                            return;
+                          }
+
+                          if (isInitializing) {
+                            _openInitializationTab(tournament: tournament, season: season);
                             return;
                           }
 
