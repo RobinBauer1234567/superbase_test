@@ -23,7 +23,7 @@ class LeagueSettingsScreen extends StatefulWidget {
   State<LeagueSettingsScreen> createState() => _LeagueSettingsScreenState();
 }
 
-class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with SingleTickerProviderStateMixin {
+class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with TickerProviderStateMixin {
   static const double _headerImageRadius = 50;
   static const double _collapsedImageRadius = 18;
   static const double _imageEditButtonSize = 28;
@@ -287,15 +287,17 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Single
     final tournamentId = tournament['id'] as int?;
     if (seasonId == null || tournamentId == null) return;
 
+    // Wichtig: Erst Controller-Länge anpassen, dann Rebuild auslösen.
+    // Sonst kann kurzzeitig TabBar/TabBarView (2 Tabs) mit Controller-Länge 1 gerendert werden.
+    _showInitializationTab = true;
+    _updateTabController(targetIndex: 1);
     setState(() {
-      _showInitializationTab = true;
       _isInitializingSeason = true;
       _initializingSeasonId = seasonId;
       _initializingTournamentId = tournamentId;
       _initializationProgress = 0.2;
       _initializationStatus = 'Aktiviere Saison in der Datenbank...';
     });
-    _updateTabController(targetIndex: 1);
 
     try {
       await supabase.from('season').update({'is_active': true}).eq('id', seasonId);
