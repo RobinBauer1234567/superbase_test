@@ -71,6 +71,36 @@
   },
   {
     "schemaname": "public",
+    "tablename": "sync_tasks",
+    "policyname": "Jeder darf Sync-Tasks lesen",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "SELECT",
+    "qual": "true",
+    "with_check": null
+  },
+  {
+    "schemaname": "public",
+    "tablename": "sync_tasks",
+    "policyname": "User dürfen Sync-Tasks erstellen",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "INSERT",
+    "qual": null,
+    "with_check": "true"
+  },
+  {
+    "schemaname": "public",
+    "tablename": "sync_tasks",
+    "policyname": "User dürfen Tasks updaten",
+    "permissive": "PERMISSIVE",
+    "roles": "{public}",
+    "cmd": "UPDATE",
+    "qual": "true",
+    "with_check": null
+  },
+  {
+    "schemaname": "public",
     "tablename": "transfer_bids",
     "policyname": "Market visible to everyone",
     "permissive": "PERMISSIVE",
