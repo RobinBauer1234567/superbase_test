@@ -32,6 +32,7 @@ class _MainScreenState extends State<MainScreen> {
   static const double _bottomNavLeagueLogoRadius = 14;
 
   int _selectedIndex = 0;
+  int _premierScreenVersion = 0;
   List<Map<String, dynamic>> _userLeagues = [];
   bool _isLoading = true;
   Map<int, String> _leagueImageUrls = {};
@@ -388,7 +389,7 @@ class _MainScreenState extends State<MainScreen> {
 
     const double actionTabWidth = 64.0;
 
-    final List<Widget> screens = [ const PremierLeagueScreen() ];
+    final List<Widget> screens = [ PremierLeagueScreen(key: ValueKey('premier-$_premierScreenVersion')) ];
 
     // ✅ NEU: Das Icon und der Text für den ersten Tab sind jetzt dynamisch!
     // Wir kürzen den Namen auf max. 10 Zeichen, damit die Leiste nicht platzt.
@@ -454,12 +455,19 @@ class _MainScreenState extends State<MainScreen> {
                 onPressed: () {
                   // ✅ NEU: Wenn wir im Turnier-Tab sind, öffne den Switcher!
                   if (isTournamentTab) {
-                    Navigator.push(
+                    Navigator.push<bool>(
                       context,
                       MaterialPageRoute(
                         builder: (context) => const LeagueSettingsScreen(isTournamentTab: true),
                       ),
-                    );
+                    ).then((shouldReload) {
+                      if (shouldReload == true && mounted) {
+                        setState(() {
+                          _selectedIndex = 0;
+                          _premierScreenVersion++;
+                        });
+                      }
+                    });
                   }
                   // Sonst (wie bisher) in die Liga-Einstellungen
                   else if (_selectedLeagueId != 0) {
