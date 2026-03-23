@@ -81,8 +81,10 @@ CREATE TABLE public.leagues (
   is_active boolean DEFAULT true,
   last_activity_at timestamp with time zone DEFAULT now(),
   image_url text,
+  tournament_id bigint,
   CONSTRAINT leagues_pkey PRIMARY KEY (id),
-  CONSTRAINT leagues_admin_id_fkey FOREIGN KEY (admin_id) REFERENCES public.profiles(user_id)
+  CONSTRAINT leagues_admin_id_fkey FOREIGN KEY (admin_id) REFERENCES public.profiles(user_id),
+  CONSTRAINT leagues_tournament_id_fkey FOREIGN KEY (tournament_id) REFERENCES public.tournaments(id)
 );
 CREATE TABLE public.marktwert_historie (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
@@ -126,14 +128,16 @@ CREATE TABLE public.season (
   name text NOT NULL,
   is_active boolean DEFAULT true,
   last_schedule_update timestamp with time zone DEFAULT '2000-01-01 00:00:00+00'::timestamp with time zone,
-  CONSTRAINT season_pkey PRIMARY KEY (id)
+  tournament_id bigint,
+  is_initialized boolean DEFAULT false,
+  CONSTRAINT season_pkey PRIMARY KEY (id),
+  CONSTRAINT season_tournament_id_fkey FOREIGN KEY (tournament_id) REFERENCES public.tournaments(id)
 );
 CREATE TABLE public.season_players (
   season_id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,
   player_id integer NOT NULL,
   team_id integer NOT NULL,
-  is_active boolean DEFAULT true,
-  CONSTRAINT season_players_pkey PRIMARY KEY (season_id, player_id, team_id),
+  is_active boolean NOT NULL DEFAULT true,
   CONSTRAINT season_players_season_id_fkey FOREIGN KEY (season_id) REFERENCES public.season(id),
   CONSTRAINT season_players_player_id_fkey FOREIGN KEY (player_id) REFERENCES public.spieler(id),
   CONSTRAINT season_players_team_id_fkey FOREIGN KEY (team_id) REFERENCES public.team(id)
@@ -157,6 +161,13 @@ CREATE TABLE public.spiel (
   hometeam_formation text,
   awayteam_formation text,
   last_updated_at timestamp with time zone DEFAULT '2000-01-01 00:00:00+00'::timestamp with time zone,
+  incidents jsonb DEFAULT '[]'::jsonb,
+  home_color_primary text,
+  home_color_number text,
+  away_color_primary text,
+  away_color_number text,
+  home_goalkeeper_color_primary text,
+  away_goalkeeper_color_primary text,
   CONSTRAINT spiel_pkey PRIMARY KEY (id),
   CONSTRAINT spiel_auswärtsteam_id_fkey FOREIGN KEY (auswärtsteam_id) REFERENCES public.team(id),
   CONSTRAINT spiel_heimteam_id_fkey FOREIGN KEY (heimteam_id) REFERENCES public.team(id),
@@ -168,8 +179,8 @@ CREATE TABLE public.spieler (
   id integer NOT NULL DEFAULT nextval('spieler_id_seq'::regclass) UNIQUE,
   name text NOT NULL,
   profilbild_url text,
-  season_players integer,
   position text,
+  is_active boolean NOT NULL DEFAULT true,
   CONSTRAINT spieler_pkey PRIMARY KEY (id)
 );
 CREATE TABLE public.spieler_analytics (
@@ -198,6 +209,25 @@ CREATE TABLE public.spieltag (
   CONSTRAINT spieltag_season_id_fkey FOREIGN KEY (season_id) REFERENCES public.season(id),
   CONSTRAINT spieltag_best_formation_fkey FOREIGN KEY (best_formation) REFERENCES public.formation(formation)
 );
+CREATE TABLE public.sync_tasks (
+  id uuid NOT NULL DEFAULT gen_random_uuid(),
+  task_type text NOT NULL,
+  status text DEFAULT 'PENDING'::text,
+  priority integer DEFAULT 5,
+  depends_on_task_id uuid,
+  tournament_id bigint,
+  season_id bigint,
+  round_id integer,
+  match_id bigint,
+  locked_at timestamp with time zone,
+  locked_by uuid,
+  error_message text,
+  created_at timestamp with time zone DEFAULT now(),
+  team_id bigint,
+  updated_at timestamp with time zone DEFAULT now(),
+  CONSTRAINT sync_tasks_pkey PRIMARY KEY (id),
+  CONSTRAINT sync_tasks_depends_on_task_id_fkey FOREIGN KEY (depends_on_task_id) REFERENCES public.sync_tasks(id)
+);
 CREATE TABLE public.team (
   id integer NOT NULL DEFAULT nextval('team_id_seq'::regclass) UNIQUE,
   name text NOT NULL UNIQUE,
@@ -212,6 +242,14 @@ CREATE TABLE public.team_analytics (
   last_updated_at timestamp with time zone DEFAULT now(),
   CONSTRAINT team_analytics_pkey PRIMARY KEY (team_id),
   CONSTRAINT team_analytics_team_id_fkey FOREIGN KEY (team_id) REFERENCES public.team(id)
+);
+CREATE TABLE public.tournaments (
+  id bigint NOT NULL,
+  name text NOT NULL,
+  country_name text,
+  created_at timestamp with time zone DEFAULT now(),
+  image_url text,
+  CONSTRAINT tournaments_pkey PRIMARY KEY (id)
 );
 CREATE TABLE public.transfer_bids (
   id bigint GENERATED ALWAYS AS IDENTITY NOT NULL,

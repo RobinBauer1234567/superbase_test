@@ -108,7 +108,6 @@ class DataManagement {
             break;
 
           case 'UPDATE_SCHEDULE':
-            await apiService.fetchAndStoreSpieltage(tId, sId);
             List<int> offeneSpieltage = await supabaseService.fetchUnfinishedSpieltage(sId);
             for (var spieltag in offeneSpieltage) {
               await apiService.fetchAndStoreSpiele(tId, sId, spieltag);

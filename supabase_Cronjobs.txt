@@ -7,8 +7,8 @@
     "active": true,
     "status": "succeeded",
     "return_message": "1 row",
-    "start_time": "2026-03-07 19:50:00.015944+00",
-    "end_time": "2026-03-07 19:50:00.017978+00"
+    "start_time": "2026-03-23 10:19:00.332994+00",
+    "end_time": "2026-03-23 10:19:00.344901+00"
   },
   {
     "jobid": 7,
@@ -18,8 +18,8 @@
     "active": true,
     "status": "succeeded",
     "return_message": "1 row",
-    "start_time": "2026-03-07 03:00:00.06547+00",
-    "end_time": "2026-03-07 03:00:00.101379+00"
+    "start_time": "2026-03-23 03:00:00.097869+00",
+    "end_time": "2026-03-23 03:00:00.120785+00"
   },
   {
     "jobid": 8,
@@ -29,8 +29,8 @@
     "active": true,
     "status": "succeeded",
     "return_message": "1 row",
-    "start_time": "2026-03-07 19:30:00.027733+00",
-    "end_time": "2026-03-07 19:30:00.033109+00"
+    "start_time": "2026-03-23 10:00:00.036488+00",
+    "end_time": "2026-03-23 10:00:00.08755+00"
   },
   {
     "jobid": 12,
@@ -40,7 +40,18 @@
     "active": true,
     "status": "succeeded",
     "return_message": "1 row",
-    "start_time": "2026-03-07 03:00:00.062004+00",
-    "end_time": "2026-03-07 03:00:02.493089+00"
+    "start_time": "2026-03-23 03:00:00.096787+00",
+    "end_time": "2026-03-23 03:00:01.177934+00"
+  },
+  {
+    "jobid": 13,
+    "jobname": "generate-routine-tasks-job",
+    "schedule": "*/2 * * * *",
+    "command": "SELECT public.generate_routine_sync_tasks();",
+    "active": true,
+    "status": "succeeded",
+    "return_message": "1 row",
+    "start_time": "2026-03-23 10:18:00.435347+00",
+    "end_time": "2026-03-23 10:18:00.468905+00"
   }
 ]

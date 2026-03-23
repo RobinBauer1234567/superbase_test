@@ -44,7 +44,7 @@
     "table_name": "league_players",
     "trigger_name": "trigger_freeze_late_transfers",
     "action_timing": "AFTER",
-    "event_manipulation": "INSERT",
+    "event_manipulation": "UPDATE",
     "action_statement": "EXECUTE FUNCTION freeze_late_transfers()"
   },
   {
@@ -52,7 +52,7 @@
     "table_name": "league_players",
     "trigger_name": "trigger_freeze_late_transfers",
     "action_timing": "AFTER",
-    "event_manipulation": "UPDATE",
+    "event_manipulation": "INSERT",
     "action_statement": "EXECUTE FUNCTION freeze_late_transfers()"
   },
   {
@@ -92,7 +92,7 @@
     "table_name": "matchrating",
     "trigger_name": "trigger_update_gesamtstatistiken",
     "action_timing": "AFTER",
-    "event_manipulation": "INSERT",
+    "event_manipulation": "DELETE",
     "action_statement": "EXECUTE FUNCTION update_gesamtstatistiken()"
   },
   {
@@ -100,8 +100,16 @@
     "table_name": "matchrating",
     "trigger_name": "trigger_update_gesamtstatistiken",
     "action_timing": "AFTER",
-    "event_manipulation": "DELETE",
+    "event_manipulation": "INSERT",
     "action_statement": "EXECUTE FUNCTION update_gesamtstatistiken()"
+  },
+  {
+    "trigger_schema": "public",
+    "table_name": "season",
+    "trigger_name": "on_season_activated",
+    "action_timing": "AFTER",
+    "event_manipulation": "UPDATE",
+    "action_statement": "EXECUTE FUNCTION handle_season_activation()"
   },
   {
     "trigger_schema": "public",
@@ -132,7 +140,7 @@
     "table_name": "spiel",
     "trigger_name": "trigger_update_spieltag_zeitfenster",
     "action_timing": "AFTER",
-    "event_manipulation": "UPDATE",
+    "event_manipulation": "INSERT",
     "action_statement": "EXECUTE FUNCTION update_spieltag_zeitfenster()"
   },
   {
@@ -140,7 +148,7 @@
     "table_name": "spiel",
     "trigger_name": "trigger_update_spieltag_zeitfenster",
     "action_timing": "AFTER",
-    "event_manipulation": "INSERT",
+    "event_manipulation": "UPDATE",
     "action_statement": "EXECUTE FUNCTION update_spieltag_zeitfenster()"
   },
   {
@@ -154,7 +162,7 @@
   {
     "trigger_schema": "public",
     "table_name": "spieler_analytics",
-    "trigger_name": "trigger_log_marktwert",
+    "trigger_name": "trigger_log_marktwert_insert",
     "action_timing": "AFTER",
     "event_manipulation": "INSERT",
     "action_statement": "EXECUTE FUNCTION log_marktwert_history()"
@@ -162,10 +170,18 @@
   {
     "trigger_schema": "public",
     "table_name": "spieler_analytics",
-    "trigger_name": "trigger_log_marktwert",
+    "trigger_name": "trigger_log_marktwert_update",
     "action_timing": "AFTER",
     "event_manipulation": "UPDATE",
     "action_statement": "EXECUTE FUNCTION log_marktwert_history()"
+  },
+  {
+    "trigger_schema": "public",
+    "table_name": "sync_tasks",
+    "trigger_name": "on_sync_task_status_change",
+    "action_timing": "AFTER",
+    "event_manipulation": "UPDATE",
+    "action_statement": "EXECUTE FUNCTION check_and_unlock_dependencies()"
   },
   {
     "trigger_schema": "public",
