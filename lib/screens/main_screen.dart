@@ -459,7 +459,14 @@ class _MainScreenState extends State<MainScreen> {
                       MaterialPageRoute(
                         builder: (context) => const LeagueSettingsScreen(isTournamentTab: true),
                       ),
-                    );
+                    ).then((result) async {
+                      if (result == true && mounted) {
+                        setState(() {
+                          _selectedIndex = 0;
+                        });
+                        await tournamentViewModel.fetchTournaments();
+                      }
+                    });
                   }
                   // Sonst (wie bisher) in die Liga-Einstellungen
                   else if (_selectedLeagueId != 0) {

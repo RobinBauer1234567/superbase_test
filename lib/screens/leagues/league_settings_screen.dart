@@ -424,11 +424,22 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
       _isInitializingSeason = false;
       _initializationProgress = 0.6;
       _initializationStatus = 'Saison wird aktuell initialisiert...';
+    });
+  }
+
+  void _selectActiveTournamentAndReturn({
+    required TournamentViewModel tournamentVm,
+    required Map<String, dynamic> tournament,
+    required Map<String, dynamic> season,
+  }) {
+    tournamentVm.selectTournament(tournament['id'] as int, season['id'] as int);
+    setState(() {
       _leagueData = {
         'name': tournament['name'],
         'image_url': tournament['image_url'],
       };
     });
+    Navigator.of(context).pop(true);
   }
 
   @override
@@ -784,7 +795,111 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
       return !_isActiveAndInitialized(t) && !_isTournamentInitializing(t);
     }).toList();
 
-    final ordered = [...selectedTournament, ...activeInitialized, ...initializing, ...inactiveOrUninitialized];
+    List<Widget> sectionChildren({
+      required String title,
+      required List<Map<String, dynamic>> tournaments,
+      required bool showChevronForDefaultTrailing,
+    }) {
+      if (tournaments.isEmpty) return const [];
+
+      return [
+        Padding(
+          padding: const EdgeInsets.fromLTRB(4, 8, 4, 8),
+          child: Text(
+            title,
+            style: const TextStyle(
+              fontWeight: FontWeight.bold,
+              color: Colors.blueGrey,
+              fontSize: 12,
+              letterSpacing: 1.1,
+            ),
+          ),
+        ),
+        ...tournaments.map((tournament) {
+          final season = _resolveSeason(tournament);
+          final bool isSelected = tournament['id'] == selectedTournamentId;
+          final bool isInitializationFocus = tournament['id'] == _initializingTournamentId && _showInitializationTab;
+          final bool isEnabled = isSelected || _isActiveAndInitialized(tournament);
+          final bool isInitializing = _isTournamentInitializing(tournament);
+          final bool needsInitialization = !isEnabled && !isInitializing;
+
+          final statusText = isInitializationFocus
+              ? (isSelected ? 'Ausgewählt & Initialisierungsansicht' : 'In Initialisierungsansicht geöffnet')
+              : (isSelected
+              ? 'Aktuell ausgewählt'
+              : (isEnabled
+              ? 'Aktiv & initialisiert'
+              : (isInitializing ? 'Wird gerade initialisiert' : 'Nicht aktiv oder nicht initialisiert')));
+
+          return Opacity(
+            opacity: (isEnabled || isInitializing) ? 1 : 0.5,
+            child: Card(
+              margin: const EdgeInsets.only(bottom: 12),
+              elevation: 1,
+              shape: RoundedRectangleBorder(
+                borderRadius: BorderRadius.circular(16),
+                side: isSelected
+                    ? BorderSide(color: primaryColor, width: 2)
+                    : (isInitializationFocus
+                    ? BorderSide(color: Colors.orange.shade700, width: 2)
+                    : BorderSide.none),
+              ),
+              child: ListTile(
+                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+                leading: LeagueLogo(imageUrl: tournament['image_url'] as String?, radius: 20),
+                title: Text(
+                  tournament['name']?.toString() ?? 'Turnier',
+                  style: const TextStyle(fontWeight: FontWeight.w600),
+                ),
+                subtitle: Text(statusText),
+                trailing: isSelected
+                    ? Icon(Icons.check_circle, color: primaryColor)
+                    : (isInitializationFocus
+                    ? Icon(Icons.hourglass_top, color: Colors.orange.shade700)
+                    : (showChevronForDefaultTrailing ? const Icon(Icons.chevron_right) : null)),
+                onTap: season == null || isSelected
+                    ? null
+                    : () {
+                  if (needsInitialization) {
+                    _showInitializeDialog(tournament, season);
+                    return;
+                  }
+
+                  if (isInitializing) {
+                    _openInitializationTab(tournament: tournament, season: season);
+                    return;
+                  }
+
+                  _selectActiveTournamentAndReturn(
+                    tournamentVm: tournamentVm,
+                    tournament: tournament,
+                    season: season,
+                  );
+                },
+              ),
+            ),
+          );
+        }),
+      ];
+    }
+
+    final sections = <Widget>[
+      ...sectionChildren(
+        title: 'Aktiv & initialisiert',
+        tournaments: [...selectedTournament, ...activeInitialized],
+        showChevronForDefaultTrailing: true,
+      ),
+      ...sectionChildren(
+        title: 'Wird initialisiert',
+        tournaments: initializing,
+        showChevronForDefaultTrailing: false,
+      ),
+      ...sectionChildren(
+        title: 'Nicht initialisiert',
+        tournaments: inactiveOrUninitialized,
+        showChevronForDefaultTrailing: true,
+      ),
+    ];
 
     return Builder(
       builder: (BuildContext context) {
@@ -794,76 +909,8 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
             SliverOverlapInjector(handle: NestedScrollView.sliverOverlapAbsorberHandleFor(context)),
             SliverPadding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-              sliver: SliverList.builder(
-                itemCount: ordered.length,
-                itemBuilder: (context, index) {
-                  final tournament = ordered[index];
-                  final season = _resolveSeason(tournament);
-                  final bool isSelected = tournament['id'] == selectedTournamentId;
-                  final bool isInitializationFocus = tournament['id'] == _initializingTournamentId && _showInitializationTab;
-                  final bool isEnabled = isSelected || _isActiveAndInitialized(tournament);
-                  final bool isInitializing = _isTournamentInitializing(tournament);
-                  final bool needsInitialization = !isEnabled && !isInitializing;
-
-                  final statusText = isInitializationFocus
-                      ? (isSelected ? 'Ausgewählt & Initialisierungsansicht' : 'In Initialisierungsansicht geöffnet')
-                      : (isSelected
-                      ? 'Aktuell ausgewählt'
-                      : (isEnabled
-                      ? 'Aktiv & initialisiert'
-                      : (isInitializing ? 'Wird gerade initialisiert' : 'Nicht aktiv oder nicht initialisiert')));
-
-                  return Opacity(
-                    opacity: (isEnabled || isInitializing) ? 1 : 0.5,
-                    child: Card(
-                      margin: const EdgeInsets.only(bottom: 12),
-                      elevation: 1,
-                      shape: RoundedRectangleBorder(
-                        borderRadius: BorderRadius.circular(16),
-                        side: isSelected
-                            ? BorderSide(color: primaryColor, width: 2)
-                            : (isInitializationFocus
-                            ? BorderSide(color: Colors.orange.shade700, width: 2)
-                            : BorderSide.none),
-                      ),
-                      child: ListTile(
-                        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                        leading: LeagueLogo(imageUrl: tournament['image_url'] as String?, radius: 20),
-                        title: Text(
-                          tournament['name']?.toString() ?? 'Turnier',
-                          style: const TextStyle(fontWeight: FontWeight.w600),
-                        ),
-                        subtitle: Text(statusText),
-                        trailing: isSelected
-                            ? Icon(Icons.check_circle, color: primaryColor)
-                            : (isInitializationFocus
-                            ? Icon(Icons.hourglass_top, color: Colors.orange.shade700)
-                            : const Icon(Icons.chevron_right)),
-                        onTap: season == null || isSelected
-                            ? null
-                            : () {
-                          if (needsInitialization) {
-                            _showInitializeDialog(tournament, season);
-                            return;
-                          }
-
-                          if (isInitializing) {
-                            _openInitializationTab(tournament: tournament, season: season);
-                            return;
-                          }
-
-                          tournamentVm.selectTournament(tournament['id'] as int, season['id'] as int);
-                          setState(() {
-                            _leagueData = {
-                              'name': tournament['name'],
-                              'image_url': tournament['image_url'],
-                            };
-                          });
-                        },
-                      ),
-                    ),
-                  );
-                },
+              sliver: SliverList(
+                delegate: SliverChildListDelegate(sections),
               ),
             ),
           ],
