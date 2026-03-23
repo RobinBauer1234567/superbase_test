@@ -53,13 +53,21 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
   void initState() {
     super.initState();
     _tabController = TabController(length: _tabCount, vsync: this);
+    _tabController.addListener(_handleTabChanged);
     _loadLeagueData();
   }
 
   @override
   void dispose() {
+    _tabController.removeListener(_handleTabChanged);
     _tabController.dispose();
     super.dispose();
+  }
+
+  void _handleTabChanged() {
+    if (!mounted) return;
+    if (_tabController.indexIsChanging) return;
+    setState(() {});
   }
 
   int get _tabCount => widget.isTournamentTab && _showInitializationTab ? 2 : 1;
@@ -82,6 +90,12 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
   bool _isTournamentInitializing(Map<String, dynamic> tournament) {
     final season = _resolveSeason(tournament);
     return season?['is_active'] == true && season?['is_initialized'] != true;
+  }
+
+  Map<String, dynamic>? _findTournamentById(List<Map<String, dynamic>> tournaments, int? tournamentId) {
+    if (tournamentId == null) return null;
+    final matches = tournaments.where((t) => t['id'] == tournamentId).toList();
+    return matches.isNotEmpty ? matches.first : null;
   }
 
   void _restoreInitializationStateFromTournaments(List<Map<String, dynamic>> tournaments) {
@@ -118,8 +132,10 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
     }
 
     final int fallbackIndex = (_tabController.index).clamp(0, nextLength - 1);
+    _tabController.removeListener(_handleTabChanged);
     _tabController.dispose();
     _tabController = TabController(length: nextLength, vsync: this, initialIndex: fallbackIndex);
+    _tabController.addListener(_handleTabChanged);
 
     if (targetIndex != null && targetIndex < nextLength) {
       WidgetsBinding.instance.addPostFrameCallback((_) {
@@ -418,7 +434,17 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
   @override
   Widget build(BuildContext context) {
     final primaryColor = Theme.of(context).primaryColor;
-    const double bottomHeight = 48.0;
+    final tournamentVm = context.watch<TournamentViewModel>();
+    final allTournaments = List<Map<String, dynamic>>.from(tournamentVm.allTournaments);
+    final selectedTournamentId = tournamentVm.currentTournamentId;
+    final selectedInitializingTournament = _findTournamentById(allTournaments, _initializingTournamentId);
+    final bool showInitializingRow = widget.isTournamentTab &&
+        _showInitializationTab &&
+        _tabController.index == 1 &&
+        selectedInitializingTournament != null &&
+        _isTournamentInitializing(selectedInitializingTournament) &&
+        selectedTournamentId != _initializingTournamentId;
+    final double bottomHeight = showInitializingRow ? 104.0 : 48.0;
 
     return Scaffold(
       backgroundColor: Colors.grey.shade100,
@@ -559,22 +585,31 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
                   },
                 ),
                 bottom: PreferredSize(
-                  preferredSize: const Size.fromHeight(bottomHeight),
+                  preferredSize: Size.fromHeight(bottomHeight),
                   child: Container(
                     color: Colors.white,
-                    child: TabBar(
-                      controller: _tabController,
-                      isScrollable: false,
-                      labelColor: primaryColor,
-                      unselectedLabelColor: Colors.grey,
-                      indicatorColor: primaryColor,
-                      tabs: widget.isTournamentTab
-                          ? [
-                        const Tab(text: 'Turniere'),
-                        if (_showInitializationTab) const Tab(text: 'Initialisierung'),
-                      ]
-                          : const [
-                        Tab(text: 'Einstellungen'),
+                    child: Column(
+                      mainAxisSize: MainAxisSize.min,
+                      children: [
+                        TabBar(
+                          controller: _tabController,
+                          isScrollable: false,
+                          labelColor: primaryColor,
+                          unselectedLabelColor: Colors.grey,
+                          indicatorColor: primaryColor,
+                          tabs: widget.isTournamentTab
+                              ? [
+                            const Tab(text: 'Turniere'),
+                            if (_showInitializationTab) const Tab(text: 'Initialisierung'),
+                          ]
+                              : const [
+                            Tab(text: 'Einstellungen'),
+                          ],
+                        ),
+                        if (showInitializingRow)
+                          _buildSelectedInitializingTournamentRow(
+                            tournament: selectedInitializingTournament,
+                          ),
                       ],
                     ),
                   ),
@@ -765,15 +800,18 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
                   final tournament = ordered[index];
                   final season = _resolveSeason(tournament);
                   final bool isSelected = tournament['id'] == selectedTournamentId;
+                  final bool isInitializationFocus = tournament['id'] == _initializingTournamentId && _showInitializationTab;
                   final bool isEnabled = isSelected || _isActiveAndInitialized(tournament);
                   final bool isInitializing = _isTournamentInitializing(tournament);
                   final bool needsInitialization = !isEnabled && !isInitializing;
 
-                  final statusText = isSelected
+                  final statusText = isInitializationFocus
+                      ? (isSelected ? 'Ausgewählt & Initialisierungsansicht' : 'In Initialisierungsansicht geöffnet')
+                      : (isSelected
                       ? 'Aktuell ausgewählt'
                       : (isEnabled
                       ? 'Aktiv & initialisiert'
-                      : (isInitializing ? 'Wird gerade initialisiert' : 'Nicht aktiv oder nicht initialisiert'));
+                      : (isInitializing ? 'Wird gerade initialisiert' : 'Nicht aktiv oder nicht initialisiert')));
 
                   return Opacity(
                     opacity: (isEnabled || isInitializing) ? 1 : 0.5,
@@ -782,7 +820,11 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
                       elevation: 1,
                       shape: RoundedRectangleBorder(
                         borderRadius: BorderRadius.circular(16),
-                        side: isSelected ? BorderSide(color: primaryColor, width: 2) : BorderSide.none,
+                        side: isSelected
+                            ? BorderSide(color: primaryColor, width: 2)
+                            : (isInitializationFocus
+                            ? BorderSide(color: Colors.orange.shade700, width: 2)
+                            : BorderSide.none),
                       ),
                       child: ListTile(
                         contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
@@ -792,7 +834,11 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
                           style: const TextStyle(fontWeight: FontWeight.w600),
                         ),
                         subtitle: Text(statusText),
-                        trailing: isSelected ? Icon(Icons.check_circle, color: primaryColor) : const Icon(Icons.chevron_right),
+                        trailing: isSelected
+                            ? Icon(Icons.check_circle, color: primaryColor)
+                            : (isInitializationFocus
+                            ? Icon(Icons.hourglass_top, color: Colors.orange.shade700)
+                            : const Icon(Icons.chevron_right)),
                         onTap: season == null || isSelected
                             ? null
                             : () {
@@ -823,6 +869,39 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
           ],
         );
       },
+    );
+  }
+
+  Widget _buildSelectedInitializingTournamentRow({
+    required Map<String, dynamic> tournament,
+  }) {
+    final imageUrl = tournament['image_url'] as String?;
+
+    return InkWell(
+      onTap: () => _tabController.animateTo(0),
+      child: Container(
+        height: 56,
+        padding: const EdgeInsets.symmetric(horizontal: 16),
+        decoration: BoxDecoration(
+          color: Colors.white,
+          border: Border(bottom: BorderSide(color: Colors.grey.shade200, width: 1)),
+        ),
+        child: Row(
+          children: [
+            LeagueLogo(imageUrl: imageUrl, radius: 16),
+            const SizedBox(width: 12),
+            Expanded(
+              child: Text(
+                tournament['name']?.toString() ?? 'Turnier',
+                style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: Colors.black87),
+                maxLines: 1,
+                overflow: TextOverflow.ellipsis,
+              ),
+            ),
+            const Icon(Icons.swap_horiz, color: Colors.grey),
+          ],
+        ),
+      ),
     );
   }
 
