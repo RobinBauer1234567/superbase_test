@@ -23,7 +23,7 @@ class LeagueSettingsScreen extends StatefulWidget {
   State<LeagueSettingsScreen> createState() => _LeagueSettingsScreenState();
 }
 
-class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with SingleTickerProviderStateMixin {
+class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with TickerProviderStateMixin {
   static const double _headerImageRadius = 50;
   static const double _collapsedImageRadius = 18;
   static const double _imageEditButtonSize = 28;
@@ -42,11 +42,17 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Single
 
   // Bild-Variablen
   Uint8List? _localImageBytes;
+  bool _showInitializationTab = false;
+  bool _isInitializingSeason = false;
+  double _initializationProgress = 0;
+  String _initializationStatus = 'Warte auf Start...';
+  int? _initializingTournamentId;
+  int? _initializingSeasonId;
 
   @override
   void initState() {
     super.initState();
-    _tabController = TabController(length: 1, vsync: this);
+    _tabController = TabController(length: _tabCount, vsync: this);
     _loadLeagueData();
   }
 
@@ -54,6 +60,72 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Single
   void dispose() {
     _tabController.dispose();
     super.dispose();
+  }
+
+  int get _tabCount => widget.isTournamentTab && _showInitializationTab ? 2 : 1;
+
+  Map<String, dynamic>? _resolveSeason(Map<String, dynamic> tournament) {
+    final seasons = List<Map<String, dynamic>>.from(tournament['season'] ?? []);
+    if (seasons.isEmpty) return null;
+    final activeInitialized = seasons.where((s) => s['is_active'] == true && s['is_initialized'] == true).toList();
+    if (activeInitialized.isNotEmpty) return activeInitialized.first;
+    final active = seasons.where((s) => s['is_active'] == true).toList();
+    if (active.isNotEmpty) return active.first;
+    return seasons.first;
+  }
+
+  bool _isActiveAndInitialized(Map<String, dynamic> tournament) {
+    final season = _resolveSeason(tournament);
+    return season?['is_active'] == true && season?['is_initialized'] == true;
+  }
+
+  bool _isTournamentInitializing(Map<String, dynamic> tournament) {
+    final season = _resolveSeason(tournament);
+    return season?['is_active'] == true && season?['is_initialized'] != true;
+  }
+
+  void _restoreInitializationStateFromTournaments(List<Map<String, dynamic>> tournaments) {
+    if (!widget.isTournamentTab) return;
+
+    final inProgress = tournaments.where(_isTournamentInitializing).toList();
+    if (inProgress.isEmpty) return;
+
+    final fallbackTournament = inProgress.first;
+    final fallbackSeason = _resolveSeason(fallbackTournament);
+    if (fallbackSeason == null) return;
+
+    final currentTournament = inProgress.where((t) => t['id'] == _initializingTournamentId).toList();
+    final activeTournament = currentTournament.isNotEmpty ? currentTournament.first : fallbackTournament;
+    final activeSeason = _resolveSeason(activeTournament);
+    if (activeSeason == null) return;
+
+    _showInitializationTab = true;
+    _initializingTournamentId = activeTournament['id'] as int?;
+    _initializingSeasonId = activeSeason['id'] as int?;
+    _initializationStatus = 'Saison wird aktuell initialisiert...';
+    _initializationProgress = 0.6;
+    _isInitializingSeason = false;
+    _updateTabController();
+  }
+
+  void _updateTabController({int? targetIndex}) {
+    final int nextLength = _tabCount;
+    if (_tabController.length == nextLength) {
+      if (targetIndex != null && targetIndex < nextLength) {
+        _tabController.animateTo(targetIndex);
+      }
+      return;
+    }
+
+    final int fallbackIndex = (_tabController.index).clamp(0, nextLength - 1);
+    _tabController.dispose();
+    _tabController = TabController(length: nextLength, vsync: this, initialIndex: fallbackIndex);
+
+    if (targetIndex != null && targetIndex < nextLength) {
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (mounted) _tabController.animateTo(targetIndex);
+      });
+    }
   }
 
   ImageProvider? _getLeagueImageProvider() {
@@ -69,7 +141,9 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Single
     try {
       if (widget.isTournamentTab) {
         final tournamentVm = context.read<TournamentViewModel>();
+        await tournamentVm.fetchTournaments();
         final tournament = tournamentVm.selectedTournament;
+        _restoreInitializationStateFromTournaments(List<Map<String, dynamic>>.from(tournamentVm.allTournaments));
 
         _leagueData = {
           'name': tournament?['name'] ?? 'Turnier',
@@ -228,6 +302,119 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Single
     );
   }
 
+  Future<void> _showInitializeDialog(Map<String, dynamic> tournament, Map<String, dynamic> season) async {
+    await showDialog<void>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Liga initialisieren?'),
+        content: const Text('Möchtest du die Liga initialisieren?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.of(context).pop(),
+            child: const Text('Nein'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              Navigator.of(context).pop();
+              _initializeLeagueSeason(tournament: tournament, season: season);
+            },
+            child: const Text('Ja'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<void> _initializeLeagueSeason({
+    required Map<String, dynamic> tournament,
+    required Map<String, dynamic> season,
+  }) async {
+    final seasonId = season['id'] as int?;
+    final tournamentId = tournament['id'] as int?;
+    if (seasonId == null || tournamentId == null) return;
+
+    // Wichtig: Erst Controller-Länge anpassen, dann Rebuild auslösen.
+    // Sonst kann kurzzeitig TabBar/TabBarView (2 Tabs) mit Controller-Länge 1 gerendert werden.
+    _showInitializationTab = true;
+    _updateTabController(targetIndex: 1);
+    setState(() {
+      _isInitializingSeason = true;
+      _initializingSeasonId = seasonId;
+      _initializingTournamentId = tournamentId;
+      _initializationProgress = 0.2;
+      _initializationStatus = 'Aktiviere Saison in der Datenbank...';
+    });
+
+    try {
+      await supabase.from('season').update({'is_active': true}).eq('id', seasonId);
+
+      if (!mounted) return;
+      setState(() {
+        _initializationProgress = 0.45;
+        _initializationStatus = 'Saison ist aktiv. Initialisierung wird geprüft...';
+      });
+
+      final tournamentVm = context.read<TournamentViewModel>();
+      await tournamentVm.fetchTournaments();
+      _restoreInitializationStateFromTournaments(List<Map<String, dynamic>>.from(tournamentVm.allTournaments));
+
+      bool initialized = false;
+      for (int attempt = 0; attempt < 10; attempt++) {
+        final response = await supabase
+            .from('season')
+            .select('is_initialized')
+            .eq('id', seasonId)
+            .single();
+
+        initialized = response['is_initialized'] == true;
+        if (initialized) break;
+        await Future.delayed(const Duration(seconds: 2));
+      }
+
+      if (!mounted) return;
+      setState(() {
+        _isInitializingSeason = false;
+        _initializationProgress = initialized ? 1.0 : 0.75;
+        _initializationStatus = initialized
+            ? 'Initialisierung abgeschlossen. Du kannst jetzt in das Turnier wechseln.'
+            : 'Initialisierung läuft noch. Bitte kurz warten und später erneut prüfen.';
+      });
+    } catch (e) {
+      if (!mounted) return;
+      setState(() {
+        _isInitializingSeason = false;
+        _initializationProgress = 0;
+        _initializationStatus = 'Fehler bei der Initialisierung: $e';
+      });
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(content: Text('Initialisierung fehlgeschlagen: $e')),
+      );
+    }
+  }
+
+  void _openInitializationTab({
+    required Map<String, dynamic> tournament,
+    required Map<String, dynamic> season,
+  }) {
+    final seasonId = season['id'] as int?;
+    final tournamentId = tournament['id'] as int?;
+    if (seasonId == null || tournamentId == null) return;
+
+    _showInitializationTab = true;
+    _updateTabController(targetIndex: 1);
+    setState(() {
+      _initializingSeasonId = seasonId;
+      _initializingTournamentId = tournamentId;
+      _isInitializingSeason = false;
+      _initializationProgress = 0.6;
+      _initializationStatus = 'Saison wird aktuell initialisiert...';
+      _leagueData = {
+        'name': tournament['name'],
+        'image_url': tournament['image_url'],
+      };
+    });
+  }
+
   @override
   Widget build(BuildContext context) {
     final primaryColor = Theme.of(context).primaryColor;
@@ -381,9 +568,14 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Single
                       labelColor: primaryColor,
                       unselectedLabelColor: Colors.grey,
                       indicatorColor: primaryColor,
-                      tabs: const [
+                      tabs: widget.isTournamentTab
+                          ? [
+                        const Tab(text: 'Turniere'),
+                        if (_showInitializationTab) const Tab(text: 'Initialisierung'),
+                      ]
+                          : const [
                         Tab(text: 'Einstellungen'),
-                      ].map((tab) => widget.isTournamentTab ? const Tab(text: 'Turniere') : tab).toList(),
+                      ],
                     ),
                   ),
                 ),
@@ -395,8 +587,13 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Single
           behavior: ScrollConfiguration.of(context).copyWith(scrollbars: false),
           child: TabBarView(
             controller: _tabController,
-            children: [
-              widget.isTournamentTab ? _buildTournamentTab(primaryColor) : _buildSettingsTab(primaryColor),
+            children: widget.isTournamentTab
+                ? [
+              _buildTournamentTab(primaryColor),
+              if (_showInitializationTab) _buildInitializationTab(primaryColor),
+            ]
+                : [
+              _buildSettingsTab(primaryColor),
             ],
           ),
         ),
@@ -544,26 +741,15 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Single
     final allTournaments = List<Map<String, dynamic>>.from(tournamentVm.allTournaments);
     final selectedTournamentId = tournamentVm.currentTournamentId;
 
-    Map<String, dynamic>? resolveSeason(Map<String, dynamic> tournament) {
-      final seasons = List<Map<String, dynamic>>.from(tournament['season'] ?? []);
-      if (seasons.isEmpty) return null;
-      final activeInitialized = seasons.where((s) => s['is_active'] == true && s['is_initialized'] == true).toList();
-      if (activeInitialized.isNotEmpty) return activeInitialized.first;
-      final active = seasons.where((s) => s['is_active'] == true).toList();
-      if (active.isNotEmpty) return active.first;
-      return seasons.first;
-    }
-
-    bool isActiveAndInitialized(Map<String, dynamic> tournament) {
-      final season = resolveSeason(tournament);
-      return season?['is_active'] == true && season?['is_initialized'] == true;
-    }
-
     final selectedTournament = allTournaments.where((t) => t['id'] == selectedTournamentId).toList();
-    final activeInitialized = allTournaments.where((t) => t['id'] != selectedTournamentId && isActiveAndInitialized(t)).toList();
-    final inactiveOrUninitialized = allTournaments.where((t) => t['id'] != selectedTournamentId && !isActiveAndInitialized(t)).toList();
+    final activeInitialized = allTournaments.where((t) => t['id'] != selectedTournamentId && _isActiveAndInitialized(t)).toList();
+    final initializing = allTournaments.where((t) => t['id'] != selectedTournamentId && _isTournamentInitializing(t)).toList();
+    final inactiveOrUninitialized = allTournaments.where((t) {
+      if (t['id'] == selectedTournamentId) return false;
+      return !_isActiveAndInitialized(t) && !_isTournamentInitializing(t);
+    }).toList();
 
-    final ordered = [...selectedTournament, ...activeInitialized, ...inactiveOrUninitialized];
+    final ordered = [...selectedTournament, ...activeInitialized, ...initializing, ...inactiveOrUninitialized];
 
     return Builder(
       builder: (BuildContext context) {
@@ -577,16 +763,20 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Single
                 itemCount: ordered.length,
                 itemBuilder: (context, index) {
                   final tournament = ordered[index];
-                  final season = resolveSeason(tournament);
+                  final season = _resolveSeason(tournament);
                   final bool isSelected = tournament['id'] == selectedTournamentId;
-                  final bool isEnabled = isSelected || isActiveAndInitialized(tournament);
+                  final bool isEnabled = isSelected || _isActiveAndInitialized(tournament);
+                  final bool isInitializing = _isTournamentInitializing(tournament);
+                  final bool needsInitialization = !isEnabled && !isInitializing;
 
                   final statusText = isSelected
                       ? 'Aktuell ausgewählt'
-                      : (isEnabled ? 'Aktiv & initialisiert' : 'Nicht aktiv oder nicht initialisiert');
+                      : (isEnabled
+                      ? 'Aktiv & initialisiert'
+                      : (isInitializing ? 'Wird gerade initialisiert' : 'Nicht aktiv oder nicht initialisiert'));
 
                   return Opacity(
-                    opacity: isEnabled ? 1 : 0.5,
+                    opacity: (isEnabled || isInitializing) ? 1 : 0.5,
                     child: Card(
                       margin: const EdgeInsets.only(bottom: 12),
                       elevation: 1,
@@ -606,6 +796,16 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Single
                         onTap: season == null || isSelected
                             ? null
                             : () {
+                          if (needsInitialization) {
+                            _showInitializeDialog(tournament, season);
+                            return;
+                          }
+
+                          if (isInitializing) {
+                            _openInitializationTab(tournament: tournament, season: season);
+                            return;
+                          }
+
                           tournamentVm.selectTournament(tournament['id'] as int, season['id'] as int);
                           setState(() {
                             _leagueData = {
@@ -618,6 +818,57 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Single
                     ),
                   );
                 },
+              ),
+            ),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildInitializationTab(Color primaryColor) {
+    return Builder(
+      builder: (BuildContext context) {
+        return CustomScrollView(
+          key: const PageStorageKey<String>('initializationTab'),
+          slivers: [
+            SliverOverlapInjector(handle: NestedScrollView.sliverOverlapAbsorberHandleFor(context)),
+            SliverPadding(
+              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+              sliver: SliverToBoxAdapter(
+                child: Card(
+                  elevation: 1,
+                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        const Text(
+                          'Turnier-Initialisierung',
+                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                        ),
+                        const SizedBox(height: 8),
+                        Text(
+                          'Turnier-ID: ${_initializingTournamentId ?? '-'} | Saison-ID: ${_initializingSeasonId ?? '-'}',
+                          style: TextStyle(color: Colors.grey.shade700),
+                        ),
+                        const SizedBox(height: 16),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(999),
+                          child: LinearProgressIndicator(
+                            value: _isInitializingSeason ? null : _initializationProgress,
+                            minHeight: 10,
+                            color: primaryColor,
+                            backgroundColor: primaryColor.withOpacity(0.2),
+                          ),
+                        ),
+                        const SizedBox(height: 12),
+                        Text(_initializationStatus),
+                      ],
+                    ),
+                  ),
+                ),
               ),
             ),
           ],
