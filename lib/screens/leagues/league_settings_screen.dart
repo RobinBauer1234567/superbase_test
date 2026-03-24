@@ -979,6 +979,9 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
   Widget _buildInitializationTab(Color primaryColor) {
     return Builder(
       builder: (BuildContext context) {
+        final tournamentId = _initializingTournamentId;
+        final seasonId = _initializingSeasonId;
+
         return CustomScrollView(
           key: const PageStorageKey<String>('initializationTab'),
           slivers: [
@@ -986,44 +989,304 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
             SliverPadding(
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
               sliver: SliverToBoxAdapter(
-                child: Card(
-                  elevation: 1,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Turnier-Initialisierung',
-                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                child: Column(
+                  children: [
+                    Card(
+                      elevation: 1,
+                      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                      child: Padding(
+                        padding: const EdgeInsets.all(16),
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const Text(
+                              'Turnier-Initialisierung',
+                              style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
+                            ),
+                            const SizedBox(height: 8),
+                            Text(
+                              'Turnier-ID: ${_initializingTournamentId ?? '-'} | Saison-ID: ${_initializingSeasonId ?? '-'}',
+                              style: TextStyle(color: Colors.grey.shade700),
+                            ),
+                            const SizedBox(height: 16),
+                            ClipRRect(
+                              borderRadius: BorderRadius.circular(999),
+                              child: LinearProgressIndicator(
+                                value: _isInitializingSeason ? null : _initializationProgress,
+                                minHeight: 10,
+                                color: primaryColor,
+                                backgroundColor: primaryColor.withOpacity(0.2),
+                              ),
+                            ),
+                            const SizedBox(height: 12),
+                            Text(_initializationStatus),
+                          ],
                         ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Turnier-ID: ${_initializingTournamentId ?? '-'} | Saison-ID: ${_initializingSeasonId ?? '-'}',
-                          style: TextStyle(color: Colors.grey.shade700),
-                        ),
-                        const SizedBox(height: 16),
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(999),
-                          child: LinearProgressIndicator(
-                            value: _isInitializingSeason ? null : _initializationProgress,
-                            minHeight: 10,
-                            color: primaryColor,
-                            backgroundColor: primaryColor.withOpacity(0.2),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        Text(_initializationStatus),
-                      ],
+                      ),
                     ),
-                  ),
+                    const SizedBox(height: 16),
+                    if (tournamentId == null || seasonId == null)
+                      Card(
+                        elevation: 1,
+                        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                        child: const Padding(
+                          padding: EdgeInsets.all(16),
+                          child: Text('Keine aktive Initialisierung ausgewählt.'),
+                        ),
+                      )
+                    else
+                      StreamBuilder<List<Map<String, dynamic>>>(
+                        stream: supabase
+                            .from('sync_tasks')
+                            .stream(primaryKey: ['id'])
+                            .eq('tournament_id', tournamentId)
+                            .eq('season_id', seasonId)
+                            .order('created_at'),
+                        builder: (context, snapshot) {
+                          if (snapshot.hasError) {
+                            return Card(
+                              elevation: 1,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                              child: Padding(
+                                padding: const EdgeInsets.all(16),
+                                child: Text('Fehler beim Laden der Tasks: ${snapshot.error}'),
+                              ),
+                            );
+                          }
+
+                          if (!snapshot.hasData) {
+                            return Card(
+                              elevation: 1,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                              child: const Padding(
+                                padding: EdgeInsets.all(20),
+                                child: Center(child: CircularProgressIndicator()),
+                              ),
+                            );
+                          }
+
+                          final tasks = snapshot.data!;
+                          if (tasks.isEmpty) {
+                            return Card(
+                              elevation: 1,
+                              shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                              child: const Padding(
+                                padding: EdgeInsets.all(16),
+                                child: Text('Noch keine sync_tasks für diese Saison vorhanden.'),
+                              ),
+                            );
+                          }
+
+                          final processingIndex = tasks.indexWhere((task) {
+                            final status = (task['status'] ?? '').toString().toUpperCase();
+                            return status == 'PROCESSING' || status == 'PENDING';
+                          });
+                          final expandedIndex = processingIndex >= 0 ? processingIndex : tasks.length - 1;
+
+                          return Column(
+                            children: List.generate(tasks.length, (index) {
+                              final task = tasks[index];
+                              return _buildSyncTaskCard(
+                                task: task,
+                                isExpanded: index == expandedIndex,
+                                primaryColor: primaryColor,
+                              );
+                            }),
+                          );
+                        },
+                      ),
+                  ],
                 ),
               ),
             ),
           ],
         );
       },
+    );
+  }
+
+  Widget _buildSyncTaskCard({
+    required Map<String, dynamic> task,
+    required bool isExpanded,
+    required Color primaryColor,
+  }) {
+    final status = (task['status'] ?? 'UNBEKANNT').toString().toUpperCase();
+    final taskType = (task['task_type'] ?? 'UNBEKANNT').toString();
+    final createdAt = task['created_at']?.toString();
+    final updatedAt = task['updated_at']?.toString();
+    final teamId = task['team_id'];
+    final matchId = task['match_id'];
+    final priority = task['priority'];
+    final errorMessage = task['error_message']?.toString();
+
+    final bool isCompleted = status == 'COMPLETED';
+    final bool isProcessing = status == 'PROCESSING';
+    final bool isPending = status == 'PENDING';
+
+    final IconData statusIcon = isCompleted
+        ? Icons.check_circle
+        : isProcessing
+        ? Icons.sync
+        : isPending
+        ? Icons.hourglass_top
+        : status == 'FAILED'
+        ? Icons.error
+        : Icons.info_outline;
+
+    final Color statusColor = isCompleted
+        ? Colors.green.shade700
+        : isProcessing
+        ? primaryColor
+        : isPending
+        ? Colors.orange.shade700
+        : status == 'FAILED'
+        ? Colors.red.shade700
+        : Colors.blueGrey.shade700;
+
+    final Map<String, String> taskTitles = {
+      'FETCH_TEAMS': 'Teams laden',
+      'FETCH_TEAM_SQUAD': 'Team-Kader laden',
+      'FETCH_ROUNDS': 'Spieltage laden',
+      'FETCH_MATCHES': 'Spiele laden',
+      'UPDATE_MATCH': 'Spiel aktualisieren',
+      'UPDATE_SCHEDULE': 'Spielplan aktualisieren',
+      'SYNC_TRANSFERS': 'Transfers synchronisieren',
+      'REPAIR_PLAYERS': 'Spieler reparieren',
+    };
+
+    final taskTitle = taskTitles[taskType] ?? taskType;
+    final subtitle = isCompleted
+        ? 'Abgeschlossen'
+        : isProcessing
+        ? 'Wird gerade bearbeitet'
+        : isPending
+        ? 'Wartet auf Verarbeitung'
+        : status;
+
+    String formatDate(String? value) {
+      if (value == null || value.isEmpty) return '-';
+      final parsed = DateTime.tryParse(value);
+      if (parsed == null) return value;
+      return DateFormat('dd.MM.yyyy HH:mm').format(parsed.toLocal());
+    }
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      elevation: 1,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: isExpanded
+            ? BorderSide(color: statusColor, width: 1.5)
+            : isCompleted
+            ? BorderSide(color: Colors.green.shade100, width: 1)
+            : BorderSide.none,
+      ),
+      child: AnimatedContainer(
+        duration: const Duration(milliseconds: 200),
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(statusIcon, color: statusColor),
+                const SizedBox(width: 10),
+                Expanded(
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Text(
+                        taskTitle,
+                        style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15),
+                      ),
+                      const SizedBox(height: 2),
+                      Text(
+                        subtitle,
+                        style: TextStyle(color: statusColor, fontWeight: FontWeight.w600, fontSize: 12),
+                      ),
+                    ],
+                  ),
+                ),
+                if (isCompleted)
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+                    decoration: BoxDecoration(
+                      color: Colors.green.shade50,
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      'COMPLETED',
+                      style: TextStyle(
+                        color: Colors.green.shade800,
+                        fontWeight: FontWeight.bold,
+                        fontSize: 11,
+                        letterSpacing: 0.2,
+                      ),
+                    ),
+                  )
+                else if (isProcessing)
+                  const SizedBox(
+                    width: 18,
+                    height: 18,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
+              ],
+            ),
+            if (isExpanded) ...[
+              const SizedBox(height: 14),
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: statusColor.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(12),
+                ),
+                child: Column(
+                  crossAxisAlignment: CrossAxisAlignment.start,
+                  children: [
+                    _buildTaskInfoRow('Task-Typ', taskType),
+                    _buildTaskInfoRow('Status', status),
+                    _buildTaskInfoRow('Priorität', priority?.toString() ?? '-'),
+                    if (teamId != null) _buildTaskInfoRow('Team-ID', teamId.toString()),
+                    if (matchId != null) _buildTaskInfoRow('Match-ID', matchId.toString()),
+                    _buildTaskInfoRow('Erstellt', formatDate(createdAt)),
+                    _buildTaskInfoRow('Letztes Update', formatDate(updatedAt)),
+                    if (errorMessage != null && errorMessage.isNotEmpty)
+                      _buildTaskInfoRow('Fehler', errorMessage),
+                  ],
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTaskInfoRow(String label, String value) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 6),
+      child: Row(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          SizedBox(
+            width: 110,
+            child: Text(
+              '$label:',
+              style: TextStyle(
+                color: Colors.grey.shade700,
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
+            ),
+          ),
+          Expanded(
+            child: Text(
+              value,
+              style: const TextStyle(fontSize: 12),
+            ),
+          ),
+        ],
+      ),
     );
   }
 }
