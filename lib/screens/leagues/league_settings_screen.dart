@@ -48,6 +48,7 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
   String _initializationStatus = 'Warte auf Start...';
   int? _initializingTournamentId;
   int? _initializingSeasonId;
+  final Set<String> _expandedTaskTypes = <String>{};
   static const List<String> _taskOrder = <String>[
     'FETCH_TEAMS',
     'FETCH_TEAM_SQUAD',
@@ -1142,46 +1143,41 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
               return Card(
                 margin: const EdgeInsets.only(bottom: 10),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                child: Padding(
-                  padding: const EdgeInsets.all(14),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Container(
-                            width: 40,
-                            height: 40,
-                            decoration: BoxDecoration(
-                              color: accent.withOpacity(0.14),
-                              borderRadius: BorderRadius.circular(12),
-                            ),
-                            child: Icon(_taskIcon(type), color: accent),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
-                                const SizedBox(height: 2),
-                                Text(subtitle, style: TextStyle(color: Colors.grey.shade700, fontSize: 13)),
-                              ],
-                            ),
-                          ),
-                          const SizedBox(width: 8),
-                          _buildStatusBadge(
-                            label: isCompleted
-                                ? 'COMPLETED'
-                                : (processing > 0 ? 'IN PROGRESS' : (failed > 0 ? 'FAILED' : 'WAITING')),
-                            color: isCompleted
-                                ? Colors.green
-                                : (processing > 0 ? primaryColor : (failed > 0 ? Colors.red : Colors.orange)),
-                          ),
-                        ],
+                child: Theme(
+                  data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+                  child: ExpansionTile(
+                    tilePadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 10),
+                    childrenPadding: const EdgeInsets.fromLTRB(14, 0, 14, 14),
+                    initiallyExpanded: isActive,
+                    onExpansionChanged: (expanded) {
+                      setState(() {
+                        if (expanded) {
+                          _expandedTaskTypes.add(type);
+                        } else {
+                          _expandedTaskTypes.remove(type);
+                        }
+                      });
+                    },
+                    leading: Container(
+                      width: 40,
+                      height: 40,
+                      decoration: BoxDecoration(
+                        color: accent.withOpacity(0.14),
+                        borderRadius: BorderRadius.circular(12),
                       ),
-                      const SizedBox(height: 12),
+                      child: Icon(_taskIcon(type), color: accent),
+                    ),
+                    title: Text(title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+                    subtitle: Text(subtitle, style: TextStyle(color: Colors.grey.shade700, fontSize: 13)),
+                    trailing: _buildStatusBadge(
+                      label: isCompleted
+                          ? 'COMPLETED'
+                          : (processing > 0 ? 'IN PROGRESS' : (failed > 0 ? 'FAILED' : 'WAITING')),
+                      color: isCompleted
+                          ? Colors.green
+                          : (processing > 0 ? primaryColor : (failed > 0 ? Colors.red : Colors.orange)),
+                    ),
+                    children: [
                       ClipRRect(
                         borderRadius: BorderRadius.circular(999),
                         child: LinearProgressIndicator(
@@ -1193,39 +1189,13 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
                       ),
                       const SizedBox(height: 8),
                       Text('$completed / $total erledigt', style: TextStyle(color: Colors.grey.shade800)),
-                      if (isActive) ...[
-                        const SizedBox(height: 10),
-                        const Divider(height: 1),
-                        const SizedBox(height: 10),
-                        Text('Aktive Aufschlüsselung', style: TextStyle(color: accent, fontWeight: FontWeight.w700)),
-                        const SizedBox(height: 8),
-                        ...rows.take(6).map((row) {
-                          final status = (row['status'] ?? '-').toString().toUpperCase();
-                          final teamId = row['team_id']?.toString();
-                          final matchId = row['match_id']?.toString();
-                          final detail = teamId != null
-                              ? 'Team-ID: $teamId'
-                              : (matchId != null ? 'Match-ID: $matchId' : 'Globaler Task');
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 6),
-                            child: Row(
-                              children: [
-                                Icon(
-                                  status == 'COMPLETED'
-                                      ? Icons.check_circle
-                                      : (status == 'PROCESSING' ? Icons.sync : Icons.radio_button_unchecked),
-                                  color: status == 'COMPLETED'
-                                      ? Colors.green
-                                      : (status == 'PROCESSING' ? primaryColor : Colors.grey),
-                                  size: 17,
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(child: Text('$detail • $status')),
-                              ],
-                            ),
-                          );
-                        }),
-                      ],
+                      const SizedBox(height: 10),
+                      const Divider(height: 1),
+                      const SizedBox(height: 10),
+                      Text('Aufschlüsselung in einer Zeile',
+                          style: TextStyle(color: accent, fontWeight: FontWeight.w700)),
+                      const SizedBox(height: 8),
+                      _buildTaskFlowRow(rows: rows, taskType: type, primaryColor: primaryColor),
                     ],
                   ),
                 ),
@@ -1244,6 +1214,102 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
       child: Text(
         label,
         style: TextStyle(color: color, fontWeight: FontWeight.w700, fontSize: 11, letterSpacing: 0.2),
+      ),
+    );
+  }
+
+  Widget _buildTaskFlowRow({
+    required List<Map<String, dynamic>> rows,
+    required String taskType,
+    required Color primaryColor,
+  }) {
+    final List<Map<String, dynamic>> completed = [];
+    final List<Map<String, dynamic>> processing = [];
+    final List<Map<String, dynamic>> pending = [];
+
+    for (final row in rows) {
+      final status = (row['status'] ?? '').toString().toUpperCase();
+      if (status == 'COMPLETED') {
+        completed.add(row);
+      } else if (status == 'PROCESSING') {
+        processing.add(row);
+      } else {
+        pending.add(row);
+      }
+    }
+
+    final orderedRows = [...completed, ...processing, ...pending];
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: orderedRows
+            .map((row) => Padding(
+                  padding: const EdgeInsets.only(right: 8),
+                  child: _buildTaskFlowItem(
+                    row: row,
+                    taskType: taskType,
+                    primaryColor: primaryColor,
+                  ),
+                ))
+            .toList(),
+      ),
+    );
+  }
+
+  Widget _buildTaskFlowItem({
+    required Map<String, dynamic> row,
+    required String taskType,
+    required Color primaryColor,
+  }) {
+    final status = (row['status'] ?? '').toString().toUpperCase();
+    final bool isCompleted = status == 'COMPLETED';
+    final bool isProcessing = status == 'PROCESSING';
+    final Color color = isCompleted ? Colors.green : (isProcessing ? primaryColor : Colors.grey);
+
+    final IconData statusIcon =
+        isCompleted ? Icons.check : (isProcessing ? Icons.sync : Icons.schedule_rounded);
+
+    if (taskType == 'FETCH_TEAMS') {
+      return Container(
+        padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
+        decoration: BoxDecoration(
+          color: color.withOpacity(0.12),
+          borderRadius: BorderRadius.circular(999),
+          border: Border.all(color: color.withOpacity(0.2)),
+        ),
+        child: Row(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            Icon(Icons.shield_rounded, color: color, size: 18),
+            const SizedBox(width: 5),
+            Icon(statusIcon, color: color, size: 15),
+          ],
+        ),
+      );
+    }
+
+    final teamId = row['team_id']?.toString();
+    final matchId = row['match_id']?.toString();
+    final label = teamId != null ? 'T$teamId' : (matchId != null ? 'M$matchId' : 'Global');
+
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(999),
+        border: Border.all(color: color.withOpacity(0.2)),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(statusIcon, color: color, size: 15),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: TextStyle(color: color, fontWeight: FontWeight.w600, fontSize: 12),
+          ),
+        ],
       ),
     );
   }
