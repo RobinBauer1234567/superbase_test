@@ -977,6 +977,40 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
   }
 
   Widget _buildInitializationTab(Color primaryColor) {
+    if (_initializingSeasonId == null || _initializingTournamentId == null) {
+      return Builder(
+        builder: (BuildContext context) {
+          return CustomScrollView(
+            key: const PageStorageKey<String>('initializationTab'),
+            slivers: [
+              SliverOverlapInjector(handle: NestedScrollView.sliverOverlapAbsorberHandleFor(context)),
+              SliverFillRemaining(
+                hasScrollBody: false,
+                child: Center(
+                  child: Padding(
+                    padding: const EdgeInsets.all(24),
+                    child: Text(
+                      'Keine aktive Initialisierung gefunden.',
+                      style: TextStyle(color: Colors.grey.shade700, fontSize: 16),
+                      textAlign: TextAlign.center,
+                    ),
+                  ),
+                ),
+              ),
+            ],
+          );
+        },
+      );
+    }
+
+    final syncTasksStream = supabase
+        .from('sync_tasks')
+        .stream(primaryKey: ['id'])
+        .eq('season_id', _initializingSeasonId as Object)
+        .eq('tournament_id', _initializingTournamentId as Object)
+        .order('priority', ascending: true)
+        .order('created_at', ascending: true);
+
     return Builder(
       builder: (BuildContext context) {
         return CustomScrollView(
@@ -1004,14 +1038,22 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
                           style: TextStyle(color: Colors.grey.shade700),
                         ),
                         const SizedBox(height: 16),
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(999),
-                          child: LinearProgressIndicator(
-                            value: _isInitializingSeason ? null : _initializationProgress,
-                            minHeight: 10,
-                            color: primaryColor,
-                            backgroundColor: primaryColor.withOpacity(0.2),
-                          ),
+                        StreamBuilder<List<Map<String, dynamic>>>(
+                          stream: syncTasksStream,
+                          builder: (context, snapshot) {
+                            final tasks = snapshot.data ?? const <Map<String, dynamic>>[];
+                            final computedProgress = _calculateTaskProgress(tasks);
+
+                            return ClipRRect(
+                              borderRadius: BorderRadius.circular(999),
+                              child: LinearProgressIndicator(
+                                value: _isInitializingSeason ? null : computedProgress,
+                                minHeight: 10,
+                                color: primaryColor,
+                                backgroundColor: primaryColor.withOpacity(0.2),
+                              ),
+                            );
+                          },
                         ),
                         const SizedBox(height: 12),
                         Text(_initializationStatus),
@@ -1021,9 +1063,278 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
                 ),
               ),
             ),
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 24),
+              sliver: StreamBuilder<List<Map<String, dynamic>>>(
+                stream: syncTasksStream,
+                builder: (context, snapshot) {
+                  if (snapshot.hasError) {
+                    return SliverToBoxAdapter(
+                      child: Card(
+                        child: Padding(
+                          padding: const EdgeInsets.all(16),
+                          child: Text(
+                            'Fehler beim Laden der Initialisierungs-Tasks: ${snapshot.error}',
+                            style: const TextStyle(color: Colors.redAccent),
+                          ),
+                        ),
+                      ),
+                    );
+                  }
+
+                  if (!snapshot.hasData) {
+                    return const SliverToBoxAdapter(
+                      child: Center(child: Padding(
+                        padding: EdgeInsets.all(16),
+                        child: CircularProgressIndicator(),
+                      )),
+                    );
+                  }
+
+                  final tasks = snapshot.data ?? const <Map<String, dynamic>>[];
+                  if (tasks.isEmpty) {
+                    return const SliverToBoxAdapter(
+                      child: Card(
+                        child: Padding(
+                          padding: EdgeInsets.all(16),
+                          child: Text('Noch keine Tasks in sync_tasks vorhanden.'),
+                        ),
+                      ),
+                    );
+                  }
+
+                  final processingTask = tasks.cast<Map<String, dynamic>?>().firstWhere(
+                        (task) => _normalizeStatus(task?['status']) == 'PROCESSING',
+                    orElse: () => null,
+                  );
+                  final fallbackActiveTask = processingTask ??
+                      tasks.cast<Map<String, dynamic>?>().firstWhere(
+                            (task) => _normalizeStatus(task?['status']) == 'PENDING',
+                        orElse: () => null,
+                      );
+
+                  return SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                          (context, index) {
+                        final task = tasks[index];
+                        final isExpandedTask = fallbackActiveTask != null && task['id'] == fallbackActiveTask['id'];
+                        return _buildSyncTaskCard(
+                          task: task,
+                          isExpandedTask: isExpandedTask,
+                          primaryColor: primaryColor,
+                        );
+                      },
+                      childCount: tasks.length,
+                    ),
+                  );
+                },
+              ),
+            ),
           ],
         );
       },
+    );
+  }
+
+  double _calculateTaskProgress(List<Map<String, dynamic>> tasks) {
+    if (tasks.isEmpty) return _initializationProgress;
+    final completed = tasks.where((task) => _normalizeStatus(task['status']) == 'COMPLETED').length;
+    return (completed / tasks.length).clamp(0.0, 1.0);
+  }
+
+  String _normalizeStatus(dynamic statusRaw) {
+    return (statusRaw?.toString().trim().toUpperCase() ?? 'PENDING');
+  }
+
+  String _taskTitle(String taskType) {
+    const taskLabels = {
+      'FETCH_TEAMS': 'Teams laden',
+      'FETCH_TEAM_SQUAD': 'Kader laden',
+      'FETCH_ROUNDS': 'Spieltage laden',
+      'FETCH_MATCHES': 'Spiele laden',
+      'UPDATE_MATCH': 'Match updaten',
+      'UPDATE_SCHEDULE': 'Spielplan aktualisieren',
+      'SYNC_TRANSFERS': 'Transfers synchronisieren',
+      'REPAIR_PLAYERS': 'Spieler reparieren',
+    };
+    return taskLabels[taskType] ?? taskType;
+  }
+
+  Color _taskStatusColor(String status, Color primaryColor) {
+    switch (status) {
+      case 'COMPLETED':
+        return Colors.green;
+      case 'PROCESSING':
+        return primaryColor;
+      case 'FAILED':
+        return Colors.redAccent;
+      case 'WAITING':
+      case 'WAITING_FOR_SQUADS':
+        return Colors.orange;
+      default:
+        return Colors.blueGrey;
+    }
+  }
+
+  IconData _taskStatusIcon(String status) {
+    switch (status) {
+      case 'COMPLETED':
+        return Icons.check_circle;
+      case 'PROCESSING':
+        return Icons.sync;
+      case 'FAILED':
+        return Icons.error;
+      case 'WAITING':
+      case 'WAITING_FOR_SQUADS':
+        return Icons.schedule;
+      default:
+        return Icons.pending;
+    }
+  }
+
+  String _statusLabel(String status) {
+    switch (status) {
+      case 'COMPLETED':
+        return 'COMPLETED';
+      case 'PROCESSING':
+        return 'IN ARBEIT';
+      case 'FAILED':
+        return 'FEHLER';
+      case 'WAITING':
+      case 'WAITING_FOR_SQUADS':
+        return 'WARTET';
+      default:
+        return 'OFFEN';
+    }
+  }
+
+  Widget _buildSyncTaskCard({
+    required Map<String, dynamic> task,
+    required bool isExpandedTask,
+    required Color primaryColor,
+  }) {
+    final taskType = (task['task_type'] ?? 'UNKNOWN').toString();
+    final status = _normalizeStatus(task['status']);
+    final statusColor = _taskStatusColor(status, primaryColor);
+    final updatedAtRaw = task['updated_at']?.toString();
+    final updatedAt = updatedAtRaw != null ? DateTime.tryParse(updatedAtRaw)?.toLocal() : null;
+    final updatedAtLabel = updatedAt != null ? DateFormat('dd.MM.yyyy HH:mm').format(updatedAt) : '–';
+    final isProcessing = status == 'PROCESSING';
+    final isCompleted = status == 'COMPLETED';
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      elevation: isExpandedTask ? 2 : 1,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      child: Theme(
+        data: Theme.of(context).copyWith(dividerColor: Colors.transparent),
+        child: ExpansionTile(
+          key: ValueKey(task['id']),
+          tilePadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 4),
+          childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+          initiallyExpanded: isExpandedTask,
+          leading: Icon(_taskStatusIcon(status), color: statusColor),
+          title: Text(
+            _taskTitle(taskType),
+            style: const TextStyle(fontWeight: FontWeight.w700),
+          ),
+          subtitle: Padding(
+            padding: const EdgeInsets.only(top: 4),
+            child: Text('Task-Typ: $taskType'),
+          ),
+          trailing: Container(
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+            decoration: BoxDecoration(
+              color: statusColor.withOpacity(0.15),
+              borderRadius: BorderRadius.circular(999),
+            ),
+            child: Text(
+              _statusLabel(status),
+              style: TextStyle(
+                color: statusColor,
+                fontWeight: FontWeight.w700,
+                fontSize: 12,
+              ),
+            ),
+          ),
+          children: [
+            if (isProcessing) ...[
+              LinearProgressIndicator(
+                minHeight: 8,
+                color: primaryColor,
+                backgroundColor: primaryColor.withOpacity(0.2),
+              ),
+              const SizedBox(height: 10),
+              const Text(
+                'Diese Task wird aktuell bearbeitet. Details werden fortlaufend aktualisiert.',
+                style: TextStyle(fontWeight: FontWeight.w500),
+              ),
+              const SizedBox(height: 12),
+            ],
+            if (isCompleted)
+              Container(
+                width: double.infinity,
+                margin: const EdgeInsets.only(bottom: 12),
+                padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+                decoration: BoxDecoration(
+                  color: Colors.green.withOpacity(0.12),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: const Text(
+                  '✅ Diese Task ist abgeschlossen.',
+                  style: TextStyle(fontWeight: FontWeight.w600, color: Colors.green),
+                ),
+              ),
+            Wrap(
+              runSpacing: 8,
+              spacing: 8,
+              children: [
+                _buildTaskDetailChip(Icons.flag, 'Priorität ${task['priority'] ?? '-'}'),
+                _buildTaskDetailChip(Icons.event, 'Aktualisiert: $updatedAtLabel'),
+                if (task['team_id'] != null) _buildTaskDetailChip(Icons.shield, 'Team-ID ${task['team_id']}'),
+                if (task['match_id'] != null) _buildTaskDetailChip(Icons.sports_soccer, 'Match-ID ${task['match_id']}'),
+                if (task['round_id'] != null) _buildTaskDetailChip(Icons.calendar_view_week, 'Round-ID ${task['round_id']}'),
+              ],
+            ),
+            if (task['error_message'] != null && task['error_message'].toString().trim().isNotEmpty) ...[
+              const SizedBox(height: 10),
+              Container(
+                width: double.infinity,
+                padding: const EdgeInsets.all(10),
+                decoration: BoxDecoration(
+                  color: Colors.red.withOpacity(0.08),
+                  borderRadius: BorderRadius.circular(10),
+                ),
+                child: Text(
+                  'Fehler: ${task['error_message']}',
+                  style: const TextStyle(color: Colors.redAccent, fontWeight: FontWeight.w600),
+                ),
+              ),
+            ],
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTaskDetailChip(IconData icon, String label) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(999),
+        color: Colors.grey.shade100,
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Icon(icon, size: 14, color: Colors.grey.shade700),
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: TextStyle(color: Colors.grey.shade800, fontWeight: FontWeight.w500, fontSize: 12),
+          ),
+        ],
+      ),
     );
   }
 }
