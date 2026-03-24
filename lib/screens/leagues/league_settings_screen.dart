@@ -48,6 +48,17 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
   String _initializationStatus = 'Warte auf Start...';
   int? _initializingTournamentId;
   int? _initializingSeasonId;
+  static const List<String> _taskOrder = <String>[
+    'FETCH_TEAMS',
+    'FETCH_TEAM_SQUAD',
+    'FETCH_SQUADS',
+    'FETCH_ROUNDS',
+    'FETCH_MATCHES',
+    'UPDATE_SCHEDULE',
+    'UPDATE_MATCH',
+    'SYNC_TRANSFERS',
+    'REPAIR_PLAYERS',
+  ];
 
   @override
   void initState() {
@@ -1021,9 +1032,291 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
                 ),
               ),
             ),
+            SliverPadding(
+              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              sliver: SliverToBoxAdapter(child: _buildSyncTaskCards(primaryColor)),
+            ),
           ],
         );
       },
     );
+  }
+
+  Widget _buildSyncTaskCards(Color primaryColor) {
+    if (_initializingSeasonId == null) {
+      return const SizedBox.shrink();
+    }
+
+    return StreamBuilder<List<Map<String, dynamic>>>(
+      stream: supabase
+          .from('sync_tasks')
+          .stream(primaryKey: const ['id'])
+          .eq('season_id', _initializingSeasonId!)
+          .order('created_at'),
+      builder: (context, snapshot) {
+        if (snapshot.hasError) {
+          return Card(
+            color: Colors.red.shade50,
+            child: const Padding(
+              padding: EdgeInsets.all(16),
+              child: Text('Fehler beim Laden der sync_tasks.'),
+            ),
+          );
+        }
+
+        if (!snapshot.hasData) {
+          return const Center(child: Padding(padding: EdgeInsets.all(12), child: CircularProgressIndicator()));
+        }
+
+        final taskRows = snapshot.data ?? const <Map<String, dynamic>>[];
+        if (taskRows.isEmpty) {
+          return Card(
+            elevation: 0,
+            color: Colors.grey.shade100,
+            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+            child: const Padding(
+              padding: EdgeInsets.all(16),
+              child: Text('Noch keine Tasks in sync_tasks gefunden.'),
+            ),
+          );
+        }
+
+        final Map<String, List<Map<String, dynamic>>> grouped = <String, List<Map<String, dynamic>>>{};
+        for (final row in taskRows) {
+          final taskType = (row['task_type'] ?? 'UNKNOWN').toString();
+          grouped.putIfAbsent(taskType, () => <Map<String, dynamic>>[]).add(row);
+        }
+
+        final taskTypes = grouped.keys.toList()
+          ..sort((a, b) {
+            final ai = _taskOrder.indexOf(a);
+            final bi = _taskOrder.indexOf(b);
+            final aIndex = ai == -1 ? 999 : ai;
+            final bIndex = bi == -1 ? 999 : bi;
+            if (aIndex != bIndex) return aIndex.compareTo(bIndex);
+            return a.compareTo(b);
+          });
+
+        String? activeTaskType;
+        for (final type in taskTypes) {
+          final rows = grouped[type]!;
+          final hasProcessing = rows.any((r) => (r['status'] ?? '').toString().toUpperCase() == 'PROCESSING');
+          if (hasProcessing) {
+            activeTaskType = type;
+            break;
+          }
+        }
+        activeTaskType ??= taskTypes.cast<String?>().firstWhere(
+              (type) => grouped[type!]!
+                  .any((r) => !{'COMPLETED', 'FAILED'}.contains((r['status'] ?? '').toString().toUpperCase())),
+              orElse: () => null,
+            );
+
+        return Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Padding(
+              padding: EdgeInsets.only(left: 4, bottom: 10),
+              child: Text(
+                'Sync-Tasks',
+                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+              ),
+            ),
+            ...taskTypes.map((type) {
+              final rows = grouped[type]!;
+              final total = rows.length;
+              final completed = rows.where((r) => (r['status'] ?? '').toString().toUpperCase() == 'COMPLETED').length;
+              final processing = rows.where((r) => (r['status'] ?? '').toString().toUpperCase() == 'PROCESSING').length;
+              final failed = rows.where((r) => (r['status'] ?? '').toString().toUpperCase() == 'FAILED').length;
+              final bool isCompleted = completed == total;
+              final bool isActive = type == activeTaskType;
+              final double progress = total == 0 ? 0 : completed / total;
+
+              final Color accent = isCompleted
+                  ? Colors.green.shade600
+                  : (isActive ? primaryColor : (failed > 0 ? Colors.red.shade400 : Colors.blueGrey.shade400));
+
+              final String title = _taskTitle(type);
+              final String subtitle = _taskDescription(type);
+
+              return Card(
+                margin: const EdgeInsets.only(bottom: 10),
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                child: Padding(
+                  padding: const EdgeInsets.all(14),
+                  child: Column(
+                    crossAxisAlignment: CrossAxisAlignment.start,
+                    children: [
+                      Row(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          Container(
+                            width: 40,
+                            height: 40,
+                            decoration: BoxDecoration(
+                              color: accent.withOpacity(0.14),
+                              borderRadius: BorderRadius.circular(12),
+                            ),
+                            child: Icon(_taskIcon(type), color: accent),
+                          ),
+                          const SizedBox(width: 12),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+                                const SizedBox(height: 2),
+                                Text(subtitle, style: TextStyle(color: Colors.grey.shade700, fontSize: 13)),
+                              ],
+                            ),
+                          ),
+                          const SizedBox(width: 8),
+                          _buildStatusBadge(
+                            label: isCompleted
+                                ? 'COMPLETED'
+                                : (processing > 0 ? 'IN PROGRESS' : (failed > 0 ? 'FAILED' : 'WAITING')),
+                            color: isCompleted
+                                ? Colors.green
+                                : (processing > 0 ? primaryColor : (failed > 0 ? Colors.red : Colors.orange)),
+                          ),
+                        ],
+                      ),
+                      const SizedBox(height: 12),
+                      ClipRRect(
+                        borderRadius: BorderRadius.circular(999),
+                        child: LinearProgressIndicator(
+                          value: progress,
+                          minHeight: 8,
+                          color: accent,
+                          backgroundColor: accent.withOpacity(0.2),
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text('$completed / $total erledigt', style: TextStyle(color: Colors.grey.shade800)),
+                      if (isActive) ...[
+                        const SizedBox(height: 10),
+                        const Divider(height: 1),
+                        const SizedBox(height: 10),
+                        Text('Aktive Aufschlüsselung', style: TextStyle(color: accent, fontWeight: FontWeight.w700)),
+                        const SizedBox(height: 8),
+                        ...rows.take(6).map((row) {
+                          final status = (row['status'] ?? '-').toString().toUpperCase();
+                          final teamId = row['team_id']?.toString();
+                          final matchId = row['match_id']?.toString();
+                          final detail = teamId != null
+                              ? 'Team-ID: $teamId'
+                              : (matchId != null ? 'Match-ID: $matchId' : 'Globaler Task');
+                          return Padding(
+                            padding: const EdgeInsets.only(bottom: 6),
+                            child: Row(
+                              children: [
+                                Icon(
+                                  status == 'COMPLETED'
+                                      ? Icons.check_circle
+                                      : (status == 'PROCESSING' ? Icons.sync : Icons.radio_button_unchecked),
+                                  color: status == 'COMPLETED'
+                                      ? Colors.green
+                                      : (status == 'PROCESSING' ? primaryColor : Colors.grey),
+                                  size: 17,
+                                ),
+                                const SizedBox(width: 8),
+                                Expanded(child: Text('$detail • $status')),
+                              ],
+                            ),
+                          );
+                        }),
+                      ],
+                    ],
+                  ),
+                ),
+              );
+            }),
+          ],
+        );
+      },
+    );
+  }
+
+  Widget _buildStatusBadge({required String label, required Color color}) {
+    return Container(
+      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 4),
+      decoration: BoxDecoration(color: color.withOpacity(0.12), borderRadius: BorderRadius.circular(999)),
+      child: Text(
+        label,
+        style: TextStyle(color: color, fontWeight: FontWeight.w700, fontSize: 11, letterSpacing: 0.2),
+      ),
+    );
+  }
+
+  String _taskTitle(String taskType) {
+    switch (taskType) {
+      case 'FETCH_TEAMS':
+        return 'Teams laden';
+      case 'FETCH_TEAM_SQUAD':
+      case 'FETCH_SQUADS':
+        return 'Kader laden';
+      case 'FETCH_ROUNDS':
+        return 'Spieltage laden';
+      case 'FETCH_MATCHES':
+        return 'Spiele laden';
+      case 'UPDATE_SCHEDULE':
+        return 'Spielplan aktualisieren';
+      case 'UPDATE_MATCH':
+        return 'Live-Spiel aktualisieren';
+      case 'SYNC_TRANSFERS':
+        return 'Transfers synchronisieren';
+      case 'REPAIR_PLAYERS':
+        return 'Spieler reparieren';
+      default:
+        return taskType.replaceAll('_', ' ');
+    }
+  }
+
+  String _taskDescription(String taskType) {
+    switch (taskType) {
+      case 'FETCH_TEAMS':
+        return 'Grunddaten der Teams werden importiert.';
+      case 'FETCH_TEAM_SQUAD':
+      case 'FETCH_SQUADS':
+        return 'Spielerkader der Teams werden aufgebaut.';
+      case 'FETCH_ROUNDS':
+        return 'Spieltage der Saison werden erstellt.';
+      case 'FETCH_MATCHES':
+        return 'Spiele inklusive Terminierung werden geladen.';
+      case 'UPDATE_SCHEDULE':
+        return 'Der Spielplan wird mit neuen Daten abgeglichen.';
+      case 'UPDATE_MATCH':
+        return 'Live-Daten eines laufenden Spiels werden synchronisiert.';
+      case 'SYNC_TRANSFERS':
+        return 'Transferbewegungen werden eingespielt.';
+      case 'REPAIR_PLAYERS':
+        return 'Fehlende oder defekte Spielerdaten werden repariert.';
+      default:
+        return 'Task aus sync_tasks.';
+    }
+  }
+
+  IconData _taskIcon(String taskType) {
+    switch (taskType) {
+      case 'FETCH_TEAMS':
+        return Icons.groups_rounded;
+      case 'FETCH_TEAM_SQUAD':
+      case 'FETCH_SQUADS':
+        return Icons.badge_rounded;
+      case 'FETCH_ROUNDS':
+        return Icons.calendar_view_week_rounded;
+      case 'FETCH_MATCHES':
+        return Icons.sports_soccer_rounded;
+      case 'UPDATE_SCHEDULE':
+        return Icons.event_repeat_rounded;
+      case 'UPDATE_MATCH':
+        return Icons.live_tv_rounded;
+      case 'SYNC_TRANSFERS':
+        return Icons.compare_arrows_rounded;
+      case 'REPAIR_PLAYERS':
+        return Icons.build_circle_rounded;
+      default:
+        return Icons.task_alt_rounded;
+    }
   }
 }
