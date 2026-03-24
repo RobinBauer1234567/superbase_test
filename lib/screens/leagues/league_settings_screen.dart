@@ -48,6 +48,7 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
   String _initializationStatus = 'Warte auf Start...';
   int? _initializingTournamentId;
   int? _initializingSeasonId;
+  String? _expandedTaskType;
   static const List<String> _taskOrder = <String>[
     'FETCH_TEAMS',
     'FETCH_TEAM_SQUAD',
@@ -1130,6 +1131,7 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
               final failed = rows.where((r) => (r['status'] ?? '').toString().toUpperCase() == 'FAILED').length;
               final bool isCompleted = completed == total;
               final bool isActive = type == activeTaskType;
+              final bool isExpanded = _expandedTaskType == type;
               final double progress = total == 0 ? 0 : completed / total;
 
               final Color accent = isCompleted
@@ -1142,91 +1144,72 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
               return Card(
                 margin: const EdgeInsets.only(bottom: 10),
                 shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                child: Padding(
-                  padding: const EdgeInsets.all(14),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      Row(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Container(
-                            width: 40,
-                            height: 40,
-                            decoration: BoxDecoration(
-                              color: accent.withOpacity(0.14),
-                              borderRadius: BorderRadius.circular(12),
+                child: InkWell(
+                  borderRadius: BorderRadius.circular(14),
+                  onTap: () => setState(() => _expandedTaskType = isExpanded ? null : type),
+                  child: Padding(
+                    padding: const EdgeInsets.all(14),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Container(
+                              width: 40,
+                              height: 40,
+                              decoration: BoxDecoration(
+                                color: accent.withOpacity(0.14),
+                                borderRadius: BorderRadius.circular(12),
+                              ),
+                              child: Icon(_taskIcon(type), color: accent),
                             ),
-                            child: Icon(_taskIcon(type), color: accent),
-                          ),
-                          const SizedBox(width: 12),
-                          Expanded(
-                            child: Column(
-                              crossAxisAlignment: CrossAxisAlignment.start,
-                              children: [
-                                Text(title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
-                                const SizedBox(height: 2),
-                                Text(subtitle, style: TextStyle(color: Colors.grey.shade700, fontSize: 13)),
-                              ],
+                            const SizedBox(width: 12),
+                            Expanded(
+                              child: Column(
+                                crossAxisAlignment: CrossAxisAlignment.start,
+                                children: [
+                                  Text(title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
+                                  const SizedBox(height: 2),
+                                  Text(subtitle, style: TextStyle(color: Colors.grey.shade700, fontSize: 13)),
+                                ],
+                              ),
                             ),
-                          ),
-                          const SizedBox(width: 8),
-                          _buildStatusBadge(
-                            label: isCompleted
-                                ? 'COMPLETED'
-                                : (processing > 0 ? 'IN PROGRESS' : (failed > 0 ? 'FAILED' : 'WAITING')),
-                            color: isCompleted
-                                ? Colors.green
-                                : (processing > 0 ? primaryColor : (failed > 0 ? Colors.red : Colors.orange)),
-                          ),
-                        ],
-                      ),
-                      const SizedBox(height: 12),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(999),
-                        child: LinearProgressIndicator(
-                          value: progress,
-                          minHeight: 8,
-                          color: accent,
-                          backgroundColor: accent.withOpacity(0.2),
+                            const SizedBox(width: 8),
+                            _buildStatusBadge(
+                              label: isCompleted
+                                  ? 'COMPLETED'
+                                  : (processing > 0 ? 'IN PROGRESS' : (failed > 0 ? 'FAILED' : 'WAITING')),
+                              color: isCompleted
+                                  ? Colors.green
+                                  : (processing > 0 ? primaryColor : (failed > 0 ? Colors.red : Colors.orange)),
+                            ),
+                            const SizedBox(width: 4),
+                            Icon(isExpanded ? Icons.expand_less : Icons.expand_more, color: Colors.grey.shade600),
+                          ],
                         ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text('$completed / $total erledigt', style: TextStyle(color: Colors.grey.shade800)),
-                      if (isActive) ...[
-                        const SizedBox(height: 10),
-                        const Divider(height: 1),
-                        const SizedBox(height: 10),
-                        Text('Aktive Aufschlüsselung', style: TextStyle(color: accent, fontWeight: FontWeight.w700)),
+                        const SizedBox(height: 12),
+                        ClipRRect(
+                          borderRadius: BorderRadius.circular(999),
+                          child: LinearProgressIndicator(
+                            value: progress,
+                            minHeight: 8,
+                            color: accent,
+                            backgroundColor: accent.withOpacity(0.2),
+                          ),
+                        ),
                         const SizedBox(height: 8),
-                        ...rows.take(6).map((row) {
-                          final status = (row['status'] ?? '-').toString().toUpperCase();
-                          final teamId = row['team_id']?.toString();
-                          final matchId = row['match_id']?.toString();
-                          final detail = teamId != null
-                              ? 'Team-ID: $teamId'
-                              : (matchId != null ? 'Match-ID: $matchId' : 'Globaler Task');
-                          return Padding(
-                            padding: const EdgeInsets.only(bottom: 6),
-                            child: Row(
-                              children: [
-                                Icon(
-                                  status == 'COMPLETED'
-                                      ? Icons.check_circle
-                                      : (status == 'PROCESSING' ? Icons.sync : Icons.radio_button_unchecked),
-                                  color: status == 'COMPLETED'
-                                      ? Colors.green
-                                      : (status == 'PROCESSING' ? primaryColor : Colors.grey),
-                                  size: 17,
-                                ),
-                                const SizedBox(width: 8),
-                                Expanded(child: Text('$detail • $status')),
-                              ],
-                            ),
-                          );
-                        }),
+                        Text('$completed / $total erledigt', style: TextStyle(color: Colors.grey.shade800)),
+                        if (isExpanded) ...[
+                          const SizedBox(height: 10),
+                          const Divider(height: 1),
+                          const SizedBox(height: 10),
+                          Text('Task-Flow', style: TextStyle(color: accent, fontWeight: FontWeight.w700)),
+                          const SizedBox(height: 8),
+                          _buildTaskFlow(type: type, rows: rows, primaryColor: primaryColor),
+                        ],
                       ],
-                    ],
+                    ),
                   ),
                 ),
               );
@@ -1234,6 +1217,96 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
           ],
         );
       },
+    );
+  }
+
+  Widget _buildTaskFlow({
+    required String type,
+    required List<Map<String, dynamic>> rows,
+    required Color primaryColor,
+  }) {
+    final sortedRows = [...rows]..sort((a, b) {
+        final aRank = _statusLaneRank((a['status'] ?? '').toString().toUpperCase());
+        final bRank = _statusLaneRank((b['status'] ?? '').toString().toUpperCase());
+        if (aRank != bRank) return aRank.compareTo(bRank);
+        final aCreated = DateTime.tryParse((a['created_at'] ?? '').toString());
+        final bCreated = DateTime.tryParse((b['created_at'] ?? '').toString());
+        if (aCreated == null || bCreated == null) return 0;
+        return aCreated.compareTo(bCreated);
+      });
+
+    return SizedBox(
+      width: double.infinity,
+      child: Wrap(
+        alignment: WrapAlignment.spaceBetween,
+        runSpacing: 8,
+        spacing: 8,
+        children: sortedRows.take(20).map((row) {
+          final status = (row['status'] ?? '').toString().toUpperCase();
+          final Color statusColor = status == 'COMPLETED'
+              ? Colors.green
+              : status == 'PROCESSING'
+                  ? primaryColor
+                  : status == 'FAILED'
+                      ? Colors.red
+                      : Colors.grey;
+
+          return _buildTaskFlowNode(
+            type: type,
+            status: status,
+            statusColor: statusColor,
+          );
+        }).toList(),
+      ),
+    );
+  }
+
+  int _statusLaneRank(String status) {
+    if (status == 'COMPLETED') return 0;
+    if (status == 'PROCESSING') return 1;
+    return 2;
+  }
+
+  Widget _buildTaskFlowNode({
+    required String type,
+    required String status,
+    required Color statusColor,
+  }) {
+    final IconData statusIcon = status == 'COMPLETED'
+        ? Icons.check_rounded
+        : status == 'PROCESSING'
+            ? Icons.sync_rounded
+            : status == 'FAILED'
+                ? Icons.close_rounded
+                : Icons.schedule_rounded;
+
+    if (type == 'FETCH_TEAMS') {
+      return Container(
+        width: 44,
+        height: 44,
+        decoration: BoxDecoration(
+          color: statusColor.withOpacity(0.12),
+          borderRadius: BorderRadius.circular(14),
+          border: Border.all(color: statusColor.withOpacity(0.35)),
+        ),
+        child: Stack(
+          children: [
+            const Center(child: Icon(Icons.shield_rounded, size: 22)),
+            Positioned(right: 2, bottom: 2, child: Icon(statusIcon, size: 14, color: statusColor)),
+          ],
+        ),
+      );
+    }
+
+    return Container(
+      width: 44,
+      height: 44,
+      decoration: BoxDecoration(
+        color: statusColor.withOpacity(0.12),
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: statusColor.withOpacity(0.35)),
+      ),
+      child: Icon(statusIcon, color: statusColor, size: 20),
     );
   }
 
