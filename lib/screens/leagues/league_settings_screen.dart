@@ -48,7 +48,7 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
   String _initializationStatus = 'Warte auf Start...';
   int? _initializingTournamentId;
   int? _initializingSeasonId;
-  final Set<String> _expandedTaskTypes = <String>{};
+  Future<Map<int, Map<String, dynamic>>>? _seasonTeamsFuture;
   static const List<String> _taskOrder = <String>[
     'FETCH_TEAMS',
     'FETCH_TEAM_SQUAD',
@@ -128,6 +128,9 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
     _showInitializationTab = true;
     _initializingTournamentId = activeTournament['id'] as int?;
     _initializingSeasonId = activeSeason['id'] as int?;
+    if (_initializingSeasonId != null) {
+      _seasonTeamsFuture = _loadSeasonTeamMeta(_initializingSeasonId!);
+    }
     _initializationStatus = 'Saison wird aktuell initialisiert...';
     _initializationProgress = 0.6;
     _isInitializingSeason = false;
@@ -154,6 +157,28 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
         if (mounted) _tabController.animateTo(targetIndex);
       });
     }
+  }
+
+  Future<Map<int, Map<String, dynamic>>> _loadSeasonTeamMeta(int seasonId) async {
+    final rows = await supabase
+        .from('season_teams')
+        .select('team_id, team:team_id(name, image_url)')
+        .eq('season_id', seasonId);
+
+    final Map<int, Map<String, dynamic>> result = <int, Map<String, dynamic>>{};
+    for (final dynamic row in rows) {
+      if (row is! Map<String, dynamic>) continue;
+      final teamIdRaw = row['team_id'];
+      final teamId = teamIdRaw is num ? teamIdRaw.toInt() : int.tryParse(teamIdRaw?.toString() ?? '');
+      if (teamId == null) continue;
+      final team = row['team'];
+      if (team is Map<String, dynamic>) {
+        result[teamId] = team;
+      } else {
+        result[teamId] = const <String, dynamic>{};
+      }
+    }
+    return result;
   }
 
   ImageProvider? _getLeagueImageProvider() {
@@ -371,6 +396,7 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
       _initializingTournamentId = tournamentId;
       _initializationProgress = 0.2;
       _initializationStatus = 'Aktiviere Saison in der Datenbank...';
+      _seasonTeamsFuture = _loadSeasonTeamMeta(seasonId);
     });
 
     try {
@@ -436,6 +462,7 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
       _isInitializingSeason = false;
       _initializationProgress = 0.6;
       _initializationStatus = 'Saison wird aktuell initialisiert...';
+      _seasonTeamsFuture = _loadSeasonTeamMeta(seasonId);
     });
   }
 
@@ -996,39 +1023,15 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
           slivers: [
             SliverOverlapInjector(handle: NestedScrollView.sliverOverlapAbsorberHandleFor(context)),
             SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+              padding: const EdgeInsets.fromLTRB(16, 12, 16, 8),
               sliver: SliverToBoxAdapter(
-                child: Card(
-                  elevation: 1,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Turnier-Initialisierung',
-                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Turnier-ID: ${_initializingTournamentId ?? '-'} | Saison-ID: ${_initializingSeasonId ?? '-'}',
-                          style: TextStyle(color: Colors.grey.shade700),
-                        ),
-                        const SizedBox(height: 16),
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(999),
-                          child: LinearProgressIndicator(
-                            value: _isInitializingSeason ? null : _initializationProgress,
-                            minHeight: 10,
-                            color: primaryColor,
-                            backgroundColor: primaryColor.withOpacity(0.2),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        Text(_initializationStatus),
-                      ],
-                    ),
+                child: ClipRRect(
+                  borderRadius: BorderRadius.circular(999),
+                  child: LinearProgressIndicator(
+                    value: _isInitializingSeason ? null : _initializationProgress,
+                    minHeight: 8,
+                    color: primaryColor,
+                    backgroundColor: primaryColor.withOpacity(0.2),
                   ),
                 ),
               ),
@@ -1048,197 +1051,343 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
       return const SizedBox.shrink();
     }
 
-    return StreamBuilder<List<Map<String, dynamic>>>(
-      stream: supabase
-          .from('sync_tasks')
-          .stream(primaryKey: const ['id'])
-          .eq('season_id', _initializingSeasonId!)
-          .order('created_at'),
-      builder: (context, snapshot) {
-        if (snapshot.hasError) {
-          return Card(
-            color: Colors.red.shade50,
-            child: const Padding(
-              padding: EdgeInsets.all(16),
-              child: Text('Fehler beim Laden der sync_tasks.'),
-            ),
-          );
-        }
+    _seasonTeamsFuture ??= _loadSeasonTeamMeta(_initializingSeasonId!);
 
-        if (!snapshot.hasData) {
-          return const Center(child: Padding(padding: EdgeInsets.all(12), child: CircularProgressIndicator()));
-        }
+    return FutureBuilder<Map<int, Map<String, dynamic>>>(
+      future: _seasonTeamsFuture,
+      builder: (context, teamsSnapshot) {
+        final teamMeta = teamsSnapshot.data ?? const <int, Map<String, dynamic>>{};
 
-        final taskRows = snapshot.data ?? const <Map<String, dynamic>>[];
-        if (taskRows.isEmpty) {
-          return Card(
-            elevation: 0,
-            color: Colors.grey.shade100,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-            child: const Padding(
-              padding: EdgeInsets.all(16),
-              child: Text('Noch keine Tasks in sync_tasks gefunden.'),
-            ),
-          );
-        }
-
-        final Map<String, List<Map<String, dynamic>>> grouped = <String, List<Map<String, dynamic>>>{};
-        for (final row in taskRows) {
-          final taskType = (row['task_type'] ?? 'UNKNOWN').toString();
-          grouped.putIfAbsent(taskType, () => <Map<String, dynamic>>[]).add(row);
-        }
-
-        final taskTypes = grouped.keys.toList()
-          ..sort((a, b) {
-            final ai = _taskOrder.indexOf(a);
-            final bi = _taskOrder.indexOf(b);
-            final aIndex = ai == -1 ? 999 : ai;
-            final bIndex = bi == -1 ? 999 : bi;
-            if (aIndex != bIndex) return aIndex.compareTo(bIndex);
-            return a.compareTo(b);
-          });
-
-        String? activeTaskType;
-        for (final type in taskTypes) {
-          final rows = grouped[type]!;
-          final hasProcessing = rows.any((r) => (r['status'] ?? '').toString().toUpperCase() == 'PROCESSING');
-          if (hasProcessing) {
-            activeTaskType = type;
-            break;
-          }
-        }
-        activeTaskType ??= taskTypes.cast<String?>().firstWhere(
-              (type) => grouped[type!]!
-                  .any((r) => !{'COMPLETED', 'FAILED'}.contains((r['status'] ?? '').toString().toUpperCase())),
-              orElse: () => null,
-            );
-
-        return Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Padding(
-              padding: EdgeInsets.only(left: 4, bottom: 10),
-              child: Text(
-                'Sync-Tasks',
-                style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
-              ),
-            ),
-            ...taskTypes.map((type) {
-              final rows = grouped[type]!;
-              final total = rows.length;
-              final completed = rows.where((r) => (r['status'] ?? '').toString().toUpperCase() == 'COMPLETED').length;
-              final processing = rows.where((r) => (r['status'] ?? '').toString().toUpperCase() == 'PROCESSING').length;
-              final failed = rows.where((r) => (r['status'] ?? '').toString().toUpperCase() == 'FAILED').length;
-              final bool isCompleted = completed == total;
-              final bool isActive = type == activeTaskType;
-              final double progress = total == 0 ? 0 : completed / total;
-
-              final Color accent = isCompleted
-                  ? Colors.green.shade600
-                  : (isActive ? primaryColor : (failed > 0 ? Colors.red.shade400 : Colors.blueGrey.shade400));
-
-              final String title = _taskTitle(type);
-              final String subtitle = _taskDescription(type);
-
+        return StreamBuilder<List<Map<String, dynamic>>>(
+          stream: supabase
+              .from('sync_tasks')
+              .stream(primaryKey: const ['id'])
+              .eq('season_id', _initializingSeasonId!)
+              .order('created_at'),
+          builder: (context, snapshot) {
+            if (snapshot.hasError) {
               return Card(
-                margin: const EdgeInsets.only(bottom: 10),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                child: Padding(
-                  padding: const EdgeInsets.all(14),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      InkWell(
-                        borderRadius: BorderRadius.circular(12),
-                        onTap: () {
-                          setState(() {
-                            if (_expandedTaskTypes.contains(type)) {
-                              _expandedTaskTypes.remove(type);
-                            } else {
-                              _expandedTaskTypes.add(type);
-                            }
-                          });
-                        },
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Container(
-                              width: 40,
-                              height: 40,
-                              decoration: BoxDecoration(
-                                color: accent.withOpacity(0.14),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Icon(_taskIcon(type), color: accent),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
-                                  const SizedBox(height: 2),
-                                  Text(subtitle, style: TextStyle(color: Colors.grey.shade700, fontSize: 13)),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            _buildStatusBadge(
-                              label: isCompleted
-                                  ? 'COMPLETED'
-                                  : (processing > 0 ? 'IN PROGRESS' : (failed > 0 ? 'FAILED' : 'WAITING')),
-                              color: isCompleted
-                                  ? Colors.green
-                                  : (processing > 0 ? primaryColor : (failed > 0 ? Colors.red : Colors.orange)),
-                            ),
-                            const SizedBox(width: 6),
-                            Icon(
-                              _expandedTaskTypes.contains(type) ? Icons.expand_less : Icons.expand_more,
-                              color: Colors.grey.shade700,
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(999),
-                        child: LinearProgressIndicator(
-                          value: progress,
-                          minHeight: 8,
-                          color: accent,
-                          backgroundColor: accent.withOpacity(0.2),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text('$completed / $total erledigt', style: TextStyle(color: Colors.grey.shade800)),
-                      if (_expandedTaskTypes.contains(type)) ...[
-                        const SizedBox(height: 10),
-                        const Divider(height: 1),
-                        const SizedBox(height: 10),
-                        Text('Task-Flow', style: TextStyle(color: accent, fontWeight: FontWeight.w700)),
-                        const SizedBox(height: 8),
-                        _buildTaskFlowLine(
-                          rows: rows,
-                          taskType: type,
-                          primaryColor: primaryColor,
-                        ),
-                        if (isActive) ...[
-                          const SizedBox(height: 6),
-                          Text(
-                            'Aktive Task-Gruppe',
-                            style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
-                          ),
-                        ],
-                      ],
-                    ],
-                  ),
+                color: Colors.red.shade50,
+                child: const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Text('Fehler beim Laden der sync_tasks.'),
                 ),
               );
-            }),
-          ],
+            }
+
+            if (!snapshot.hasData) {
+              return const Center(child: Padding(padding: EdgeInsets.all(12), child: CircularProgressIndicator()));
+            }
+
+            final taskRows = snapshot.data ?? const <Map<String, dynamic>>[];
+            if (taskRows.isEmpty) {
+              return Card(
+                elevation: 0,
+                color: Colors.grey.shade100,
+                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                child: const Padding(
+                  padding: EdgeInsets.all(16),
+                  child: Text('Noch keine Tasks in sync_tasks gefunden.'),
+                ),
+              );
+            }
+
+            final Map<String, List<Map<String, dynamic>>> grouped = <String, List<Map<String, dynamic>>>{};
+            for (final row in taskRows) {
+              final taskType = (row['task_type'] ?? 'UNKNOWN').toString();
+              grouped.putIfAbsent(taskType, () => <Map<String, dynamic>>[]).add(row);
+            }
+
+            final taskTypes = grouped.keys.toList()
+              ..sort((a, b) {
+                final ai = _taskOrder.indexOf(a);
+                final bi = _taskOrder.indexOf(b);
+                final aIndex = ai == -1 ? 999 : ai;
+                final bIndex = bi == -1 ? 999 : bi;
+                if (aIndex != bIndex) return aIndex.compareTo(bIndex);
+                return a.compareTo(b);
+              });
+
+            String? activeTaskType;
+            for (final type in taskTypes) {
+              final rows = grouped[type]!;
+              final hasProcessing = rows.any((r) => (r['status'] ?? '').toString().toUpperCase() == 'PROCESSING');
+              if (hasProcessing) {
+                activeTaskType = type;
+                break;
+              }
+            }
+            activeTaskType ??= taskTypes.cast<String?>().firstWhere(
+                  (type) => grouped[type!]!
+                      .any((r) => !{'COMPLETED', 'FAILED'}.contains((r['status'] ?? '').toString().toUpperCase())),
+                  orElse: () => null,
+                );
+
+            final sortedRows = [...taskRows]
+              ..sort((a, b) => ((a['updated_at'] ?? a['created_at'] ?? '') as String)
+                  .compareTo((b['updated_at'] ?? b['created_at'] ?? '') as String));
+            final lastCompleted = sortedRows.lastWhere(
+              (r) => (r['status'] ?? '').toString().toUpperCase() == 'COMPLETED',
+              orElse: () => const <String, dynamic>{},
+            );
+
+            final activeTypeRows = activeTaskType != null ? grouped[activeTaskType]! : const <Map<String, dynamic>>[];
+            final activeIndex = activeTypeRows.indexWhere(
+              (r) => (r['status'] ?? '').toString().toUpperCase() == 'PROCESSING',
+            );
+            final derivedIndex = activeIndex == -1
+                ? activeTypeRows.indexWhere(
+                    (r) => !{'COMPLETED', 'FAILED'}.contains((r['status'] ?? '').toString().toUpperCase()),
+                  )
+                : activeIndex;
+            final resolvedIndex = math.max(0, derivedIndex == -1 ? 0 : derivedIndex);
+            final currentTask = activeTaskType == null || activeTypeRows.isEmpty ? null : activeTypeRows[resolvedIndex];
+            final nextTask = activeTaskType == null || activeTypeRows.isEmpty || resolvedIndex >= activeTypeRows.length - 1
+                ? null
+                : activeTypeRows[resolvedIndex + 1];
+
+            return Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildTaskHeadlineRow(
+                  label: 'Letzte abgeschlossene Task',
+                  row: lastCompleted.isEmpty ? null : lastCompleted,
+                  teamMeta: teamMeta,
+                  color: Colors.green.shade700,
+                  icon: Icons.check_circle_rounded,
+                ),
+                const SizedBox(height: 10),
+                _buildCurrentTaskStage(
+                  primaryColor: primaryColor,
+                  activeTaskType: activeTaskType,
+                  rows: activeTypeRows,
+                  currentTask: currentTask,
+                  focusedIndex: resolvedIndex,
+                  teamMeta: teamMeta,
+                ),
+                const SizedBox(height: 10),
+                _buildTaskHeadlineRow(
+                  label: 'Nächste Task',
+                  row: nextTask,
+                  teamMeta: teamMeta,
+                  color: Colors.orange.shade700,
+                  icon: Icons.play_arrow_rounded,
+                ),
+              ],
+            );
+          },
         );
       },
     );
+  }
+
+  Widget _buildTaskHeadlineRow({
+    required String label,
+    required Map<String, dynamic>? row,
+    required Map<int, Map<String, dynamic>> teamMeta,
+    required Color color,
+    required IconData icon,
+  }) {
+    final text = row == null ? 'Noch keine Daten' : _taskRowSummary(row, teamMeta);
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: color.withOpacity(0.24)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, size: 18, color: color),
+          const SizedBox(width: 8),
+          Text('$label: ', style: TextStyle(fontWeight: FontWeight.w700, color: color)),
+          Expanded(
+            child: Text(
+              text,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: TextStyle(color: Colors.grey.shade800),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCurrentTaskStage({
+    required Color primaryColor,
+    required String? activeTaskType,
+    required List<Map<String, dynamic>> rows,
+    required Map<String, dynamic>? currentTask,
+    required int focusedIndex,
+    required Map<int, Map<String, dynamic>> teamMeta,
+  }) {
+    if (activeTaskType == null || rows.isEmpty || currentTask == null) {
+      return Card(
+        margin: EdgeInsets.zero,
+        child: Padding(
+          padding: const EdgeInsets.all(16),
+          child: Text('Keine aktive Task gefunden.', style: TextStyle(color: Colors.grey.shade700)),
+        ),
+      );
+    }
+
+    final total = rows.length;
+    final completed = rows.where((r) => (r['status'] ?? '').toString().toUpperCase() == 'COMPLETED').length;
+    final progress = total == 0 ? 0.0 : completed / total;
+
+    return Card(
+      margin: EdgeInsets.zero,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(_taskIcon(activeTaskType), color: primaryColor),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(_taskTitle(activeTaskType), style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+                ),
+                _buildStatusBadge(label: '${focusedIndex + 1}/$total', color: primaryColor),
+              ],
+            ),
+            const SizedBox(height: 6),
+            Text(_taskDescription(activeTaskType), style: TextStyle(color: Colors.grey.shade700)),
+            const SizedBox(height: 10),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(999),
+              child: LinearProgressIndicator(
+                value: progress,
+                minHeight: 8,
+                color: primaryColor,
+                backgroundColor: primaryColor.withOpacity(0.2),
+              ),
+            ),
+            const SizedBox(height: 12),
+            SizedBox(
+              height: 148,
+              child: _buildEntityScroller(
+                taskType: activeTaskType,
+                rows: rows,
+                focusedIndex: focusedIndex,
+                teamMeta: teamMeta,
+                primaryColor: primaryColor,
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildEntityScroller({
+    required String taskType,
+    required List<Map<String, dynamic>> rows,
+    required int focusedIndex,
+    required Map<int, Map<String, dynamic>> teamMeta,
+    required Color primaryColor,
+  }) {
+    if (rows.isEmpty) {
+      return const SizedBox.shrink();
+    }
+
+    return SingleChildScrollView(
+      scrollDirection: Axis.horizontal,
+      child: Row(
+        children: List.generate(rows.length, (index) {
+          final row = rows[index];
+          final teamId = _teamIdFromRow(row);
+          final teamName = _teamName(teamId, teamMeta);
+          final isFocused = index == focusedIndex;
+          final status = (row['status'] ?? '').toString().toUpperCase();
+
+          return AnimatedContainer(
+            duration: const Duration(milliseconds: 320),
+            curve: Curves.easeOutCubic,
+            width: isFocused ? 220 : 180,
+            margin: EdgeInsets.only(right: 10, left: index == 0 ? 0 : 2),
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: isFocused ? primaryColor.withOpacity(0.1) : Colors.grey.shade100,
+              borderRadius: BorderRadius.circular(12),
+              border: Border.all(
+                color: isFocused ? primaryColor : Colors.grey.shade300,
+                width: isFocused ? 1.5 : 1,
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Row(
+                  children: [
+                    _buildTeamCrest(teamId, isFocused ? primaryColor : Colors.grey.shade700),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        taskType == 'FETCH_TEAM_SQUAD' || taskType == 'FETCH_SQUADS'
+                            ? 'Kader laden'
+                            : _taskTitle(taskType),
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(fontWeight: FontWeight.w700),
+                      ),
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 10),
+                Text(
+                  teamName ?? 'Team ${teamId ?? '-'}',
+                  maxLines: 1,
+                  overflow: TextOverflow.ellipsis,
+                  style: const TextStyle(fontSize: 15, fontWeight: FontWeight.w600),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  _taskRowSummary(row, teamMeta),
+                  maxLines: 2,
+                  overflow: TextOverflow.ellipsis,
+                  style: TextStyle(color: Colors.grey.shade700, fontSize: 12),
+                ),
+                const Spacer(),
+                _buildStatusBadge(
+                  label: status.isEmpty ? 'WAITING' : status,
+                  color: status == 'COMPLETED'
+                      ? Colors.green
+                      : (status == 'PROCESSING' ? primaryColor : Colors.orange.shade700),
+                ),
+              ],
+            ),
+          );
+        }),
+      ),
+    );
+  }
+
+  String _taskRowSummary(Map<String, dynamic> row, Map<int, Map<String, dynamic>> teamMeta) {
+    final type = (row['task_type'] ?? 'UNKNOWN').toString();
+    final teamId = _teamIdFromRow(row);
+    final teamName = _teamName(teamId, teamMeta);
+    final base = _taskTitle(type);
+    if (teamName != null) return '$base · $teamName';
+    if (teamId != null) return '$base · Team $teamId';
+    return base;
+  }
+
+  int? _teamIdFromRow(Map<String, dynamic> row) {
+    final raw = row['team_id'];
+    if (raw is num) return raw.toInt();
+    return int.tryParse(raw?.toString() ?? '');
+  }
+
+  String? _teamName(int? teamId, Map<int, Map<String, dynamic>> teamMeta) {
+    if (teamId == null) return null;
+    final name = teamMeta[teamId]?['name']?.toString();
+    if (name == null || name.isEmpty) return null;
+    return name;
   }
 
   Widget _buildStatusBadge({required String label, required Color color}) {
@@ -1248,113 +1397,6 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
       child: Text(
         label,
         style: TextStyle(color: color, fontWeight: FontWeight.w700, fontSize: 11, letterSpacing: 0.2),
-      ),
-    );
-  }
-
-  Widget _buildTaskFlowLine({
-    required List<Map<String, dynamic>> rows,
-    required String taskType,
-    required Color primaryColor,
-  }) {
-    final completedRows =
-        rows.where((r) => (r['status'] ?? '').toString().toUpperCase() == 'COMPLETED').toList(growable: false);
-    final processingRows =
-        rows.where((r) => (r['status'] ?? '').toString().toUpperCase() == 'PROCESSING').toList(growable: false);
-    final pendingRows = rows
-        .where((r) => !{'COMPLETED', 'PROCESSING'}.contains((r['status'] ?? '').toString().toUpperCase()))
-        .toList(growable: false);
-
-    return SingleChildScrollView(
-      scrollDirection: Axis.horizontal,
-      child: Row(
-        children: [
-          ...completedRows.map((row) => _buildTaskFlowNode(
-                row: row,
-                taskType: taskType,
-                color: Colors.green,
-                statusIcon: Icons.check_circle,
-                actionIcon: Icons.done_all_rounded,
-              )),
-          if (completedRows.isNotEmpty && (processingRows.isNotEmpty || pendingRows.isNotEmpty))
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 8),
-              child: Icon(Icons.arrow_forward_rounded, size: 16, color: Colors.grey),
-            ),
-          ...processingRows.map((row) => _buildTaskFlowNode(
-                row: row,
-                taskType: taskType,
-                color: primaryColor,
-                statusIcon: Icons.sync,
-                actionIcon: Icons.autorenew_rounded,
-              )),
-          if (processingRows.isNotEmpty && pendingRows.isNotEmpty)
-            const Padding(
-              padding: EdgeInsets.symmetric(horizontal: 8),
-              child: Icon(Icons.arrow_forward_rounded, size: 16, color: Colors.grey),
-            ),
-          ...pendingRows.map((row) {
-            final status = (row['status'] ?? '').toString().toUpperCase();
-            final isFailed = status == 'FAILED';
-            return _buildTaskFlowNode(
-              row: row,
-              taskType: taskType,
-              color: isFailed ? Colors.red.shade400 : Colors.grey.shade500,
-              statusIcon: isFailed ? Icons.error_outline : Icons.radio_button_unchecked,
-              actionIcon: isFailed ? Icons.close_rounded : Icons.schedule_rounded,
-            );
-          }),
-        ],
-      ),
-    );
-  }
-
-  Widget _buildTaskFlowNode({
-    required Map<String, dynamic> row,
-    required String taskType,
-    required Color color,
-    required IconData statusIcon,
-    required IconData actionIcon,
-  }) {
-    final teamId = row['team_id'];
-    final matchId = row['match_id'];
-    final status = (row['status'] ?? '').toString().toUpperCase();
-    final bool isFetchTeams = taskType == 'FETCH_TEAMS';
-
-    final Widget leading = isFetchTeams
-        ? _buildTeamCrest(teamId, color)
-        : Icon(
-            statusIcon,
-            size: 18,
-            color: color,
-          );
-
-    final String label = teamId != null
-        ? 'Team $teamId'
-        : (matchId != null ? 'Match $matchId' : status);
-
-    return Container(
-      margin: const EdgeInsets.only(right: 8),
-      padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
-      decoration: BoxDecoration(
-        color: color.withOpacity(0.08),
-        borderRadius: BorderRadius.circular(999),
-        border: Border.all(color: color.withOpacity(0.35)),
-      ),
-      child: Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          leading,
-          const SizedBox(width: 6),
-          Icon(actionIcon, size: 14, color: color),
-          if (!isFetchTeams) ...[
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: TextStyle(fontSize: 12, color: Colors.grey.shade800, fontWeight: FontWeight.w600),
-            ),
-          ],
-        ],
       ),
     );
   }
