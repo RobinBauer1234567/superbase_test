@@ -1,4 +1,5 @@
 // lib/screens/leagues/league_settings_screen.dart
+import 'dart:async';
 import 'dart:typed_data';
 import 'dart:math' as math;
 import 'package:flutter/material.dart';
@@ -48,6 +49,10 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
   String _initializationStatus = 'Warte auf Start...';
   int? _initializingTournamentId;
   int? _initializingSeasonId;
+  bool _isLoadingSyncTasks = false;
+  List<Map<String, dynamic>> _syncTasks = [];
+  String? _expandedTaskType;
+  Timer? _syncTasksPollingTimer;
 
   @override
   void initState() {
@@ -59,6 +64,7 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
 
   @override
   void dispose() {
+    _syncTasksPollingTimer?.cancel();
     _tabController.removeListener(_handleTabChanged);
     _tabController.dispose();
     super.dispose();
@@ -119,7 +125,129 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
     _initializationStatus = 'Saison wird aktuell initialisiert...';
     _initializationProgress = 0.6;
     _isInitializingSeason = false;
+    _fetchSyncTasks();
+    _startSyncTaskPolling();
     _updateTabController();
+  }
+
+  void _startSyncTaskPolling() {
+    _syncTasksPollingTimer?.cancel();
+    if (_initializingSeasonId == null) return;
+
+    _syncTasksPollingTimer = Timer.periodic(const Duration(seconds: 4), (_) {
+      _fetchSyncTasks(silent: true);
+    });
+  }
+
+  Future<void> _fetchSyncTasks({bool silent = false}) async {
+    final seasonId = _initializingSeasonId;
+    if (!widget.isTournamentTab || seasonId == null) return;
+
+    if (!silent && mounted) {
+      setState(() => _isLoadingSyncTasks = true);
+    }
+
+    try {
+      final response = await supabase
+          .from('sync_tasks')
+          .select(
+            'id, task_type, status, team_id, round_id, match_id, error_message, created_at, updated_at, priority',
+          )
+          .eq('season_id', seasonId)
+          .order('created_at', ascending: true);
+
+      final tasks = List<Map<String, dynamic>>.from(response);
+      final groups = _groupedTasks(tasks);
+      final autoExpandTaskType = groups
+          .where((group) => group.status == 'PROCESSING')
+          .map((group) => group.taskType)
+          .cast<String?>()
+          .firstWhere(
+            (taskType) => taskType != null && taskType.isNotEmpty,
+            orElse: () => groups.isNotEmpty ? groups.first.taskType : null,
+          );
+
+      if (!mounted) return;
+      setState(() {
+        _syncTasks = tasks;
+        if (autoExpandTaskType != null &&
+            (_expandedTaskType == null || !groups.any((group) => group.taskType == _expandedTaskType))) {
+          _expandedTaskType = autoExpandTaskType;
+        }
+        _isLoadingSyncTasks = false;
+      });
+    } catch (_) {
+      if (!mounted) return;
+      setState(() => _isLoadingSyncTasks = false);
+    }
+  }
+
+  List<_TaskGroup> _groupedTasks(List<Map<String, dynamic>> tasks) {
+    final groupedMap = <String, List<Map<String, dynamic>>>{};
+    for (final task in tasks) {
+      final taskType = task['task_type']?.toString() ?? 'UNKNOWN_TASK';
+      groupedMap.putIfAbsent(taskType, () => []).add(task);
+    }
+
+    final groups = groupedMap.entries.map((entry) {
+      int completed = 0;
+      int processing = 0;
+      int failed = 0;
+      int waiting = 0;
+
+      for (final task in entry.value) {
+        final status = task['status']?.toString() ?? '';
+        if (status == 'COMPLETED') completed++;
+        if (status == 'PROCESSING') processing++;
+        if (status == 'FAILED') failed++;
+        if (status == 'WAITING' || status == 'WAITING_FOR_SQUADS') waiting++;
+      }
+
+      String groupStatus = 'PENDING';
+      if (processing > 0) {
+        groupStatus = 'PROCESSING';
+      } else if (failed > 0) {
+        groupStatus = 'FAILED';
+      } else if (completed == entry.value.length && entry.value.isNotEmpty) {
+        groupStatus = 'COMPLETED';
+      } else if (waiting == entry.value.length && entry.value.isNotEmpty) {
+        groupStatus = 'WAITING';
+      }
+
+      return _TaskGroup(
+        taskType: entry.key,
+        tasks: entry.value,
+        completed: completed,
+        processing: processing,
+        failed: failed,
+        waiting: waiting,
+        status: groupStatus,
+      );
+    }).toList();
+
+    int statusRank(String status) {
+      switch (status) {
+        case 'PROCESSING':
+          return 0;
+        case 'FAILED':
+          return 1;
+        case 'PENDING':
+          return 2;
+        case 'WAITING':
+          return 3;
+        case 'COMPLETED':
+          return 4;
+        default:
+          return 5;
+      }
+    }
+
+    groups.sort((a, b) {
+      final rank = statusRank(a.status).compareTo(statusRank(b.status));
+      if (rank != 0) return rank;
+      return a.taskType.compareTo(b.taskType);
+    });
+    return groups;
   }
 
   void _updateTabController({int? targetIndex}) {
@@ -360,6 +488,8 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
       _initializationProgress = 0.2;
       _initializationStatus = 'Aktiviere Saison in der Datenbank...';
     });
+    _fetchSyncTasks();
+    _startSyncTaskPolling();
 
     try {
       await supabase.from('season').update({'is_active': true}).eq('id', seasonId);
@@ -376,6 +506,7 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
 
       bool initialized = false;
       for (int attempt = 0; attempt < 10; attempt++) {
+        await _fetchSyncTasks(silent: true);
         final response = await supabase
             .from('season')
             .select('is_initialized')
@@ -425,6 +556,8 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
       _initializationProgress = 0.6;
       _initializationStatus = 'Saison wird aktuell initialisiert...';
     });
+    _fetchSyncTasks();
+    _startSyncTaskPolling();
   }
 
   Future<void> _selectActiveTournamentAndReturn({
@@ -977,53 +1110,290 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
   }
 
   Widget _buildInitializationTab(Color primaryColor) {
+    final groupedTasks = _groupedTasks(_syncTasks);
+    final totalTasks = _syncTasks.length;
+    final completedTasks = _syncTasks.where((task) => task['status'] == 'COMPLETED').length;
+    final overallProgress = totalTasks > 0 ? completedTasks / totalTasks : _initializationProgress;
+
     return Builder(
       builder: (BuildContext context) {
-        return CustomScrollView(
-          key: const PageStorageKey<String>('initializationTab'),
-          slivers: [
-            SliverOverlapInjector(handle: NestedScrollView.sliverOverlapAbsorberHandleFor(context)),
-            SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-              sliver: SliverToBoxAdapter(
-                child: Card(
-                  elevation: 1,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Turnier-Initialisierung',
-                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Turnier-ID: ${_initializingTournamentId ?? '-'} | Saison-ID: ${_initializingSeasonId ?? '-'}',
-                          style: TextStyle(color: Colors.grey.shade700),
-                        ),
-                        const SizedBox(height: 16),
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(999),
-                          child: LinearProgressIndicator(
-                            value: _isInitializingSeason ? null : _initializationProgress,
-                            minHeight: 10,
-                            color: primaryColor,
-                            backgroundColor: primaryColor.withOpacity(0.2),
+        return RefreshIndicator(
+          onRefresh: _fetchSyncTasks,
+          child: CustomScrollView(
+            key: const PageStorageKey<String>('initializationTab'),
+            slivers: [
+              SliverOverlapInjector(handle: NestedScrollView.sliverOverlapAbsorberHandleFor(context)),
+              SliverPadding(
+                padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
+                sliver: SliverToBoxAdapter(
+                  child: Card(
+                    elevation: 1,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+                    child: Padding(
+                      padding: const EdgeInsets.all(16),
+                      child: Column(
+                        crossAxisAlignment: CrossAxisAlignment.start,
+                        children: [
+                          const Text(
+                            'Turnier-Initialisierung',
+                            style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
                           ),
-                        ),
-                        const SizedBox(height: 12),
-                        Text(_initializationStatus),
-                      ],
+                          const SizedBox(height: 8),
+                          Text(
+                            'Turnier-ID: ${_initializingTournamentId ?? '-'} | Saison-ID: ${_initializingSeasonId ?? '-'}',
+                            style: TextStyle(color: Colors.grey.shade700),
+                          ),
+                          const SizedBox(height: 16),
+                          ClipRRect(
+                            borderRadius: BorderRadius.circular(999),
+                            child: LinearProgressIndicator(
+                              value: _isInitializingSeason ? null : overallProgress.clamp(0, 1),
+                              minHeight: 10,
+                              color: primaryColor,
+                              backgroundColor: primaryColor.withOpacity(0.2),
+                            ),
+                          ),
+                          const SizedBox(height: 12),
+                          Text(_initializationStatus),
+                          if (totalTasks > 0) ...[
+                            const SizedBox(height: 10),
+                            Text(
+                              '$completedTasks von $totalTasks sync_tasks abgeschlossen',
+                              style: TextStyle(color: Colors.grey.shade700, fontWeight: FontWeight.w600),
+                            ),
+                          ],
+                        ],
+                      ),
                     ),
                   ),
                 ),
               ),
-            ),
-          ],
+              if (_isLoadingSyncTasks)
+                const SliverToBoxAdapter(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(vertical: 24),
+                    child: Center(child: CircularProgressIndicator()),
+                  ),
+                )
+              else if (groupedTasks.isEmpty)
+                const SliverToBoxAdapter(
+                  child: Padding(
+                    padding: EdgeInsets.symmetric(horizontal: 16),
+                    child: Card(
+                      child: Padding(
+                        padding: EdgeInsets.all(16),
+                        child: Text('Noch keine Tasks in sync_tasks für diese Saison gefunden.'),
+                      ),
+                    ),
+                  ),
+                )
+              else
+                SliverPadding(
+                  padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+                  sliver: SliverList(
+                    delegate: SliverChildBuilderDelegate(
+                      (context, index) {
+                        final group = groupedTasks[index];
+                        final isExpanded = _expandedTaskType == group.taskType || group.status == 'PROCESSING';
+                        return Padding(
+                          padding: const EdgeInsets.only(bottom: 12),
+                          child: _buildTaskGroupCard(
+                            group: group,
+                            isExpanded: isExpanded,
+                            primaryColor: primaryColor,
+                          ),
+                        );
+                      },
+                      childCount: groupedTasks.length,
+                    ),
+                  ),
+                ),
+            ],
+          ),
         );
       },
     );
   }
+
+  Widget _buildTaskGroupCard({
+    required _TaskGroup group,
+    required bool isExpanded,
+    required Color primaryColor,
+  }) {
+    final statusColor = _statusColor(group.status, primaryColor);
+    final progress = group.tasks.isEmpty ? 0.0 : group.completed / group.tasks.length;
+
+    return Card(
+      elevation: 1,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(color: statusColor.withOpacity(0.25)),
+      ),
+      child: InkWell(
+        borderRadius: BorderRadius.circular(14),
+        onTap: () {
+          setState(() {
+            _expandedTaskType = isExpanded ? null : group.taskType;
+          });
+        },
+        child: Padding(
+          padding: const EdgeInsets.all(14),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Row(
+                children: [
+                  Expanded(
+                    child: Text(
+                      group.taskType,
+                      style: const TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                  Container(
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 5),
+                    decoration: BoxDecoration(
+                      color: statusColor.withOpacity(0.14),
+                      borderRadius: BorderRadius.circular(999),
+                    ),
+                    child: Text(
+                      group.status,
+                      style: TextStyle(color: statusColor, fontSize: 12, fontWeight: FontWeight.w700),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 10),
+              ClipRRect(
+                borderRadius: BorderRadius.circular(999),
+                child: LinearProgressIndicator(
+                  value: progress.clamp(0, 1),
+                  minHeight: 8,
+                  color: statusColor,
+                  backgroundColor: statusColor.withOpacity(0.2),
+                ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                '${group.completed}/${group.tasks.length} erledigt • ${group.processing} in Bearbeitung • ${group.waiting} wartend • ${group.failed} fehlgeschlagen',
+                style: TextStyle(color: Colors.grey.shade700),
+              ),
+              if (isExpanded) ...[
+                const SizedBox(height: 12),
+                ...group.tasks.take(6).map((task) {
+                  final status = task['status']?.toString() ?? 'UNKNOWN';
+                  final detail = _taskDetail(task);
+                  final errorMessage = task['error_message']?.toString();
+                  return Container(
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.all(10),
+                    decoration: BoxDecoration(
+                      color: Colors.grey.shade50,
+                      borderRadius: BorderRadius.circular(10),
+                      border: Border.all(color: Colors.grey.shade200),
+                    ),
+                    child: Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Row(
+                          children: [
+                            Icon(_statusIcon(status), size: 16, color: _statusColor(status, primaryColor)),
+                            const SizedBox(width: 6),
+                            Expanded(
+                              child: Text(
+                                '${task['id'].toString().substring(0, 8)} • $status',
+                                style: const TextStyle(fontWeight: FontWeight.w600),
+                              ),
+                            ),
+                          ],
+                        ),
+                        if (detail.isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Text(detail, style: TextStyle(color: Colors.grey.shade700)),
+                        ],
+                        if (errorMessage != null && errorMessage.trim().isNotEmpty) ...[
+                          const SizedBox(height: 4),
+                          Text(
+                            errorMessage,
+                            style: const TextStyle(color: Colors.red, fontSize: 12),
+                            maxLines: 3,
+                            overflow: TextOverflow.ellipsis,
+                          ),
+                        ],
+                      ],
+                    ),
+                  );
+                }),
+                if (group.tasks.length > 6)
+                  Text(
+                    '+${group.tasks.length - 6} weitere Tasks',
+                    style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
+                  ),
+              ],
+            ],
+          ),
+        ),
+      ),
+    );
+  }
+
+  String _taskDetail(Map<String, dynamic> task) {
+    final parts = <String>[];
+    if (task['team_id'] != null) parts.add('Team ${task['team_id']}');
+    if (task['round_id'] != null) parts.add('Spieltag ${task['round_id']}');
+    if (task['match_id'] != null) parts.add('Spiel ${task['match_id']}');
+    if (task['priority'] != null) parts.add('Priorität ${task['priority']}');
+    return parts.join(' • ');
+  }
+
+  IconData _statusIcon(String status) {
+    switch (status) {
+      case 'COMPLETED':
+        return Icons.check_circle;
+      case 'PROCESSING':
+        return Icons.sync;
+      case 'FAILED':
+        return Icons.error;
+      case 'WAITING':
+      case 'WAITING_FOR_SQUADS':
+        return Icons.pause_circle;
+      default:
+        return Icons.hourglass_top;
+    }
+  }
+
+  Color _statusColor(String status, Color primaryColor) {
+    switch (status) {
+      case 'COMPLETED':
+        return Colors.green.shade700;
+      case 'PROCESSING':
+        return primaryColor;
+      case 'FAILED':
+        return Colors.red.shade700;
+      case 'WAITING':
+      case 'WAITING_FOR_SQUADS':
+        return Colors.orange.shade700;
+      default:
+        return Colors.blueGrey.shade700;
+    }
+  }
+}
+
+class _TaskGroup {
+  final String taskType;
+  final List<Map<String, dynamic>> tasks;
+  final int completed;
+  final int processing;
+  final int failed;
+  final int waiting;
+  final String status;
+
+  _TaskGroup({
+    required this.taskType,
+    required this.tasks,
+    required this.completed,
+    required this.processing,
+    required this.failed,
+    required this.waiting,
+    required this.status,
+  });
 }
