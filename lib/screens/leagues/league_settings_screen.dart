@@ -49,6 +49,8 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
   int? _initializingTournamentId;
   int? _initializingSeasonId;
   final Set<String> _expandedTaskTypes = <String>{};
+  final Map<int, String> _teamNameCache = <int, String>{};
+  final Set<int> _loadingTeamIds = <int>{};
   static const List<String> _taskOrder = <String>[
     'FETCH_TEAMS',
     'FETCH_TEAM_SQUAD',
@@ -153,6 +155,44 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _tabController.animateTo(targetIndex);
       });
+    }
+  }
+
+  Future<void> _warmupTeamNames(Iterable<Map<String, dynamic>> rows) async {
+    final Set<int> teamIds = rows
+        .map((row) => row['team_id'])
+        .map((raw) => raw is num ? raw.toInt() : int.tryParse(raw?.toString() ?? ''))
+        .whereType<int>()
+        .toSet();
+
+    final List<int> toLoad = teamIds
+        .where((teamId) => !_teamNameCache.containsKey(teamId) && !_loadingTeamIds.contains(teamId))
+        .toList(growable: false);
+    if (toLoad.isEmpty) return;
+
+    _loadingTeamIds.addAll(toLoad);
+    try {
+      final List<Map<String, dynamic>> response = await supabase
+          .from('team')
+          .select('id, name')
+          .inFilter('id', toLoad);
+
+      if (!mounted) return;
+
+      setState(() {
+        for (final teamRow in response) {
+          final rawId = teamRow['id'];
+          final int? teamId = rawId is num ? rawId.toInt() : int.tryParse(rawId?.toString() ?? '');
+          final String name = (teamRow['name'] ?? '').toString().trim();
+          if (teamId != null && name.isNotEmpty) {
+            _teamNameCache[teamId] = name;
+          }
+        }
+      });
+    } catch (_) {
+      // Fallback bleibt bei "Team <id>"
+    } finally {
+      _loadingTeamIds.removeAll(toLoad);
     }
   }
 
@@ -996,45 +1036,7 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
           slivers: [
             SliverOverlapInjector(handle: NestedScrollView.sliverOverlapAbsorberHandleFor(context)),
             SliverPadding(
-              padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-              sliver: SliverToBoxAdapter(
-                child: Card(
-                  elevation: 1,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                  child: Padding(
-                    padding: const EdgeInsets.all(16),
-                    child: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const Text(
-                          'Turnier-Initialisierung',
-                          style: TextStyle(fontSize: 18, fontWeight: FontWeight.w700),
-                        ),
-                        const SizedBox(height: 8),
-                        Text(
-                          'Turnier-ID: ${_initializingTournamentId ?? '-'} | Saison-ID: ${_initializingSeasonId ?? '-'}',
-                          style: TextStyle(color: Colors.grey.shade700),
-                        ),
-                        const SizedBox(height: 16),
-                        ClipRRect(
-                          borderRadius: BorderRadius.circular(999),
-                          child: LinearProgressIndicator(
-                            value: _isInitializingSeason ? null : _initializationProgress,
-                            minHeight: 10,
-                            color: primaryColor,
-                            backgroundColor: primaryColor.withOpacity(0.2),
-                          ),
-                        ),
-                        const SizedBox(height: 12),
-                        Text(_initializationStatus),
-                      ],
-                    ),
-                  ),
-                ),
-              ),
-            ),
-            SliverPadding(
-              padding: const EdgeInsets.fromLTRB(16, 0, 16, 16),
+              padding: const EdgeInsets.fromLTRB(16, 16, 16, 16),
               sliver: SliverToBoxAdapter(child: _buildSyncTaskCards(primaryColor)),
             ),
           ],
@@ -1070,6 +1072,7 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
         }
 
         final taskRows = snapshot.data ?? const <Map<String, dynamic>>[];
+        _warmupTeamNames(taskRows);
         if (taskRows.isEmpty) {
           return Card(
             elevation: 0,
@@ -1113,9 +1116,36 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
               orElse: () => null,
             );
 
+        String? completedTaskType;
+        for (int i = taskTypes.length - 1; i >= 0; i--) {
+          final type = taskTypes[i];
+          final rows = grouped[type]!;
+          if (rows.isNotEmpty &&
+              rows.every((r) => (r['status'] ?? '').toString().toUpperCase() == 'COMPLETED')) {
+            completedTaskType = type;
+            break;
+          }
+        }
+
+        String? nextTaskType;
+        if (activeTaskType != null) {
+          final activeIdx = taskTypes.indexOf(activeTaskType);
+          if (activeIdx != -1 && activeIdx + 1 < taskTypes.length) {
+            nextTaskType = taskTypes[activeIdx + 1];
+          }
+        }
+
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
+            _buildLiveTaskMonitor(
+              grouped: grouped,
+              activeTaskType: activeTaskType,
+              completedTaskType: completedTaskType,
+              nextTaskType: nextTaskType,
+              primaryColor: primaryColor,
+            ),
+            const SizedBox(height: 12),
             const Padding(
               padding: EdgeInsets.only(left: 4, bottom: 10),
               child: Text(
@@ -1252,6 +1282,220 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
     );
   }
 
+  Widget _buildLiveTaskMonitor({
+    required Map<String, List<Map<String, dynamic>>> grouped,
+    required String? activeTaskType,
+    required String? completedTaskType,
+    required String? nextTaskType,
+    required Color primaryColor,
+  }) {
+    if (activeTaskType == null) {
+      return const SizedBox.shrink();
+    }
+
+    final activeRows = grouped[activeTaskType] ?? const <Map<String, dynamic>>[];
+    final List<Map<String, dynamic>> completedRows = activeRows
+        .where((r) => (r['status'] ?? '').toString().toUpperCase() == 'COMPLETED')
+        .toList(growable: false);
+    final List<Map<String, dynamic>> processingRows = activeRows
+        .where((r) => (r['status'] ?? '').toString().toUpperCase() == 'PROCESSING')
+        .toList(growable: false);
+    final List<Map<String, dynamic>> pendingRows = activeRows
+        .where((r) => !{'COMPLETED', 'PROCESSING'}.contains((r['status'] ?? '').toString().toUpperCase()))
+        .toList(growable: false);
+
+    final Map<String, dynamic>? currentRow = processingRows.isNotEmpty
+        ? processingRows.first
+        : (pendingRows.isNotEmpty ? pendingRows.first : (activeRows.isNotEmpty ? activeRows.last : null));
+
+    return Card(
+      margin: EdgeInsets.zero,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(Icons.auto_awesome_motion_rounded, color: primaryColor, size: 20),
+                const SizedBox(width: 8),
+                const Text(
+                  'Live-Initialisierung',
+                  style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            _buildTaskLineRow(
+              label: 'Zuletzt abgeschlossen',
+              taskType: completedTaskType,
+              fallback: 'Noch kein abgeschlossener Schritt',
+              color: Colors.green.shade700,
+              icon: Icons.check_circle_rounded,
+            ),
+            const SizedBox(height: 8),
+            Text(
+              'Aktueller Schritt: ${_taskTitle(activeTaskType)}',
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 8),
+            _buildCurrentTaskCarousel(
+              taskType: activeTaskType,
+              completedRows: completedRows,
+              currentRow: currentRow,
+              pendingRows: pendingRows,
+              primaryColor: primaryColor,
+            ),
+            const SizedBox(height: 8),
+            _buildTaskLineRow(
+              label: 'Nächster Schritt',
+              taskType: nextTaskType,
+              fallback: 'Kein weiterer Task geplant',
+              color: Colors.orange.shade700,
+              icon: Icons.north_rounded,
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  Widget _buildTaskLineRow({
+    required String label,
+    required String? taskType,
+    required String fallback,
+    required Color color,
+    required IconData icon,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+      decoration: BoxDecoration(
+        color: color.withOpacity(0.08),
+        borderRadius: BorderRadius.circular(10),
+        border: Border.all(color: color.withOpacity(0.22)),
+      ),
+      child: Row(
+        children: [
+          Icon(icon, color: color, size: 16),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              '$label: ${taskType == null ? fallback : _taskTitle(taskType)}',
+              style: TextStyle(color: Colors.grey.shade800, fontWeight: FontWeight.w600, fontSize: 12),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Widget _buildCurrentTaskCarousel({
+    required String taskType,
+    required List<Map<String, dynamic>> completedRows,
+    required Map<String, dynamic>? currentRow,
+    required List<Map<String, dynamic>> pendingRows,
+    required Color primaryColor,
+  }) {
+    final List<Map<String, dynamic>> cards = <Map<String, dynamic>>[
+      ...completedRows,
+      if (currentRow != null) currentRow,
+      ...pendingRows.where((row) => currentRow == null || row['id'] != currentRow['id']),
+    ];
+
+    if (cards.isEmpty) {
+      return const SizedBox(height: 96, child: Center(child: Text('Warte auf Task-Details...')));
+    }
+
+    return SizedBox(
+      height: 118,
+      child: ListView.separated(
+        scrollDirection: Axis.horizontal,
+        itemCount: cards.length,
+        separatorBuilder: (_, __) => const SizedBox(width: 10),
+        itemBuilder: (context, index) {
+          final row = cards[index];
+          final status = (row['status'] ?? '').toString().toUpperCase();
+          final isCurrent = currentRow != null && row['id'] == currentRow['id'];
+          final color = status == 'COMPLETED'
+              ? Colors.green.shade600
+              : (isCurrent ? primaryColor : Colors.blueGrey.shade400);
+
+          return AnimatedContainer(
+            duration: const Duration(milliseconds: 260),
+            width: 242,
+            padding: const EdgeInsets.all(12),
+            decoration: BoxDecoration(
+              color: color.withOpacity(isCurrent ? 0.16 : 0.1),
+              borderRadius: BorderRadius.circular(14),
+              border: Border.all(
+                color: color.withOpacity(isCurrent ? 0.75 : 0.35),
+                width: isCurrent ? 1.4 : 1,
+              ),
+            ),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                _buildTaskNodeHeading(row: row, taskType: taskType, color: color),
+                const SizedBox(height: 8),
+                Text(
+                  isCurrent ? 'Aktuelle Ausführung' : (status == 'COMPLETED' ? 'Abgeschlossen' : 'In Warteschlange'),
+                  style: TextStyle(color: color, fontWeight: FontWeight.w700, fontSize: 12),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  'Status: ${status.isEmpty ? 'PENDING' : status}',
+                  style: TextStyle(color: Colors.grey.shade700, fontSize: 12),
+                ),
+              ],
+            ),
+          );
+        },
+      ),
+    );
+  }
+
+  Widget _buildTaskNodeHeading({
+    required Map<String, dynamic> row,
+    required String taskType,
+    required Color color,
+  }) {
+    final teamId = row['team_id'];
+    final matchId = row['match_id'];
+    final int? parsedTeamId = teamId is num ? teamId.toInt() : int.tryParse(teamId?.toString() ?? '');
+    final bool shouldShowTeam = taskType == 'FETCH_TEAMS' || taskType == 'FETCH_TEAM_SQUAD' || taskType == 'FETCH_SQUADS';
+    final String teamLabel = parsedTeamId == null ? 'Team ?' : (_teamNameCache[parsedTeamId] ?? 'Team $parsedTeamId');
+
+    if (shouldShowTeam) {
+      return Row(
+        children: [
+          _buildTeamCrest(teamId, color, size: 26),
+          const SizedBox(width: 8),
+          Expanded(
+            child: Text(
+              teamLabel,
+              maxLines: 1,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14),
+            ),
+          ),
+        ],
+      );
+    }
+
+    final label = matchId != null ? 'Match $matchId' : 'Task';
+    return Row(
+      children: [
+        Icon(_taskIcon(taskType), color: color, size: 18),
+        const SizedBox(width: 6),
+        Expanded(
+          child: Text(label, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 14)),
+        ),
+      ],
+    );
+  }
+
   Widget _buildTaskFlowLine({
     required List<Map<String, dynamic>> rows,
     required String taskType,
@@ -1317,11 +1561,13 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
     required IconData actionIcon,
   }) {
     final teamId = row['team_id'];
+    final int? parsedTeamId = teamId is num ? teamId.toInt() : int.tryParse(teamId?.toString() ?? '');
     final matchId = row['match_id'];
     final status = (row['status'] ?? '').toString().toUpperCase();
-    final bool isFetchTeams = taskType == 'FETCH_TEAMS';
+    final bool showTeam =
+        taskType == 'FETCH_TEAMS' || taskType == 'FETCH_TEAM_SQUAD' || taskType == 'FETCH_SQUADS';
 
-    final Widget leading = isFetchTeams
+    final Widget leading = showTeam
         ? _buildTeamCrest(teamId, color)
         : Icon(
             statusIcon,
@@ -1329,8 +1575,8 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
             color: color,
           );
 
-    final String label = teamId != null
-        ? 'Team $teamId'
+    final String label = parsedTeamId != null
+        ? (_teamNameCache[parsedTeamId] ?? 'Team $parsedTeamId')
         : (matchId != null ? 'Match $matchId' : status);
 
     return Container(
@@ -1347,19 +1593,17 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
           leading,
           const SizedBox(width: 6),
           Icon(actionIcon, size: 14, color: color),
-          if (!isFetchTeams) ...[
-            const SizedBox(width: 6),
-            Text(
-              label,
-              style: TextStyle(fontSize: 12, color: Colors.grey.shade800, fontWeight: FontWeight.w600),
-            ),
-          ],
+          const SizedBox(width: 6),
+          Text(
+            label,
+            style: TextStyle(fontSize: 12, color: Colors.grey.shade800, fontWeight: FontWeight.w600),
+          ),
         ],
       ),
     );
   }
 
-  Widget _buildTeamCrest(dynamic teamIdRaw, Color color) {
+  Widget _buildTeamCrest(dynamic teamIdRaw, Color color, {double size = 18}) {
     final teamId = teamIdRaw is num ? teamIdRaw.toInt() : int.tryParse(teamIdRaw?.toString() ?? '');
     if (teamId == null) {
       return Icon(Icons.shield_outlined, size: 18, color: color);
@@ -1369,8 +1613,8 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
     final imageUrl = supabase.storage.from('wappen').getPublicUrl(imagePath);
 
     return Container(
-      width: 18,
-      height: 18,
+      width: size,
+      height: size,
       decoration: BoxDecoration(
         shape: BoxShape.circle,
         border: Border.all(color: color.withOpacity(0.35)),
