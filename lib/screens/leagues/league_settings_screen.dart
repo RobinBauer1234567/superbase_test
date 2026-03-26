@@ -48,7 +48,6 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
   String _initializationStatus = 'Warte auf Start...';
   int? _initializingTournamentId;
   int? _initializingSeasonId;
-  final Set<String> _expandedTaskTypes = <String>{};
   final ScrollController _currentTaskPlayerScrollController = ScrollController();
   final Map<int, Map<String, dynamic>> _teamMetaCache = <int, Map<String, dynamic>>{};
   String? _playerTimelineKey;
@@ -1054,31 +1053,6 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
             .toSet()
             .toList(growable: false);
 
-        final taskTypes = grouped.keys.toList()
-          ..sort((a, b) {
-            final ai = _taskOrder.indexOf(a);
-            final bi = _taskOrder.indexOf(b);
-            final aIndex = ai == -1 ? 999 : ai;
-            final bIndex = bi == -1 ? 999 : bi;
-            if (aIndex != bIndex) return aIndex.compareTo(bIndex);
-            return a.compareTo(b);
-          });
-
-        String? activeTaskType;
-        for (final type in taskTypes) {
-          final rows = grouped[type]!;
-          final hasProcessing = rows.any((r) => (r['status'] ?? '').toString().toUpperCase() == 'PROCESSING');
-          if (hasProcessing) {
-            activeTaskType = type;
-            break;
-          }
-        }
-        activeTaskType ??= taskTypes.cast<String?>().firstWhere(
-              (type) => grouped[type!]!
-                  .any((r) => !{'COMPLETED', 'FAILED'}.contains((r['status'] ?? '').toString().toUpperCase())),
-              orElse: () => null,
-            );
-
         return FutureBuilder<Map<int, Map<String, dynamic>>>(
           future: _loadTeamMeta(teamIds),
           builder: (context, teamSnapshot) {
@@ -1088,17 +1062,12 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
               children: [
                 _buildInitializationStageOverview(
                   taskRows: taskRows,
-                  primaryColor: primaryColor,
-                ),
-                const SizedBox(height: 14),
-                _buildTaskFocusBoard(
-                  taskTypes: taskTypes,
                   grouped: grouped,
-                  activeTaskType: activeTaskType,
                   primaryColor: primaryColor,
                   teamMeta: teamMeta,
                 ),
-                const SizedBox(height: 14),
+                if (taskRows.isEmpty)
+                  const SizedBox(height: 14),
                 if (taskRows.isEmpty)
                   Card(
                     elevation: 0,
@@ -1109,130 +1078,8 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
                       child: Text('Noch keine Tasks in sync_tasks gefunden.'),
                     ),
                   ),
-                if (taskRows.isNotEmpty) ...[
-                const Padding(
-                  padding: EdgeInsets.only(left: 4, bottom: 10),
-                  child: Text(
-                    'Sync-Tasks',
-                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
-                  ),
-                ),
-                ...taskTypes.map((type) {
-              final rows = grouped[type]!;
-              final total = rows.length;
-              final completed = rows.where((r) => (r['status'] ?? '').toString().toUpperCase() == 'COMPLETED').length;
-              final processing = rows.where((r) => (r['status'] ?? '').toString().toUpperCase() == 'PROCESSING').length;
-              final failed = rows.where((r) => (r['status'] ?? '').toString().toUpperCase() == 'FAILED').length;
-              final bool isCompleted = completed == total;
-              final bool isActive = type == activeTaskType;
-              final double progress = total == 0 ? 0 : completed / total;
-
-              final Color accent = isCompleted
-                  ? Colors.green.shade600
-                  : (isActive ? primaryColor : (failed > 0 ? Colors.red.shade400 : Colors.blueGrey.shade400));
-
-              final String title = _taskTitle(type);
-              final String subtitle = _taskDescription(type);
-
-              return Card(
-                margin: const EdgeInsets.only(bottom: 10),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                child: Padding(
-                  padding: const EdgeInsets.all(14),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      InkWell(
-                        borderRadius: BorderRadius.circular(12),
-                        onTap: () {
-                          setState(() {
-                            if (_expandedTaskTypes.contains(type)) {
-                              _expandedTaskTypes.remove(type);
-                            } else {
-                              _expandedTaskTypes.add(type);
-                            }
-                          });
-                        },
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Container(
-                              width: 40,
-                              height: 40,
-                              decoration: BoxDecoration(
-                                color: accent.withOpacity(0.14),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Icon(_taskIcon(type), color: accent),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
-                                  const SizedBox(height: 2),
-                                  Text(subtitle, style: TextStyle(color: Colors.grey.shade700, fontSize: 13)),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            _buildStatusBadge(
-                              label: isCompleted
-                                  ? 'COMPLETED'
-                                  : (processing > 0 ? 'IN PROGRESS' : (failed > 0 ? 'FAILED' : 'WAITING')),
-                              color: isCompleted
-                                  ? Colors.green
-                                  : (processing > 0 ? primaryColor : (failed > 0 ? Colors.red : Colors.orange)),
-                            ),
-                            const SizedBox(width: 6),
-                            Icon(
-                              _expandedTaskTypes.contains(type) ? Icons.expand_less : Icons.expand_more,
-                              color: Colors.grey.shade700,
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(999),
-                        child: LinearProgressIndicator(
-                          value: progress,
-                          minHeight: 8,
-                          color: accent,
-                          backgroundColor: accent.withOpacity(0.2),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text('$completed / $total erledigt', style: TextStyle(color: Colors.grey.shade800)),
-                      if (_expandedTaskTypes.contains(type)) ...[
-                        const SizedBox(height: 10),
-                        const Divider(height: 1),
-                        const SizedBox(height: 10),
-                        Text('Task-Flow', style: TextStyle(color: accent, fontWeight: FontWeight.w700)),
-                        const SizedBox(height: 8),
-                        _buildTaskFlowLine(
-                          rows: rows,
-                          taskType: type,
-                          primaryColor: primaryColor,
-                          teamMeta: teamMeta,
-                        ),
-                        if (isActive) ...[
-                          const SizedBox(height: 6),
-                          Text(
-                            'Aktive Task-Gruppe',
-                            style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
-                          ),
-                        ],
-                      ],
-                    ],
-                  ),
-                ),
-              );
-            }),
-                ],
-          ],
-        );
+              ],
+            );
           },
         );
       },
@@ -1241,43 +1088,117 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
 
   Widget _buildInitializationStageOverview({
     required List<Map<String, dynamic>> taskRows,
+    required Map<String, List<Map<String, dynamic>>> grouped,
     required Color primaryColor,
+    required Map<int, Map<String, dynamic>> teamMeta,
   }) {
     final stages = _buildInitializationStages(taskRows);
     final completedCount = stages.where((stage) => stage.isCompleted).length;
     final progress = stages.isEmpty ? 0.0 : completedCount / stages.length;
+    final completedTitles = stages.where((s) => s.isCompleted).map((s) => s.title).toList(growable: false);
+    final activeIndex = stages.indexWhere((stage) => stage.isInProgress || !stage.isCompleted);
+    final safeActiveIndex = activeIndex == -1 ? stages.length - 1 : activeIndex;
+    final activeStage = stages[safeActiveIndex];
+    final activeRows = _rowsForStage(stage: activeStage, grouped: grouped, taskRows: taskRows);
+    final activeTaskType = _activeTaskTypeForStage(activeStage, activeRows);
+    final upcomingStages = stages.skip(safeActiveIndex + 1).toList(growable: false);
 
-    return Card(
-      elevation: 0,
-      color: Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Gesamtfortschritt: $completedCount / ${stages.length}',
-              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
-            ),
-            const SizedBox(height: 10),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(999),
-              child: LinearProgressIndicator(
-                value: progress,
-                minHeight: 10,
-                color: primaryColor,
-                backgroundColor: primaryColor.withOpacity(0.2),
-              ),
-            ),
-            const SizedBox(height: 12),
-            ...stages.map(
-              (stage) => _buildInitializationStageRow(stage: stage, primaryColor: primaryColor),
-            ),
-          ],
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text(
+          'Fertige Aufgaben: ${completedTitles.isEmpty ? "Noch keine" : completedTitles.join(" • ")}',
+          maxLines: 1,
+          overflow: TextOverflow.ellipsis,
+          style: TextStyle(fontWeight: FontWeight.w700, fontSize: 14, color: Colors.grey.shade800),
         ),
-      ),
+        const SizedBox(height: 12),
+        Card(
+          elevation: 0,
+          color: Colors.white,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+          child: Padding(
+            padding: const EdgeInsets.all(14),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(
+                  activeStage.title,
+                  style: const TextStyle(fontWeight: FontWeight.w800, fontSize: 19),
+                ),
+                const SizedBox(height: 6),
+                Text(
+                  'Aktiver Schritt • $completedCount / ${stages.length} abgeschlossen',
+                  style: TextStyle(color: Colors.grey.shade700),
+                ),
+                const SizedBox(height: 12),
+                ClipRRect(
+                  borderRadius: BorderRadius.circular(999),
+                  child: LinearProgressIndicator(
+                    value: progress,
+                    minHeight: 10,
+                    color: primaryColor,
+                    backgroundColor: primaryColor.withOpacity(0.2),
+                  ),
+                ),
+                const SizedBox(height: 14),
+                SizedBox(
+                  width: double.infinity,
+                  child: _buildCurrentTaskCenterArea(
+                    activeTaskType,
+                    activeRows,
+                    primaryColor,
+                    teamMeta,
+                  ),
+                ),
+                if (activeRows.isNotEmpty && activeTaskType != null) ...[
+                  const SizedBox(height: 12),
+                  Text('Live-Flow', style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey.shade800)),
+                  const SizedBox(height: 6),
+                  _buildTaskFlowLine(
+                    rows: activeRows,
+                    taskType: activeTaskType,
+                    primaryColor: primaryColor,
+                    teamMeta: teamMeta,
+                  ),
+                ],
+              ],
+            ),
+          ),
+        ),
+        if (upcomingStages.isNotEmpty) ...[
+          const SizedBox(height: 12),
+          ...upcomingStages.map(
+            (stage) => _buildInitializationStageRow(stage: stage, primaryColor: primaryColor),
+          ),
+        ],
+      ],
     );
+  }
+
+  List<Map<String, dynamic>> _rowsForStage({
+    required _InitializationStageState stage,
+    required Map<String, List<Map<String, dynamic>>> grouped,
+    required List<Map<String, dynamic>> taskRows,
+  }) {
+    if (stage.taskTypes.isEmpty) return taskRows;
+    return stage.taskTypes.expand((type) => grouped[type] ?? const <Map<String, dynamic>>[]).toList(growable: false);
+  }
+
+  String? _activeTaskTypeForStage(_InitializationStageState stage, List<Map<String, dynamic>> rows) {
+    if (stage.taskTypes.isNotEmpty) {
+      for (final taskType in stage.taskTypes) {
+        final taskRows = rows.where((row) => (row['task_type'] ?? '').toString() == taskType).toList(growable: false);
+        if (taskRows.any((row) => _rowStatus(row) == 'PROCESSING')) return taskType;
+      }
+      return stage.taskTypes.first;
+    }
+    final pendingRow = rows.firstWhere(
+      (row) => _rowStatus(row) == 'PROCESSING',
+      orElse: () => rows.isEmpty ? const <String, dynamic>{} : rows.first,
+    );
+    if (pendingRow.isEmpty) return null;
+    return (pendingRow['task_type'] ?? '').toString();
   }
 
   List<_InitializationStageState> _buildInitializationStages(List<Map<String, dynamic>> taskRows) {
@@ -1321,7 +1242,7 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
   }) {
     final rows = taskRows.where((row) => taskTypes.contains((row['task_type'] ?? '').toString())).toList();
     if (rows.isEmpty) {
-      return _InitializationStageState(title: title, isCompleted: false, isInProgress: false);
+      return _InitializationStageState(title: title, isCompleted: false, isInProgress: false, taskTypes: taskTypes);
     }
 
     final normalizedStatuses = rows.map(_rowStatus).toList(growable: false);
@@ -1333,6 +1254,7 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
       title: title,
       isCompleted: isCompleted,
       isInProgress: !isCompleted && (hasInProgress || hasStarted),
+      taskTypes: taskTypes,
     );
   }
 
@@ -1341,6 +1263,7 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
       title: 'Initialisierung abschließen',
       isCompleted: isCompleted,
       isInProgress: !isCompleted && _initializationProgress > 0.0,
+      taskTypes: const <String>{},
     );
   }
 
@@ -1348,33 +1271,29 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
     required _InitializationStageState stage,
     required Color primaryColor,
   }) {
-    final Color color = stage.isCompleted
-        ? Colors.green.shade700
-        : (stage.isInProgress ? primaryColor : Colors.grey.shade500);
-    final IconData icon = stage.isCompleted
-        ? Icons.check_circle_rounded
-        : (stage.isInProgress ? Icons.autorenew_rounded : Icons.radio_button_unchecked_rounded);
-
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        children: [
-          Icon(icon, size: 18, color: color),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              stage.title,
-              style: TextStyle(
-                fontWeight: FontWeight.w600,
-                color: Colors.grey.shade900,
+    final Color color = stage.isCompleted ? Colors.green.shade700 : (stage.isInProgress ? primaryColor : Colors.blueGrey.shade400);
+    return Card(
+      margin: const EdgeInsets.only(bottom: 8),
+      elevation: 0,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      child: Padding(
+        padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 10),
+        child: Row(
+          children: [
+            Icon(stage.isCompleted ? Icons.check_circle_rounded : Icons.schedule_rounded, size: 18, color: color),
+            const SizedBox(width: 8),
+            Expanded(
+              child: Text(
+                stage.title,
+                style: TextStyle(fontWeight: FontWeight.w600, color: Colors.grey.shade900),
               ),
             ),
-          ),
-          _buildStatusBadge(
-            label: stage.isCompleted ? 'ERLEDIGT' : (stage.isInProgress ? 'LÄUFT' : 'OFFEN'),
-            color: color,
-          ),
-        ],
+            _buildStatusBadge(
+              label: stage.isCompleted ? 'ERLEDIGT' : (stage.isInProgress ? 'LÄUFT' : 'ALS NÄCHSTES'),
+              color: color,
+            ),
+          ],
+        ),
       ),
     );
   }
@@ -1814,10 +1733,12 @@ class _InitializationStageState {
   final String title;
   final bool isCompleted;
   final bool isInProgress;
+  final Set<String> taskTypes;
 
   const _InitializationStageState({
     required this.title,
     required this.isCompleted,
     required this.isInProgress,
+    required this.taskTypes,
   });
 }
