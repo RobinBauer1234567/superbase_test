@@ -64,6 +64,14 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
     'SYNC_TRANSFERS',
     'REPAIR_PLAYERS',
   ];
+  static const List<String> _initializationSections = <String>[
+    'INIT_TEAMS',
+    'INIT_PLAYERS',
+    'INIT_ROUNDS',
+    'INIT_MATCHES',
+    'PROCESS_MATCHES',
+    'FINISH_INITIALIZATION',
+  ];
 
   @override
   void initState() {
@@ -1050,9 +1058,13 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
         }
 
         final Map<String, List<Map<String, dynamic>>> grouped = <String, List<Map<String, dynamic>>>{};
+        for (final section in _initializationSections) {
+          grouped[section] = <Map<String, dynamic>>[];
+        }
         for (final row in taskRows) {
           final taskType = (row['task_type'] ?? 'UNKNOWN').toString();
-          grouped.putIfAbsent(taskType, () => <Map<String, dynamic>>[]).add(row);
+          final section = _mapTaskTypeToSection(taskType);
+          grouped.putIfAbsent(section, () => <Map<String, dynamic>>[]).add(row);
         }
         final teamIds = taskRows
             .map((row) => row['team_id'])
@@ -1061,19 +1073,24 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
             .toSet()
             .toList(growable: false);
 
-        final taskTypes = grouped.keys.toList()
-          ..sort((a, b) {
-            final ai = _taskOrder.indexOf(a);
-            final bi = _taskOrder.indexOf(b);
-            final aIndex = ai == -1 ? 999 : ai;
-            final bIndex = bi == -1 ? 999 : bi;
-            if (aIndex != bIndex) return aIndex.compareTo(bIndex);
-            return a.compareTo(b);
-          });
+        final taskTypes = List<String>.from(_initializationSections);
+
+        final bool allCoreStepsCompleted = taskTypes
+            .where((type) => type != 'FINISH_INITIALIZATION')
+            .every((type) => _isSectionCompleted(type, grouped[type] ?? const <Map<String, dynamic>>[]));
+
+        if (allCoreStepsCompleted) {
+          grouped['FINISH_INITIALIZATION'] = <Map<String, dynamic>>[
+            {
+              'task_type': 'FINISH_INITIALIZATION',
+              'status': 'COMPLETED',
+            },
+          ];
+        }
 
         String? activeTaskType;
         for (final type in taskTypes) {
-          final rows = grouped[type]!;
+          final rows = grouped[type] ?? const <Map<String, dynamic>>[];
           final hasProcessing = rows.any((r) => (r['status'] ?? '').toString().toUpperCase() == 'PROCESSING');
           if (hasProcessing) {
             activeTaskType = type;
@@ -1081,7 +1098,7 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
           }
         }
         activeTaskType ??= taskTypes.cast<String?>().firstWhere(
-              (type) => grouped[type!]!
+              (type) => (grouped[type!] ?? const <Map<String, dynamic>>[])
                   .any((r) => !{'COMPLETED', 'FAILED'}.contains((r['status'] ?? '').toString().toUpperCase())),
               orElse: () => null,
             );
@@ -1093,28 +1110,26 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildTaskFocusBoard(
+                _buildOverallInitializationProgress(
                   taskTypes: taskTypes,
                   grouped: grouped,
-                  activeTaskType: activeTaskType,
                   primaryColor: primaryColor,
-                  teamMeta: teamMeta,
                 ),
                 const SizedBox(height: 14),
                 const Padding(
                   padding: EdgeInsets.only(left: 4, bottom: 10),
                   child: Text(
-                    'Sync-Tasks',
+                    'Initialisierungsschritte',
                     style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
                   ),
                 ),
                 ...taskTypes.map((type) {
-              final rows = grouped[type]!;
+              final rows = grouped[type] ?? const <Map<String, dynamic>>[];
               final total = rows.length;
               final completed = rows.where((r) => (r['status'] ?? '').toString().toUpperCase() == 'COMPLETED').length;
               final processing = rows.where((r) => (r['status'] ?? '').toString().toUpperCase() == 'PROCESSING').length;
               final failed = rows.where((r) => (r['status'] ?? '').toString().toUpperCase() == 'FAILED').length;
-              final bool isCompleted = completed == total;
+              final bool isCompleted = _isSectionCompleted(type, rows);
               final bool isActive = type == activeTaskType;
               final double progress = total == 0 ? 0 : completed / total;
 
@@ -1122,8 +1137,8 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
                   ? Colors.green.shade600
                   : (isActive ? primaryColor : (failed > 0 ? Colors.red.shade400 : Colors.blueGrey.shade400));
 
-              final String title = _taskTitle(type);
-              final String subtitle = _taskDescription(type);
+              final String title = _sectionTitle(type);
+              final String subtitle = _sectionDescription(type);
 
               return Card(
                 margin: const EdgeInsets.only(bottom: 10),
@@ -1195,7 +1210,10 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
                         ),
                       ),
                       const SizedBox(height: 8),
-                      Text('$completed / $total erledigt', style: TextStyle(color: Colors.grey.shade800)),
+                      Text(
+                        total == 0 ? (isCompleted ? 'Erledigt' : 'Wartet auf Daten') : '$completed / $total erledigt',
+                        style: TextStyle(color: Colors.grey.shade800),
+                      ),
                       if (_expandedTaskTypes.contains(type)) ...[
                         const SizedBox(height: 10),
                         const Divider(height: 1),
@@ -1238,6 +1256,111 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
         style: TextStyle(color: color, fontWeight: FontWeight.w700, fontSize: 11, letterSpacing: 0.2),
       ),
     );
+  }
+
+  Widget _buildOverallInitializationProgress({
+    required List<String> taskTypes,
+    required Map<String, List<Map<String, dynamic>>> grouped,
+    required Color primaryColor,
+  }) {
+    final completedSections =
+        taskTypes.where((type) => _isSectionCompleted(type, grouped[type] ?? const <Map<String, dynamic>>[])).length;
+    final progress = taskTypes.isEmpty ? 0.0 : completedSections / taskTypes.length;
+
+    return Card(
+      elevation: 0,
+      color: Colors.grey.shade50,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Gesamtfortschritt: $completedSections / ${taskTypes.length} abgeschlossen',
+              style: const TextStyle(fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 10),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(999),
+              child: LinearProgressIndicator(
+                value: progress,
+                minHeight: 10,
+                color: primaryColor,
+                backgroundColor: primaryColor.withOpacity(0.2),
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  bool _isSectionCompleted(String sectionType, List<Map<String, dynamic>> rows) {
+    if (sectionType == 'FINISH_INITIALIZATION') {
+      return rows.any((row) => _rowStatus(row) == 'COMPLETED');
+    }
+    if (rows.isEmpty) return false;
+    return rows.every((row) => _rowStatus(row) == 'COMPLETED');
+  }
+
+  String _mapTaskTypeToSection(String taskType) {
+    switch (taskType) {
+      case 'FETCH_TEAMS':
+        return 'INIT_TEAMS';
+      case 'FETCH_TEAM_SQUAD':
+      case 'FETCH_SQUADS':
+      case 'SYNC_TRANSFERS':
+      case 'REPAIR_PLAYERS':
+        return 'INIT_PLAYERS';
+      case 'FETCH_ROUNDS':
+        return 'INIT_ROUNDS';
+      case 'FETCH_MATCHES':
+        return 'INIT_MATCHES';
+      case 'UPDATE_SCHEDULE':
+      case 'UPDATE_MATCH':
+        return 'PROCESS_MATCHES';
+      default:
+        return 'PROCESS_MATCHES';
+    }
+  }
+
+  String _sectionTitle(String sectionType) {
+    switch (sectionType) {
+      case 'INIT_TEAMS':
+        return 'Initialisiere Teams';
+      case 'INIT_PLAYERS':
+        return 'Initialisiere Spieler';
+      case 'INIT_ROUNDS':
+        return 'Initialisiere Spieltage';
+      case 'INIT_MATCHES':
+        return 'Initialisiere Spiele';
+      case 'PROCESS_MATCHES':
+        return 'Bearbeite Spiele';
+      case 'FINISH_INITIALIZATION':
+        return 'Initialisierung abschließen';
+      default:
+        return sectionType.replaceAll('_', ' ');
+    }
+  }
+
+  String _sectionDescription(String sectionType) {
+    switch (sectionType) {
+      case 'INIT_TEAMS':
+        return 'Teams werden importiert und bereitgestellt.';
+      case 'INIT_PLAYERS':
+        return 'Kader, Transfers und Spielerdaten werden aufgebaut.';
+      case 'INIT_ROUNDS':
+        return 'Spieltage werden erstellt.';
+      case 'INIT_MATCHES':
+        return 'Spiele werden angelegt.';
+      case 'PROCESS_MATCHES':
+        return 'Spielplan und Spieldetails werden bearbeitet.';
+      case 'FINISH_INITIALIZATION':
+        return 'Wird aktiv, sobald alle Schritte davor abgeschlossen sind.';
+      default:
+        return 'Initialisierungsschritt';
+    }
   }
 
   Widget _buildTaskFlowLine({
@@ -1633,17 +1756,24 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
 
   IconData _taskIcon(String taskType) {
     switch (taskType) {
+      case 'INIT_TEAMS':
       case 'FETCH_TEAMS':
         return Icons.groups_rounded;
+      case 'INIT_PLAYERS':
       case 'FETCH_TEAM_SQUAD':
       case 'FETCH_SQUADS':
         return Icons.badge_rounded;
+      case 'INIT_ROUNDS':
       case 'FETCH_ROUNDS':
         return Icons.calendar_view_week_rounded;
+      case 'INIT_MATCHES':
       case 'FETCH_MATCHES':
         return Icons.sports_soccer_rounded;
+      case 'PROCESS_MATCHES':
       case 'UPDATE_SCHEDULE':
         return Icons.event_repeat_rounded;
+      case 'FINISH_INITIALIZATION':
+        return Icons.flag_circle_rounded;
       case 'UPDATE_MATCH':
         return Icons.live_tv_rounded;
       case 'SYNC_TRANSFERS':
