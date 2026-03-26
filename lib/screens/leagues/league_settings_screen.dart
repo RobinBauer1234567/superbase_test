@@ -1639,11 +1639,15 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
       stream: supabase
           .from('season_players')
           .stream(primaryKey: const ['season_id', 'player_id'])
-          .eq('season_id', seasonId)
-          .eq('team_id', teamId),
+          .eq('season_id', seasonId),
       builder: (context, snapshot) {
         final rows = (snapshot.data ?? const <Map<String, dynamic>>[])
             .map((r) => Map<String, dynamic>.from(r))
+            .where((row) {
+              final rawTeamId = row['team_id'];
+              final rowTeamId = rawTeamId is num ? rawTeamId.toInt() : int.tryParse(rawTeamId?.toString() ?? '');
+              return rowTeamId == teamId;
+            })
             .toList()
           ..sort((a, b) => ((a['player_id'] ?? 0) as num).compareTo((b['player_id'] ?? 0) as num));
 
