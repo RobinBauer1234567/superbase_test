@@ -48,10 +48,12 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
   String _initializationStatus = 'Warte auf Start...';
   int? _initializingTournamentId;
   int? _initializingSeasonId;
+  final ScrollController _currentTaskTeamScrollController = ScrollController();
   final ScrollController _currentTaskPlayerScrollController = ScrollController();
   final Map<int, Map<String, dynamic>> _teamMetaCache = <int, Map<String, dynamic>>{};
   String? _playerTimelineKey;
   int _playerTimelineCount = 0;
+  int _playerTeamTimelineCount = 0;
   static const List<String> _taskOrder = <String>[
     'FETCH_TEAMS',
     'FETCH_TEAM_SQUAD',
@@ -80,6 +82,7 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
   void dispose() {
     _tabController.removeListener(_handleTabChanged);
     _tabController.dispose();
+    _currentTaskTeamScrollController.dispose();
     _currentTaskPlayerScrollController.dispose();
     super.dispose();
   }
@@ -1110,10 +1113,14 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
     final completedTitles = stages.where((stage) => stage.isCompleted).map((stage) => stage.title).toList(growable: false);
     final firstOpenIndex = stages.indexWhere((stage) => !stage.isCompleted);
     final activeStageIndex = firstOpenIndex == -1 ? math.max(stages.length - 1, 0) : firstOpenIndex;
+    final completedCount = stages.where((stage) => stage.isCompleted).length;
+    final overallProgress = stages.isEmpty ? 0.0 : completedCount / stages.length;
 
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
+        _buildOverallInitializationProgressBar(progress: overallProgress, completedCount: completedCount, totalCount: stages.length),
+        const SizedBox(height: 10),
         _buildCompletedStageStrip(completedTitles),
         const SizedBox(height: 12),
         if (taskRows.isEmpty)
@@ -1142,6 +1149,41 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
           }),
         ],
       ],
+    );
+  }
+
+  Widget _buildOverallInitializationProgressBar({
+    required double progress,
+    required int completedCount,
+    required int totalCount,
+  }) {
+    return Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(14),
+        border: Border.all(color: Colors.grey.shade300),
+      ),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Gesamtfortschritt • $completedCount / $totalCount',
+            style: TextStyle(fontWeight: FontWeight.w700, color: Colors.grey.shade900),
+          ),
+          const SizedBox(height: 8),
+          ClipRRect(
+            borderRadius: BorderRadius.circular(999),
+            child: LinearProgressIndicator(
+              value: progress.clamp(0.0, 1.0),
+              minHeight: 8,
+              backgroundColor: Colors.grey.shade200,
+              valueColor: AlwaysStoppedAnimation<Color>(Colors.green.shade600),
+            ),
+          ),
+        ],
+      ),
     );
   }
 
@@ -1295,21 +1337,29 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
                   ),
                 )
               else ...[
-                _buildCurrentTaskCenterArea(
-                  activeTaskType,
-                  stageRows,
-                  primaryColor,
-                  teamMeta,
-                ),
-                const SizedBox(height: 12),
-                Text('Initialisierte Elemente', style: TextStyle(color: color, fontWeight: FontWeight.w700)),
-                const SizedBox(height: 8),
-                _buildTaskFlowLine(
-                  rows: stageRows,
-                  taskType: stage.taskTypes.first,
-                  primaryColor: primaryColor,
-                  teamMeta: teamMeta,
-                ),
+                if (stage.title == 'Initialisiere Spieler')
+                  _buildPlayerInitializationStage(
+                    stageRows: stageRows,
+                    primaryColor: primaryColor,
+                    teamMeta: teamMeta,
+                  )
+                else ...[
+                  _buildCurrentTaskCenterArea(
+                    activeTaskType,
+                    stageRows,
+                    primaryColor,
+                    teamMeta,
+                  ),
+                  const SizedBox(height: 12),
+                  Text('Initialisierte Elemente', style: TextStyle(color: color, fontWeight: FontWeight.w700)),
+                  const SizedBox(height: 8),
+                  _buildTaskFlowLine(
+                    rows: stageRows,
+                    taskType: stage.taskTypes.first,
+                    primaryColor: primaryColor,
+                    teamMeta: teamMeta,
+                  ),
+                ],
               ],
             ],
           ],
@@ -1508,7 +1558,109 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
     );
   }
 
-  Widget _buildLivePlayerProgress(int teamId, String teamName, int seasonId, Color primaryColor) {
+  Widget _buildPlayerInitializationStage({
+    required List<Map<String, dynamic>> stageRows,
+    required Color primaryColor,
+    required Map<int, Map<String, dynamic>> teamMeta,
+  }) {
+    final seenTeamIds = <int>{};
+    final List<MapEntry<int, Map<String, dynamic>>> teamRows = <MapEntry<int, Map<String, dynamic>>>[];
+    for (final row in stageRows) {
+      final rawTeamId = row['team_id'];
+      final teamId = rawTeamId is num ? rawTeamId.toInt() : int.tryParse(rawTeamId?.toString() ?? '');
+      if (teamId == null || seenTeamIds.contains(teamId)) continue;
+      seenTeamIds.add(teamId);
+      teamRows.add(MapEntry<int, Map<String, dynamic>>(teamId, row));
+    }
+
+    final processing = stageRows.firstWhere(
+      (row) => _rowStatus(row) == 'PROCESSING',
+      orElse: () => stageRows.isNotEmpty ? stageRows.first : <String, dynamic>{},
+    );
+    final processingTeamRaw = processing['team_id'];
+    final processingTeamId =
+        processingTeamRaw is num ? processingTeamRaw.toInt() : int.tryParse(processingTeamRaw?.toString() ?? '');
+
+    if (teamRows.length > _playerTeamTimelineCount) {
+      _playerTeamTimelineCount = teamRows.length;
+      WidgetsBinding.instance.addPostFrameCallback((_) {
+        if (_currentTaskTeamScrollController.hasClients) {
+          _currentTaskTeamScrollController.animateTo(
+            _currentTaskTeamScrollController.position.maxScrollExtent,
+            duration: const Duration(milliseconds: 320),
+            curve: Curves.easeOut,
+          );
+        }
+      });
+    }
+
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Text('Team-Fortschritt', style: TextStyle(color: primaryColor, fontWeight: FontWeight.w700)),
+        const SizedBox(height: 8),
+        SizedBox(
+          height: 92,
+          child: ListView.builder(
+            controller: _currentTaskTeamScrollController,
+            scrollDirection: Axis.horizontal,
+            itemCount: teamRows.length,
+            itemBuilder: (context, index) {
+              final teamId = teamRows[index].key;
+              final teamName = teamMeta[teamId]?['name']?.toString() ?? 'Team $teamId';
+              final status = _rowStatus(teamRows[index].value);
+              final isActive = teamId == processingTeamId;
+              final borderColor = status == 'COMPLETED'
+                  ? Colors.green
+                  : (isActive ? primaryColor : Colors.grey.shade400);
+
+              return Container(
+                width: 84,
+                margin: const EdgeInsets.only(right: 8),
+                padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 8),
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: borderColor.withOpacity(0.75), width: isActive ? 2 : 1),
+                  color: borderColor.withOpacity(0.06),
+                ),
+                child: Column(
+                  mainAxisAlignment: MainAxisAlignment.center,
+                  children: [
+                    _buildTeamCrest(teamId, borderColor),
+                    const SizedBox(height: 8),
+                    Text(
+                      teamName,
+                      maxLines: 2,
+                      overflow: TextOverflow.ellipsis,
+                      textAlign: TextAlign.center,
+                      style: TextStyle(fontSize: 11, color: Colors.grey.shade900, fontWeight: FontWeight.w600),
+                    ),
+                  ],
+                ),
+              );
+            },
+          ),
+        ),
+        const SizedBox(height: 10),
+        if (processingTeamId != null && _initializingSeasonId != null)
+          _buildLivePlayerProgress(
+            processingTeamId,
+            teamMeta[processingTeamId]?['name']?.toString() ?? 'Team $processingTeamId',
+            _initializingSeasonId!,
+            primaryColor,
+          )
+        else
+          Text('Warte auf Team-Initialisierung...', style: TextStyle(color: Colors.grey.shade700)),
+      ],
+    );
+  }
+
+  Widget _buildLivePlayerProgress(
+    int teamId,
+    String teamName,
+    int seasonId,
+    Color primaryColor,
+  ) {
     return StreamBuilder<List<Map<String, dynamic>>>(
       stream: supabase
           .from('season_players')
@@ -1543,48 +1695,143 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
           });
         }
 
-        return Container(
-          width: double.infinity,
-          padding: const EdgeInsets.all(12),
-          decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
-          child: Column(
-            crossAxisAlignment: CrossAxisAlignment.start,
-            children: [
-              Text('Aktuelle Task: Kader laden • $teamName', style: TextStyle(fontWeight: FontWeight.w700, color: primaryColor)),
-              const SizedBox(height: 8),
-              Text('Initialisierte Spieler: ${rows.length}', style: TextStyle(color: Colors.grey.shade700)),
-              const SizedBox(height: 10),
-              SingleChildScrollView(
-                controller: _currentTaskPlayerScrollController,
-                scrollDirection: Axis.horizontal,
-                child: Row(
-                  children: rows.map((row) {
-                    final playerId = row['player_id'];
-                    return Container(
-                      width: 200,
-                      margin: const EdgeInsets.only(right: 10),
-                      padding: const EdgeInsets.all(10),
-                      decoration: BoxDecoration(
-                        borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: primaryColor.withOpacity(0.28)),
-                      ),
-                      child: Column(
-                        crossAxisAlignment: CrossAxisAlignment.start,
-                        children: [
-                          Text('Spieler #$playerId', style: const TextStyle(fontWeight: FontWeight.w700)),
-                          const SizedBox(height: 4),
-                          Text('Team: $teamName', style: TextStyle(color: Colors.grey.shade700, fontSize: 12)),
-                        ],
-                      ),
-                    );
-                  }).toList(growable: false),
-                ),
+        final playerIds = rows
+            .map((row) => row['player_id'])
+            .whereType<num>()
+            .map((id) => id.toInt())
+            .toList(growable: false);
+
+        return FutureBuilder<List<_InitializedPlayerCardData>>(
+          future: _loadPlayerCards(playerIds: playerIds, seasonId: seasonId, fallbackTeamName: teamName),
+          builder: (context, playerSnapshot) {
+            final playerCards = playerSnapshot.data ?? const <_InitializedPlayerCardData>[];
+            return Container(
+              width: double.infinity,
+              padding: const EdgeInsets.all(12),
+              decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text('Aktuelle Task: Kader laden • $teamName',
+                      style: TextStyle(fontWeight: FontWeight.w700, color: primaryColor)),
+                  const SizedBox(height: 8),
+                  Text('Initialisierte Spieler: ${playerCards.length}', style: TextStyle(color: Colors.grey.shade700)),
+                  const SizedBox(height: 10),
+                  SingleChildScrollView(
+                    controller: _currentTaskPlayerScrollController,
+                    scrollDirection: Axis.horizontal,
+                    child: Row(
+                      children: playerCards.map((player) => _buildInitializedPlayerCard(player, primaryColor)).toList(growable: false),
+                    ),
+                  ),
+                ],
               ),
-            ],
-          ),
+            );
+          },
         );
       },
     );
+  }
+
+  Widget _buildInitializedPlayerCard(_InitializedPlayerCardData player, Color primaryColor) {
+    return Container(
+      width: 220,
+      margin: const EdgeInsets.only(right: 10),
+      padding: const EdgeInsets.all(10),
+      decoration: BoxDecoration(
+        borderRadius: BorderRadius.circular(12),
+        border: Border.all(color: primaryColor.withOpacity(0.28)),
+      ),
+      child: Row(
+        children: [
+          CircleAvatar(
+            radius: 24,
+            backgroundColor: Colors.grey.shade200,
+            backgroundImage: (player.profileImageUrl != null && player.profileImageUrl!.isNotEmpty)
+                ? NetworkImage(player.profileImageUrl!)
+                : null,
+            child: (player.profileImageUrl == null || player.profileImageUrl!.isEmpty)
+                ? const Icon(Icons.person, color: Colors.grey)
+                : null,
+          ),
+          const SizedBox(width: 10),
+          Expanded(
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                Text(player.name, maxLines: 1, overflow: TextOverflow.ellipsis, style: const TextStyle(fontWeight: FontWeight.w700)),
+                const SizedBox(height: 4),
+                Text(player.teamName, maxLines: 1, overflow: TextOverflow.ellipsis, style: TextStyle(color: Colors.grey.shade700, fontSize: 12)),
+                const SizedBox(height: 4),
+                Text(_formatMarketValue(player.marketValue), style: TextStyle(color: Colors.green.shade700, fontSize: 12, fontWeight: FontWeight.w700)),
+              ],
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  Future<List<_InitializedPlayerCardData>> _loadPlayerCards({
+    required List<int> playerIds,
+    required int seasonId,
+    required String fallbackTeamName,
+  }) async {
+    if (playerIds.isEmpty) return const <_InitializedPlayerCardData>[];
+
+    try {
+      final playerRows = await supabase
+          .from('spieler')
+          .select('id, name, profilbild_url')
+          .inFilter('id', playerIds);
+      final analyticsRows = await supabase
+          .from('spieler_analytics')
+          .select('player_id, marktwert, season_id')
+          .eq('season_id', seasonId)
+          .inFilter('player_id', playerIds);
+
+      final Map<int, Map<String, dynamic>> playersById = <int, Map<String, dynamic>>{};
+      for (final row in playerRows) {
+        final map = Map<String, dynamic>.from(row as Map);
+        final id = map['id'];
+        if (id is num) playersById[id.toInt()] = map;
+      }
+
+      final Map<int, num> marketByPlayer = <int, num>{};
+      for (final row in analyticsRows) {
+        final map = Map<String, dynamic>.from(row as Map);
+        final id = map['player_id'];
+        final value = map['marktwert'];
+        if (id is num && value is num) {
+          marketByPlayer[id.toInt()] = value;
+        }
+      }
+
+      final List<_InitializedPlayerCardData> cards = <_InitializedPlayerCardData>[];
+      for (final playerId in playerIds) {
+        final player = playersById[playerId];
+        if (player == null) continue;
+        cards.add(
+          _InitializedPlayerCardData(
+            name: player['name']?.toString() ?? 'Spieler #$playerId',
+            profileImageUrl: player['profilbild_url']?.toString(),
+            teamName: fallbackTeamName,
+            marketValue: marketByPlayer[playerId],
+          ),
+        );
+      }
+      return cards;
+    } catch (_) {
+      return playerIds
+          .map((id) => _InitializedPlayerCardData(name: 'Spieler #$id', profileImageUrl: null, teamName: fallbackTeamName, marketValue: null))
+          .toList(growable: false);
+    }
+  }
+
+  String _formatMarketValue(num? value) {
+    if (value == null) return 'Marktwert: –';
+    final format = NumberFormat.compactCurrency(locale: 'de_DE', symbol: '€');
+    return 'Marktwert: ${format.format(value)}';
   }
 
   Widget _buildTeamCrest(dynamic teamIdRaw, Color color) {
@@ -1695,5 +1942,19 @@ class _InitializationStageState {
     required this.taskTypes,
     required this.isCompleted,
     required this.isInProgress,
+  });
+}
+
+class _InitializedPlayerCardData {
+  final String name;
+  final String? profileImageUrl;
+  final String teamName;
+  final num? marketValue;
+
+  const _InitializedPlayerCardData({
+    required this.name,
+    required this.profileImageUrl,
+    required this.teamName,
+    required this.marketValue,
   });
 }
