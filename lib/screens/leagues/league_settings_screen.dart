@@ -48,7 +48,6 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
   String _initializationStatus = 'Warte auf Start...';
   int? _initializingTournamentId;
   int? _initializingSeasonId;
-  final Set<String> _expandedTaskTypes = <String>{};
   final ScrollController _currentTaskPlayerScrollController = ScrollController();
   final Map<int, Map<String, dynamic>> _teamMetaCache = <int, Map<String, dynamic>>{};
   String? _playerTimelineKey;
@@ -1041,12 +1040,14 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
         }
 
         final taskRows = snapshot.data ?? const <Map<String, dynamic>>[];
+        final stages = _buildInitializationStages(taskRows);
 
         final Map<String, List<Map<String, dynamic>>> grouped = <String, List<Map<String, dynamic>>>{};
         for (final row in taskRows) {
           final taskType = (row['task_type'] ?? 'UNKNOWN').toString();
           grouped.putIfAbsent(taskType, () => <Map<String, dynamic>>[]).add(row);
         }
+
         final teamIds = taskRows
             .map((row) => row['team_id'])
             .whereType<num>()
@@ -1054,30 +1055,16 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
             .toSet()
             .toList(growable: false);
 
-        final taskTypes = grouped.keys.toList()
-          ..sort((a, b) {
-            final ai = _taskOrder.indexOf(a);
-            final bi = _taskOrder.indexOf(b);
-            final aIndex = ai == -1 ? 999 : ai;
-            final bIndex = bi == -1 ? 999 : bi;
-            if (aIndex != bIndex) return aIndex.compareTo(bIndex);
-            return a.compareTo(b);
-          });
-
         String? activeTaskType;
-        for (final type in taskTypes) {
-          final rows = grouped[type]!;
-          final hasProcessing = rows.any((r) => (r['status'] ?? '').toString().toUpperCase() == 'PROCESSING');
-          if (hasProcessing) {
-            activeTaskType = type;
+        for (final stage in stages) {
+          if (!stage.isCompleted && stage.taskTypes.isNotEmpty) {
+            activeTaskType = stage.taskTypes.firstWhere(
+              (type) => grouped[type]?.any((row) => _rowStatus(row) == 'PROCESSING') == true,
+              orElse: () => stage.taskTypes.first,
+            );
             break;
           }
         }
-        activeTaskType ??= taskTypes.cast<String?>().firstWhere(
-              (type) => grouped[type!]!
-                  .any((r) => !{'COMPLETED', 'FAILED'}.contains((r['status'] ?? '').toString().toUpperCase())),
-              orElse: () => null,
-            );
 
         return FutureBuilder<Map<int, Map<String, dynamic>>>(
           future: _loadTeamMeta(teamIds),
@@ -1086,19 +1073,18 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
-                _buildInitializationStageOverview(
-                  taskRows: taskRows,
+                _buildInitializationHeaderBar(
+                  stages: stages,
                   primaryColor: primaryColor,
                 ),
                 const SizedBox(height: 14),
-                _buildTaskFocusBoard(
-                  taskTypes: taskTypes,
+                _buildInitializationStageLayout(
+                  stages: stages,
                   grouped: grouped,
                   activeTaskType: activeTaskType,
                   primaryColor: primaryColor,
                   teamMeta: teamMeta,
                 ),
-                const SizedBox(height: 14),
                 if (taskRows.isEmpty)
                   Card(
                     elevation: 0,
@@ -1109,174 +1095,11 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
                       child: Text('Noch keine Tasks in sync_tasks gefunden.'),
                     ),
                   ),
-                if (taskRows.isNotEmpty) ...[
-                const Padding(
-                  padding: EdgeInsets.only(left: 4, bottom: 10),
-                  child: Text(
-                    'Sync-Tasks',
-                    style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
-                  ),
-                ),
-                ...taskTypes.map((type) {
-              final rows = grouped[type]!;
-              final total = rows.length;
-              final completed = rows.where((r) => (r['status'] ?? '').toString().toUpperCase() == 'COMPLETED').length;
-              final processing = rows.where((r) => (r['status'] ?? '').toString().toUpperCase() == 'PROCESSING').length;
-              final failed = rows.where((r) => (r['status'] ?? '').toString().toUpperCase() == 'FAILED').length;
-              final bool isCompleted = completed == total;
-              final bool isActive = type == activeTaskType;
-              final double progress = total == 0 ? 0 : completed / total;
-
-              final Color accent = isCompleted
-                  ? Colors.green.shade600
-                  : (isActive ? primaryColor : (failed > 0 ? Colors.red.shade400 : Colors.blueGrey.shade400));
-
-              final String title = _taskTitle(type);
-              final String subtitle = _taskDescription(type);
-
-              return Card(
-                margin: const EdgeInsets.only(bottom: 10),
-                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-                child: Padding(
-                  padding: const EdgeInsets.all(14),
-                  child: Column(
-                    crossAxisAlignment: CrossAxisAlignment.start,
-                    children: [
-                      InkWell(
-                        borderRadius: BorderRadius.circular(12),
-                        onTap: () {
-                          setState(() {
-                            if (_expandedTaskTypes.contains(type)) {
-                              _expandedTaskTypes.remove(type);
-                            } else {
-                              _expandedTaskTypes.add(type);
-                            }
-                          });
-                        },
-                        child: Row(
-                          crossAxisAlignment: CrossAxisAlignment.start,
-                          children: [
-                            Container(
-                              width: 40,
-                              height: 40,
-                              decoration: BoxDecoration(
-                                color: accent.withOpacity(0.14),
-                                borderRadius: BorderRadius.circular(12),
-                              ),
-                              child: Icon(_taskIcon(type), color: accent),
-                            ),
-                            const SizedBox(width: 12),
-                            Expanded(
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  Text(title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 15)),
-                                  const SizedBox(height: 2),
-                                  Text(subtitle, style: TextStyle(color: Colors.grey.shade700, fontSize: 13)),
-                                ],
-                              ),
-                            ),
-                            const SizedBox(width: 8),
-                            _buildStatusBadge(
-                              label: isCompleted
-                                  ? 'COMPLETED'
-                                  : (processing > 0 ? 'IN PROGRESS' : (failed > 0 ? 'FAILED' : 'WAITING')),
-                              color: isCompleted
-                                  ? Colors.green
-                                  : (processing > 0 ? primaryColor : (failed > 0 ? Colors.red : Colors.orange)),
-                            ),
-                            const SizedBox(width: 6),
-                            Icon(
-                              _expandedTaskTypes.contains(type) ? Icons.expand_less : Icons.expand_more,
-                              color: Colors.grey.shade700,
-                            ),
-                          ],
-                        ),
-                      ),
-                      const SizedBox(height: 12),
-                      ClipRRect(
-                        borderRadius: BorderRadius.circular(999),
-                        child: LinearProgressIndicator(
-                          value: progress,
-                          minHeight: 8,
-                          color: accent,
-                          backgroundColor: accent.withOpacity(0.2),
-                        ),
-                      ),
-                      const SizedBox(height: 8),
-                      Text('$completed / $total erledigt', style: TextStyle(color: Colors.grey.shade800)),
-                      if (_expandedTaskTypes.contains(type)) ...[
-                        const SizedBox(height: 10),
-                        const Divider(height: 1),
-                        const SizedBox(height: 10),
-                        Text('Task-Flow', style: TextStyle(color: accent, fontWeight: FontWeight.w700)),
-                        const SizedBox(height: 8),
-                        _buildTaskFlowLine(
-                          rows: rows,
-                          taskType: type,
-                          primaryColor: primaryColor,
-                          teamMeta: teamMeta,
-                        ),
-                        if (isActive) ...[
-                          const SizedBox(height: 6),
-                          Text(
-                            'Aktive Task-Gruppe',
-                            style: TextStyle(color: Colors.grey.shade600, fontSize: 12),
-                          ),
-                        ],
-                      ],
-                    ],
-                  ),
-                ),
-              );
-            }),
-                ],
-          ],
-        );
+              ],
+            );
           },
         );
       },
-    );
-  }
-
-  Widget _buildInitializationStageOverview({
-    required List<Map<String, dynamic>> taskRows,
-    required Color primaryColor,
-  }) {
-    final stages = _buildInitializationStages(taskRows);
-    final completedCount = stages.where((stage) => stage.isCompleted).length;
-    final progress = stages.isEmpty ? 0.0 : completedCount / stages.length;
-
-    return Card(
-      elevation: 0,
-      color: Colors.white,
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-      child: Padding(
-        padding: const EdgeInsets.all(14),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Text(
-              'Gesamtfortschritt: $completedCount / ${stages.length}',
-              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
-            ),
-            const SizedBox(height: 10),
-            ClipRRect(
-              borderRadius: BorderRadius.circular(999),
-              child: LinearProgressIndicator(
-                value: progress,
-                minHeight: 10,
-                color: primaryColor,
-                backgroundColor: primaryColor.withOpacity(0.2),
-              ),
-            ),
-            const SizedBox(height: 12),
-            ...stages.map(
-              (stage) => _buildInitializationStageRow(stage: stage, primaryColor: primaryColor),
-            ),
-          ],
-        ),
-      ),
     );
   }
 
@@ -1321,7 +1144,12 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
   }) {
     final rows = taskRows.where((row) => taskTypes.contains((row['task_type'] ?? '').toString())).toList();
     if (rows.isEmpty) {
-      return _InitializationStageState(title: title, isCompleted: false, isInProgress: false);
+      return _InitializationStageState(
+        title: title,
+        isCompleted: false,
+        isInProgress: false,
+        taskTypes: taskTypes,
+      );
     }
 
     final normalizedStatuses = rows.map(_rowStatus).toList(growable: false);
@@ -1333,6 +1161,7 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
       title: title,
       isCompleted: isCompleted,
       isInProgress: !isCompleted && (hasInProgress || hasStarted),
+      taskTypes: taskTypes,
     );
   }
 
@@ -1341,42 +1170,188 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
       title: 'Initialisierung abschließen',
       isCompleted: isCompleted,
       isInProgress: !isCompleted && _initializationProgress > 0.0,
+      taskTypes: const <String>{},
     );
   }
 
-  Widget _buildInitializationStageRow({
-    required _InitializationStageState stage,
+  Widget _buildInitializationHeaderBar({
+    required List<_InitializationStageState> stages,
     required Color primaryColor,
   }) {
-    final Color color = stage.isCompleted
-        ? Colors.green.shade700
-        : (stage.isInProgress ? primaryColor : Colors.grey.shade500);
-    final IconData icon = stage.isCompleted
-        ? Icons.check_circle_rounded
-        : (stage.isInProgress ? Icons.autorenew_rounded : Icons.radio_button_unchecked_rounded);
+    final completed = stages.where((stage) => stage.isCompleted).toList(growable: false);
+    final completedCount = completed.length;
+    final progress = stages.isEmpty ? 0.0 : completedCount / stages.length;
 
-    return Padding(
-      padding: const EdgeInsets.only(bottom: 8),
-      child: Row(
-        children: [
-          Icon(icon, size: 18, color: color),
-          const SizedBox(width: 8),
-          Expanded(
-            child: Text(
-              stage.title,
-              style: TextStyle(
-                fontWeight: FontWeight.w600,
-                color: Colors.grey.shade900,
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Text(
+              'Initialisierung: $completedCount / ${stages.length}',
+              style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16),
+            ),
+            const SizedBox(width: 10),
+            if (completed.isNotEmpty)
+              Expanded(
+                child: SingleChildScrollView(
+                  scrollDirection: Axis.horizontal,
+                  child: Row(
+                    children: completed
+                        .map(
+                          (stage) => Padding(
+                            padding: const EdgeInsets.only(right: 6),
+                            child: Text(
+                              '✓ ${stage.title}',
+                              style: TextStyle(
+                                fontSize: 12,
+                                color: Colors.green.shade700,
+                                fontWeight: FontWeight.w700,
+                              ),
+                            ),
+                          ),
+                        )
+                        .toList(growable: false),
+                  ),
+                ),
+              ),
+          ],
+        ),
+        const SizedBox(height: 10),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(999),
+          child: LinearProgressIndicator(
+            value: progress,
+            minHeight: 10,
+            color: primaryColor,
+            backgroundColor: primaryColor.withOpacity(0.18),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildInitializationStageLayout({
+    required List<_InitializationStageState> stages,
+    required Map<String, List<Map<String, dynamic>>> grouped,
+    required String? activeTaskType,
+    required Color primaryColor,
+    required Map<int, Map<String, dynamic>> teamMeta,
+  }) {
+    final currentIndex = stages.indexWhere((stage) => stage.isInProgress || !stage.isCompleted);
+    final safeCurrentIndex = currentIndex == -1 ? (stages.isEmpty ? 0 : stages.length - 1) : currentIndex;
+
+    return Column(
+      children: [
+        if (safeCurrentIndex < stages.length)
+          _buildInitializationStageCard(
+            stage: stages[safeCurrentIndex],
+            grouped: grouped,
+            isCurrent: true,
+            primaryColor: primaryColor,
+            teamMeta: teamMeta,
+            activeTaskType: activeTaskType,
+          ),
+        const SizedBox(height: 12),
+        ...List.generate(stages.length, (index) => index)
+            .where((index) => index > safeCurrentIndex)
+            .map(
+              (index) => _buildInitializationStageCard(
+                stage: stages[index],
+                grouped: grouped,
+                isCurrent: false,
+                primaryColor: primaryColor,
+                teamMeta: teamMeta,
+                activeTaskType: activeTaskType,
               ),
             ),
-          ),
-          _buildStatusBadge(
-            label: stage.isCompleted ? 'ERLEDIGT' : (stage.isInProgress ? 'LÄUFT' : 'OFFEN'),
-            color: color,
-          ),
-        ],
+      ],
+    );
+  }
+
+  Widget _buildInitializationStageCard({
+    required _InitializationStageState stage,
+    required Map<String, List<Map<String, dynamic>>> grouped,
+    required bool isCurrent,
+    required Color primaryColor,
+    required Map<int, Map<String, dynamic>> teamMeta,
+    required String? activeTaskType,
+  }) {
+    final stageRows = stage.taskTypes.expand((type) => grouped[type] ?? const <Map<String, dynamic>>[]).toList();
+    final completed = stageRows.where((row) => _rowStatus(row) == 'COMPLETED').length;
+    final total = stageRows.length;
+    final progress = total == 0 ? (stage.isCompleted ? 1.0 : 0.0) : completed / total;
+
+    return Card(
+      elevation: isCurrent ? 2 : 0,
+      margin: const EdgeInsets.only(bottom: 10),
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Row(
+              children: [
+                Icon(
+                  stage.isCompleted
+                      ? Icons.check_circle_rounded
+                      : (isCurrent ? Icons.autorenew_rounded : Icons.radio_button_unchecked_rounded),
+                  color: stage.isCompleted ? Colors.green.shade700 : (isCurrent ? primaryColor : Colors.grey.shade500),
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(stage.title, style: const TextStyle(fontWeight: FontWeight.w700, fontSize: 16)),
+                ),
+                _buildStatusBadge(
+                  label: stage.isCompleted ? 'ERLEDIGT' : (isCurrent ? 'AKTUELL' : 'NÄCHSTE'),
+                  color: stage.isCompleted ? Colors.green.shade700 : (isCurrent ? primaryColor : Colors.grey.shade600),
+                ),
+              ],
+            ),
+            const SizedBox(height: 10),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(999),
+              child: LinearProgressIndicator(
+                value: progress,
+                minHeight: 8,
+                color: stage.isCompleted ? Colors.green.shade600 : primaryColor,
+                backgroundColor: Colors.grey.shade200,
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text('$completed / $total erledigt', style: TextStyle(color: Colors.grey.shade700)),
+            if (isCurrent && !stage.isCompleted) ...[
+              const SizedBox(height: 12),
+              _buildCurrentStageContent(stage, stageRows, primaryColor, teamMeta, activeTaskType),
+            ],
+          ],
+        ),
       ),
     );
+  }
+
+  Widget _buildCurrentStageContent(
+    _InitializationStageState stage,
+    List<Map<String, dynamic>> stageRows,
+    Color primaryColor,
+    Map<int, Map<String, dynamic>> teamMeta,
+    String? activeTaskType,
+  ) {
+    if (stage.taskTypes.isEmpty) {
+      return Container(
+        width: double.infinity,
+        padding: const EdgeInsets.all(14),
+        decoration: BoxDecoration(color: Colors.grey.shade50, borderRadius: BorderRadius.circular(12)),
+        child: const Text('Warte auf Abschluss...'),
+      );
+    }
+
+    final focusTaskType = activeTaskType != null && stage.taskTypes.contains(activeTaskType)
+        ? activeTaskType
+        : stage.taskTypes.first;
+    final focusRows = stageRows.where((row) => (row['task_type'] ?? '').toString() == focusTaskType).toList();
+    return _buildCurrentTaskCenterArea(focusTaskType, focusRows, primaryColor, teamMeta);
   }
 
   Widget _buildStatusBadge({required String label, required Color color}) {
@@ -1613,6 +1588,28 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
       );
     }
 
+    final flow = Container(
+      width: double.infinity,
+      padding: const EdgeInsets.all(12),
+      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
+      child: Column(
+        crossAxisAlignment: CrossAxisAlignment.start,
+        children: [
+          Text(
+            'Aktueller Vorgang: ${_taskTitle(activeTaskType)}',
+            style: TextStyle(fontWeight: FontWeight.w700, color: primaryColor),
+          ),
+          const SizedBox(height: 10),
+          _buildTaskFlowLine(
+            rows: activeRows,
+            taskType: activeTaskType,
+            primaryColor: primaryColor,
+            teamMeta: teamMeta,
+          ),
+        ],
+      ),
+    );
+
     if (activeTaskType == 'FETCH_TEAM_SQUAD' || activeTaskType == 'FETCH_SQUADS') {
       final processing = activeRows.firstWhere(
         (row) => _rowStatus(row) == 'PROCESSING',
@@ -1622,16 +1619,17 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
       final teamIdInt = teamId is num ? teamId.toInt() : int.tryParse(teamId?.toString() ?? '');
       if (teamIdInt != null && _initializingSeasonId != null) {
         final teamName = teamMeta[teamIdInt]?['name']?.toString() ?? 'Team $teamIdInt';
-        return _buildLivePlayerProgress(teamIdInt, teamName, _initializingSeasonId!, primaryColor);
+        return Column(
+          children: [
+            _buildLivePlayerProgress(teamIdInt, teamName, _initializingSeasonId!, primaryColor),
+            const SizedBox(height: 10),
+            flow,
+          ],
+        );
       }
     }
 
-    return Container(
-      width: double.infinity,
-      padding: const EdgeInsets.all(12),
-      decoration: BoxDecoration(color: Colors.white, borderRadius: BorderRadius.circular(12)),
-      child: Text('Aktueller Vorgang: ${_taskTitle(activeTaskType)}'),
-    );
+    return flow;
   }
 
   Widget _buildLivePlayerProgress(int teamId, String teamName, int seasonId, Color primaryColor) {
@@ -1814,10 +1812,12 @@ class _InitializationStageState {
   final String title;
   final bool isCompleted;
   final bool isInProgress;
+  final Set<String> taskTypes;
 
   const _InitializationStageState({
     required this.title,
     required this.isCompleted,
     required this.isInProgress,
+    required this.taskTypes,
   });
 }
