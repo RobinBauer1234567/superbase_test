@@ -1093,6 +1093,8 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                _buildInitializationSchemaCard(grouped: grouped, taskRows: taskRows, primaryColor: primaryColor),
+                const SizedBox(height: 14),
                 _buildTaskFocusBoard(
                   taskTypes: taskTypes,
                   grouped: grouped,
@@ -1226,6 +1228,149 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
           },
         );
       },
+    );
+  }
+
+  Widget _buildInitializationSchemaCard({
+    required Map<String, List<Map<String, dynamic>>> grouped,
+    required List<Map<String, dynamic>> taskRows,
+    required Color primaryColor,
+  }) {
+    final List<_InitializationPhase> phases = <_InitializationPhase>[
+      const _InitializationPhase(
+        title: 'Initialisiere Teams',
+        taskTypes: <String>['FETCH_TEAMS'],
+        icon: Icons.groups_rounded,
+      ),
+      const _InitializationPhase(
+        title: 'Initialisiere Spieler',
+        taskTypes: <String>['FETCH_TEAM_SQUAD', 'FETCH_SQUADS', 'REPAIR_PLAYERS', 'SYNC_TRANSFERS'],
+        icon: Icons.badge_rounded,
+      ),
+      const _InitializationPhase(
+        title: 'Initialisiere Spieltage',
+        taskTypes: <String>['FETCH_ROUNDS'],
+        icon: Icons.calendar_view_week_rounded,
+      ),
+      const _InitializationPhase(
+        title: 'Initialisiere Spiele',
+        taskTypes: <String>['FETCH_MATCHES', 'UPDATE_SCHEDULE'],
+        icon: Icons.sports_soccer_rounded,
+      ),
+      const _InitializationPhase(
+        title: 'Bearbeite Spiele',
+        taskTypes: <String>['UPDATE_MATCH'],
+        icon: Icons.tune_rounded,
+      ),
+    ];
+
+    final Set<String> completedPhaseTitles = <String>{};
+    final Set<String> startedPhaseTitles = <String>{};
+    for (final phase in phases) {
+      final phaseRows = phase.taskTypes.expand((type) => grouped[type] ?? const <Map<String, dynamic>>[]).toList();
+      final statuses = phaseRows.map(_rowStatus).toList(growable: false);
+      final hasRows = phaseRows.isNotEmpty;
+      final hasProcessing = statuses.contains('PROCESSING');
+      final hasCompleted = statuses.contains('COMPLETED');
+      final allCompleted = hasRows && statuses.every((s) => s == 'COMPLETED');
+      if (allCompleted) completedPhaseTitles.add(phase.title);
+      if (hasRows || hasProcessing || hasCompleted) startedPhaseTitles.add(phase.title);
+    }
+
+    final bool allTasksCompleted = taskRows.isNotEmpty && taskRows.every((row) => _rowStatus(row) == 'COMPLETED');
+    final int completedPhases = completedPhaseTitles.length + (allTasksCompleted ? 1 : 0);
+    const int totalPhases = 6;
+    final double totalProgress = completedPhases / totalPhases;
+
+    return Card(
+      elevation: 0,
+      color: Colors.grey.shade50,
+      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            const Text(
+              'Initialisierung',
+              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+            ),
+            const SizedBox(height: 10),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(999),
+              child: LinearProgressIndicator(
+                value: totalProgress,
+                minHeight: 10,
+                color: primaryColor,
+                backgroundColor: primaryColor.withOpacity(0.2),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '$completedPhases / $totalPhases Bereiche abgeschlossen',
+              style: TextStyle(color: Colors.grey.shade800, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 12),
+            ...phases.map((phase) {
+              final isDone = completedPhaseTitles.contains(phase.title);
+              final isStarted = startedPhaseTitles.contains(phase.title);
+              final rowColor = isDone
+                  ? Colors.green.shade700
+                  : (isStarted ? primaryColor : Colors.grey.shade500);
+
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  children: [
+                    Icon(
+                      isDone ? Icons.check_circle_rounded : (isStarted ? Icons.autorenew_rounded : phase.icon),
+                      size: 18,
+                      color: rowColor,
+                    ),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        phase.title,
+                        style: TextStyle(
+                          color: Colors.grey.shade900,
+                          fontWeight: isDone ? FontWeight.w700 : FontWeight.w600,
+                        ),
+                      ),
+                    ),
+                    _buildStatusBadge(
+                      label: isDone ? 'COMPLETED' : (isStarted ? 'IN PROGRESS' : 'WAITING'),
+                      color: isDone ? Colors.green : (isStarted ? primaryColor : Colors.orange),
+                    ),
+                  ],
+                ),
+              );
+            }),
+            Row(
+              children: [
+                Icon(
+                  allTasksCompleted ? Icons.check_circle_rounded : Icons.flag_rounded,
+                  size: 18,
+                  color: allTasksCompleted ? Colors.green.shade700 : Colors.grey.shade500,
+                ),
+                const SizedBox(width: 8),
+                Expanded(
+                  child: Text(
+                    'Initialisierung abschließen',
+                    style: TextStyle(
+                      color: Colors.grey.shade900,
+                      fontWeight: allTasksCompleted ? FontWeight.w700 : FontWeight.w600,
+                    ),
+                  ),
+                ),
+                _buildStatusBadge(
+                  label: allTasksCompleted ? 'COMPLETED' : 'WAITING',
+                  color: allTasksCompleted ? Colors.green : Colors.orange,
+                ),
+              ],
+            ),
+          ],
+        ),
+      ),
     );
   }
 
@@ -1654,4 +1799,16 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
         return Icons.task_alt_rounded;
     }
   }
+}
+
+class _InitializationPhase {
+  final String title;
+  final List<String> taskTypes;
+  final IconData icon;
+
+  const _InitializationPhase({
+    required this.title,
+    required this.taskTypes,
+    required this.icon,
+  });
 }
