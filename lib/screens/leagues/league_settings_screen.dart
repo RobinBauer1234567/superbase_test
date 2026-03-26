@@ -1037,18 +1037,6 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
         }
 
         final taskRows = snapshot.data ?? const <Map<String, dynamic>>[];
-        if (taskRows.isEmpty) {
-          return Card(
-            elevation: 0,
-            color: Colors.grey.shade100,
-            shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
-            child: const Padding(
-              padding: EdgeInsets.all(16),
-              child: Text('Noch keine Tasks in sync_tasks gefunden.'),
-            ),
-          );
-        }
-
         final Map<String, List<Map<String, dynamic>>> grouped = <String, List<Map<String, dynamic>>>{};
         for (final row in taskRows) {
           final taskType = (row['task_type'] ?? 'UNKNOWN').toString();
@@ -1093,6 +1081,11 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
             return Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
+                _buildInitializationSchemaCard(
+                  grouped: grouped,
+                  primaryColor: primaryColor,
+                ),
+                const SizedBox(height: 14),
                 _buildTaskFocusBoard(
                   taskTypes: taskTypes,
                   grouped: grouped,
@@ -1108,6 +1101,16 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
                     style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
                   ),
                 ),
+                if (taskTypes.isEmpty)
+                  Card(
+                    elevation: 0,
+                    color: Colors.grey.shade100,
+                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(14)),
+                    child: const Padding(
+                      padding: EdgeInsets.all(16),
+                      child: Text('Noch keine Tasks in sync_tasks gefunden.'),
+                    ),
+                  ),
                 ...taskTypes.map((type) {
               final rows = grouped[type]!;
               final total = rows.length;
@@ -1226,6 +1229,108 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
           },
         );
       },
+    );
+  }
+
+  Widget _buildInitializationSchemaCard({
+    required Map<String, List<Map<String, dynamic>>> grouped,
+    required Color primaryColor,
+  }) {
+    final steps = <Map<String, dynamic>>[
+      {'title': 'Initialisiere Teams', 'types': <String>['FETCH_TEAMS']},
+      {'title': 'Initialisiere Spieler', 'types': <String>['FETCH_TEAM_SQUAD', 'FETCH_SQUADS']},
+      {'title': 'Initialisiere Spieltage', 'types': <String>['FETCH_ROUNDS']},
+      {'title': 'Initialisiere Spiele', 'types': <String>['FETCH_MATCHES']},
+      {'title': 'Bearbeite Spiele', 'types': <String>['UPDATE_MATCH', 'UPDATE_SCHEDULE']},
+      {'title': 'Initialisierung abschließen', 'types': <String>[]},
+    ];
+
+    bool allCoreCompleted = true;
+    final completion = <bool>[];
+
+    for (var i = 0; i < steps.length; i++) {
+      final types = (steps[i]['types'] as List<String>);
+      bool isCompleted;
+
+      if (i == steps.length - 1) {
+        isCompleted = allCoreCompleted;
+      } else {
+        if (types.isEmpty) {
+          isCompleted = false;
+        } else {
+          final rows = types.expand((type) => grouped[type] ?? const <Map<String, dynamic>>[]).toList(growable: false);
+          isCompleted = rows.isNotEmpty &&
+              rows.every((r) => (r['status'] ?? '').toString().toUpperCase() == 'COMPLETED');
+        }
+        if (!isCompleted) {
+          allCoreCompleted = false;
+        }
+      }
+
+      completion.add(isCompleted);
+    }
+
+    final completedCount = completion.where((done) => done).length;
+    final progress = steps.isEmpty ? 0.0 : completedCount / steps.length;
+
+    return Card(
+      elevation: 0,
+      color: Colors.white,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(14),
+        side: BorderSide(color: Colors.grey.shade200),
+      ),
+      child: Padding(
+        padding: const EdgeInsets.all(14),
+        child: Column(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Text(
+              'Initialisierung',
+              style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700, color: Colors.grey.shade900),
+            ),
+            const SizedBox(height: 8),
+            ClipRRect(
+              borderRadius: BorderRadius.circular(999),
+              child: LinearProgressIndicator(
+                value: progress,
+                minHeight: 10,
+                color: primaryColor,
+                backgroundColor: primaryColor.withOpacity(0.15),
+              ),
+            ),
+            const SizedBox(height: 8),
+            Text(
+              '$completedCount / ${steps.length} Bereiche abgeschlossen',
+              style: TextStyle(color: Colors.grey.shade700, fontWeight: FontWeight.w600),
+            ),
+            const SizedBox(height: 10),
+            ...List.generate(steps.length, (index) {
+              final done = completion[index];
+              final title = steps[index]['title'] as String;
+              final color = done ? Colors.green.shade700 : Colors.grey.shade600;
+              return Padding(
+                padding: const EdgeInsets.only(bottom: 8),
+                child: Row(
+                  children: [
+                    Icon(done ? Icons.check_circle : Icons.radio_button_unchecked, size: 18, color: color),
+                    const SizedBox(width: 8),
+                    Expanded(
+                      child: Text(
+                        title,
+                        style: TextStyle(
+                          color: Colors.grey.shade900,
+                          fontWeight: done ? FontWeight.w700 : FontWeight.w500,
+                        ),
+                      ),
+                    ),
+                  ],
+                ),
+              );
+            }),
+          ],
+        ),
+      ),
     );
   }
 
