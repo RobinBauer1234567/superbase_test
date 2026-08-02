@@ -1551,14 +1551,6 @@ class SupabaseService {
     });
   }
 
-  Future<void> simulateSystemTransfers(int leagueId, int seasonId) async { // <--- seasonId hinzugefügt
-    await supabase.rpc('generate_daily_transfers', params: {
-      'p_league_id': leagueId,
-      'p_season_id': seasonId, // <--- Parameter übergeben
-      'p_amount': 5
-    });
-  }
-
   Future<int> fetchUserBudget(int leagueId) async {
     final user = supabase.auth.currentUser;
     if (user == null) return 0;
@@ -1579,9 +1571,6 @@ class SupabaseService {
 
   Future<List<Map<String, dynamic>>> fetchTransferMarket(int leagueId) async {
     try {
-      // Wenn du die Aufräum-Funktion noch drin hast:
-      await supabase.rpc('process_expired_transfers');
-
       final leagueResponse = await supabase
           .from('leagues')
           .select('season_id')
