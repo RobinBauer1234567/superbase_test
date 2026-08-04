@@ -35,7 +35,7 @@ class _LeagueDetailScreenState extends State<LeagueDetailScreen> {
   @override
   Widget build(BuildContext context) {
     final screenWidth = MediaQuery.of(context).size.width;
-    final double tabFontSize = max(5, min(screenWidth / 45, 15));
+    final double tabFontSize = max(5.0, min(screenWidth / 45, 15.0));
     final int leagueId = (widget.league['id'] as num).toInt();
 
     return DefaultTabController(
