@@ -71,6 +71,7 @@ class AuthService with ChangeNotifier {
         imageBytes,
         fileOptions: const FileOptions(
           cacheControl: '3600',
+          contentType: 'image/jpeg',
           upsert: true, // WICHTIG: Überschreibt das alte Bild, falls vorhanden!
         ),
       );
