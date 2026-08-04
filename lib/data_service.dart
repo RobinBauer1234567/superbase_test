@@ -1505,10 +1505,9 @@ class SupabaseService {
 
   Future<void> placeBid(int transferId, int amount) async {
     try {
-      await supabase.from('transfer_bids').insert({
-        'transfer_id': transferId,
-        'bidder_id': supabase.auth.currentUser!.id,
-        'amount': amount,
+      await supabase.rpc('place_transfer_bid', params: {
+        'p_transfer_id': transferId,
+        'p_amount': amount,
       });
     } catch (e) {
       print("Fehler beim Bieten: $e");
@@ -1520,11 +1519,9 @@ class SupabaseService {
     final user = supabase.auth.currentUser;
     if (user == null) throw Exception("Nicht eingeloggt");
 
-    await supabase
-        .from('transfer_bids')
-        .delete()
-        .eq('transfer_id', transferId)
-        .eq('bidder_id', user.id);
+    await supabase.rpc('withdraw_transfer_bid', params: {
+      'p_transfer_id': transferId,
+    });
   }
 
   Future<void> buyPlayerNow(int transferId) async {
@@ -1801,15 +1798,19 @@ class SupabaseService {
   }
 
   Future<Map<String, dynamic>> fetchMatchdayData(int leagueId, int seasonId, int round, {String? userId}) async {
-    final targetUserId = userId ?? supabase.auth.currentUser!.id;
+    final currentUserId = supabase.auth.currentUser!.id;
+    final targetUserId = userId ?? currentUserId;
     try {
-      // 1. Snapshot initialisieren (macht nichts, falls er schon existiert)
-      await supabase.rpc('initialize_matchday_snapshot', params: {
-        'p_league_id': leagueId,
-        'p_user_id': targetUserId,
-        'p_season_id': seasonId,
-        'p_round': round,
-      });
+      // Fremde Teams werden nur gelesen. Ein Snapshot darf ausschließlich für
+      // den aktuell angemeldeten Benutzer initialisiert werden.
+      if (targetUserId == currentUserId) {
+        await supabase.rpc('initialize_matchday_snapshot', params: {
+          'p_league_id': leagueId,
+          'p_user_id': currentUserId,
+          'p_season_id': seasonId,
+          'p_round': round,
+        });
+      }
 
       // 2. Die Meta-Daten des Spieltags holen (Formation, Punkte, is_locked)
       final pointsData = await supabase
@@ -1849,29 +1850,6 @@ class SupabaseService {
     } catch (e) {
       print("Fehler beim Laden der Matchday-Daten: $e");
       return {};
-    }
-  }
-
-  Future<void> saveMatchdayLineup(int matchdayPointId, String formation, List<Map<String, dynamic>> playerUpdates) async {
-    try {
-      // 1. Formation in user_matchday_points updaten
-      await supabase
-          .from('user_matchday_points')
-          .update({'formation': formation})
-          .eq('id', matchdayPointId);
-
-      // 2. Die Indizes der Spieler aktualisieren
-      // Wir updaten nur Spieler, die NICHT gelockt sind (is_locked = false)
-      for (var update in playerUpdates) {
-        await supabase
-            .from('user_matchday_players')
-            .update({'formation_index': update['index']})
-            .eq('matchday_point_id', matchdayPointId)
-            .eq('player_id', update['player_id'])
-            .eq('is_locked', false); // Sicherheits-Check
-      }
-    } catch (e) {
-      print("Fehler beim Speichern der Matchday-Aufstellung: $e");
     }
   }
 
