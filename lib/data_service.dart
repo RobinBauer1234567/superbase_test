@@ -1059,13 +1059,12 @@ class SupabaseService {
     }
 
     try {
-      // 2. DATENBANK UPDATE: Wir senden den neuen Zeitstempel
-      await supabase.from('leagues').update({
-        'last_activity_at': now.toIso8601String(),
-        // SEHR WICHTIG: Wir setzen is_active immer auf true!
-        // Falls die Liga auf false war, wecken wir sie hiermit automatisch wieder auf.
-        'is_active': true,
-      }).eq('id', leagueId);
+      // Die Datenbank prüft serverseitig, ob der aktuelle Benutzer Mitglied
+      // der Liga ist, und ändert ausschließlich die Aktivitätsfelder.
+      await supabase.rpc(
+        'touch_league_activity',
+        params: {'p_league_id': leagueId},
+      );
 
       // 3. SPERRE SETZEN: Aktuelle Uhrzeit für diese Liga merken
       _lastActivityPings[leagueId] = now;
