@@ -1,13 +1,14 @@
 // lib/main.dart
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
-import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:http/http.dart' as http;
+import 'package:premier_league/auth_service.dart';
+import 'package:premier_league/screens/auth_screen.dart';
 import 'package:premier_league/screens/main_screen.dart';
 import 'package:premier_league/viewmodels/data_viewmodel.dart';
 import 'package:premier_league/viewmodels/tournament_viewmodel.dart';
-import 'package:premier_league/auth_service.dart';
-import 'package:premier_league/screens/auth_screen.dart';
-import 'package:http/http.dart' as http;
+import 'package:provider/provider.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
+
 import 'http/http_factory.dart'
     if (dart.library.html) 'http/http_factory_web.dart'
     if (dart.library.io) 'http/http_factory_io.dart';
@@ -21,7 +22,10 @@ void main() async {
 
       await Supabase.initialize(
         url: 'https://rcfetlzldccwjnuabfgj.supabase.co',
-        anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJjZmV0bHpsZGNjd2pudWFiZmdqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTM5OTkwNDQsImV4cCI6MjA2OTU3NTA0NH0.Fe4Aa3b7vxn9gnye1Cl0VvhxyT7UREJYDCRvICkGNsM',
+        anonKey:
+            'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.'
+            'eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJjZmV0bHpsZGNjd2pudWFiZmdqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTM5OTkwNDQsImV4cCI6MjA2OTU3NTA0NH0.'
+            'Fe4Aa3b7vxn9gnye1Cl0VvhxyT7UREJYDCRvICkGNsM',
       );
 
       runApp(const AppRoot());
@@ -41,8 +45,13 @@ class AppRoot extends StatelessWidget {
         ChangeNotifierProvider<TournamentViewModel>(
           create: (_) => TournamentViewModel(),
         ),
-        Provider<DataManagement>(
-          create: (_) => DataManagement(seasonId: 76986),
+        ChangeNotifierProxyProvider<TournamentViewModel, DataManagement>(
+          create: (_) => DataManagement(),
+          update: (_, tournament, dataManagement) {
+            final manager = dataManagement ?? DataManagement();
+            manager.setSelectedSeason(tournament.currentSeasonId);
+            return manager;
+          },
         ),
       ],
       child: MaterialApp(
