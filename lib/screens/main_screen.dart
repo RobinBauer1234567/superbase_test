@@ -304,7 +304,11 @@ class _MainScreenState extends State<MainScreen> {
       await Supabase.instance.client.storage.from('wappen').uploadBinary(
         path,
         bytes,
-        fileOptions: const FileOptions(cacheControl: '3600', upsert: true),
+        fileOptions: const FileOptions(
+          cacheControl: '3600',
+          contentType: 'image/jpeg',
+          upsert: true,
+        ),
       );
       final publicUrl = Supabase.instance.client.storage.from('wappen').getPublicUrl(path);
 
