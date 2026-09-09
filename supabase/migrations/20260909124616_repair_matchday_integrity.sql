@@ -154,8 +154,8 @@ BEGIN
             LIMIT v_num_players
         ) sub;
 
-        IF array_length(v_player_ids, 1) = v_num_players 
-           AND v_total_val >= v_min_val 
+        IF array_length(v_player_ids, 1) = v_num_players
+           AND v_total_val >= v_min_val
            AND v_total_val <= v_max_val THEN
             EXIT;
         END IF;
@@ -182,42 +182,42 @@ DECLARE
 BEGIN
     -- NEUE LOGIK: Lock greift, sobald das Spiel startet ODER direkt beendet/final ist
     IF NEW.status IN ('läuft', 'beendet', 'final') AND OLD.status NOT IN ('läuft', 'beendet', 'final') THEN
-        
+
         -- Finde alle Ligen und User, die Spieler aus diesem Spiel besitzen
         FOR r IN (
-            SELECT 
-                lp.user_id, 
-                lp.league_id, 
+            SELECT
+                lp.user_id,
+                lp.league_id,
                 lp.player_id
             FROM public.league_players lp
             JOIN public.leagues l ON l.id=lp.league_id AND l.season_id=NEW.season_id
-            JOIN public.season_players sp 
+            JOIN public.season_players sp
                -- FIX: sp.is_active = true hinzugefügt
-               ON lp.player_id = sp.player_id 
+               ON lp.player_id = sp.player_id
               AND sp.season_id = NEW.season_id
               AND sp.is_active = true
             WHERE sp.team_id IN (NEW.heimteam_id, NEW.auswärtsteam_id) AND lp.user_id IS NOT NULL
             ORDER BY lp.league_id,lp.user_id,lp.player_id
-        ) 
+        )
         LOOP
             -- 1. Prüfen, ob der User für diesen Spieltag schon einen Points-Eintrag hat
-            SELECT id INTO v_point_id 
+            SELECT id INTO v_point_id
             FROM public.user_matchday_points
-            WHERE user_id = r.user_id 
-              AND league_id = r.league_id 
-              AND season_id = NEW.season_id 
+            WHERE user_id = r.user_id
+              AND league_id = r.league_id
+              AND season_id = NEW.season_id
               AND round = NEW.round;
 
             -- Falls nicht: Initialisiere den Spieltag
             IF NOT FOUND THEN
                 PERFORM private.initialize_snapshot_internal(r.league_id, r.user_id, NEW.season_id, NEW.round);
-                
+
                 -- Danach die neu erstellte ID abfragen
-                SELECT id INTO v_point_id 
+                SELECT id INTO v_point_id
                 FROM public.user_matchday_points
-                WHERE user_id = r.user_id 
-                  AND league_id = r.league_id 
-                  AND season_id = NEW.season_id 
+                WHERE user_id = r.user_id
+                  AND league_id = r.league_id
+                  AND season_id = NEW.season_id
                   AND round = NEW.round;
             END IF;
 
@@ -230,13 +230,12 @@ BEGIN
             UPDATE public.user_matchday_players
             SET is_locked = true,
                 spiel_id = NEW.id
-            WHERE matchday_point_id = v_point_id 
+            WHERE matchday_point_id = v_point_id
               AND player_id = r.player_id;
-              
+
         END LOOP;
     END IF;
 
     RETURN NEW;
 END;
 $function$;
-
