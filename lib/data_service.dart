@@ -6,6 +6,8 @@ import 'dart:math';
 import 'package:premier_league/models/league_activity.dart';
 
 class ApiService {
+  ApiService({this.checkSyncSession});
+  final void Function()? checkSyncSession;
   final String baseUrl = 'https://www.sofascore.com/api/v1';
   final SupabaseService supabaseService = SupabaseService();
   final String tournamentId = '17';
@@ -42,6 +44,7 @@ class ApiService {
             final imageBytes = imageResponse.bodyBytes;
             final imagePath = 'wappen/$teamId.jpg';
 
+            checkSyncSession?.call();
             await supabaseService.supabase.storage
                 .from('wappen')
                 .uploadBinary(
@@ -61,8 +64,10 @@ class ApiService {
           print('Fehler beim Verarbeiten des Logos für Team-ID $teamId: $e');
         }
 
+        checkSyncSession?.call();
         await supabaseService.saveTeam(teamId, teamName, logoUrl);
         // NEU: Speichere die Beziehung in season_teams
+        checkSyncSession?.call();
         await supabaseService.saveSeasonTeam(int.parse(seasonId), teamId);
       }
       print('Alle Teams wurden erfolgreich in der Datenbank gespeichert.');
@@ -81,6 +86,7 @@ class ApiService {
 
       for (var round in roundsJson) {
         int roundNumber = int.tryParse(round['round'].toString()) ?? 0;
+        checkSyncSession?.call();
         await supabaseService.saveSpieltag(roundNumber, 'nicht gestartet', int.parse(seasonId));
       }
     } else {
@@ -109,6 +115,7 @@ class ApiService {
         String ergebnis = (event['homeScore'] == null || event['awayScore'] == null)
             ? "Noch kein Ergebnis"
             : "$homeScore:$awayScore";
+        checkSyncSession?.call();
         await supabaseService.saveSpiel(
           matchId,
           startTimeString,
@@ -139,6 +146,7 @@ class ApiService {
             parsedJson['event']['awayScore'] == null)
             ? "Noch kein Ergebnis"
             : "$homeScore:$awayScore";
+        checkSyncSession?.call();
         await supabaseService.updateSpiel(
             spielId,
             ergebnis,
@@ -159,17 +167,19 @@ class ApiService {
       return;
     }
 
+    if (response.statusCode != 200) { throw Exception('Lineups HTTP ${response.statusCode}'); }
     if (response.statusCode == 200) {
       try {
         final parsedJson = json.decode(response.body);
 
         if (parsedJson['home'] == null || parsedJson['away'] == null) {
           print(">>> FEHLER bei Spiel $spielId: JSON unvollständig.");
-          return;
+          throw const FormatException('Unvollständige Aufstellung.');
         }
 
         // 2. WICHTIG: Wir nutzen die SQL-Funktion (RPC) statt Dart-Schleifen!
         // Das repariert auch automatisch die team_id.
+        checkSyncSession?.call();
         await supabaseService.uploadMatchLineupRPC(spielId, seasonId, parsedJson);
 
         print("--- Update erfolgreich für Spiel $spielId (via RPC) ---");
@@ -178,6 +188,7 @@ class ApiService {
         // Fehler weitergeben für die lokale Sperre (API Limit)
         if (e.toString().contains('API_LIMIT_REACHED')) rethrow;
         print("!!! KRITISCHER FEHLER bei Spiel $spielId: $e");
+        rethrow;
       }
     }
   }
@@ -236,6 +247,7 @@ class ApiService {
         final imageBytes = imageResponse.bodyBytes;
         final imagePath = 'spielerbilder/$playerId.jpg';
 
+        checkSyncSession?.call();
         await supabaseService.supabase.storage
             .from('spielerbilder')
             .uploadBinary(
@@ -261,6 +273,7 @@ class ApiService {
     Map<String, dynamic> stats = playerData['statistics'] as Map<String, dynamic>? ?? {};
     int newRating = buildNewRating(primaryPosition, stats);
 
+    checkSyncSession?.call();
     await supabaseService.saveSpieler(
         playerId,
         playerName,
@@ -270,7 +283,9 @@ class ApiService {
         marktwert,
         seasonId,
     );
+    checkSyncSession?.call();
     await supabaseService.saveSeasonPlayer(seasonId, playerId, teamId);
+    checkSyncSession?.call();
     await supabaseService.saveMatchrating(ratingId, spielId, playerId, punktzahl, stats, newRating, formationIndex, matchPosition);
   }
 
@@ -317,6 +332,7 @@ class ApiService {
 
     // 3. In DB speichern
     try {
+      checkSyncSession?.call();
       await supabaseService.supabase.from('formation').insert({
         'formation': formation,
         'positionsliste': positionsList,
@@ -776,17 +792,20 @@ class ApiService {
   }
 
   Future<http.Response> _throttledGet(String url) async {
+    checkSyncSession?.call();
     await Future.delayed(const Duration(milliseconds: 300));
 
     int retryCount = 0;
     while (retryCount < 3) {
+      checkSyncSession?.call();
       try {
         // NEU: Wir übergeben unsere Tarn-Headers!
         final response = await http.get(
           Uri.parse(url),
           headers: _headers,
-        );
+        ).timeout(const Duration(seconds: 30));
 
+        checkSyncSession?.call();
         if (response.statusCode == 200) {
           return response;
         }
@@ -799,6 +818,7 @@ class ApiService {
           return response;
         }
       } catch (e) {
+        checkSyncSession?.call();
         if (e.toString().contains('API_LIMIT_REACHED')) rethrow;
 
         print('Netzwerkfehler: $e. Retry...');
@@ -900,6 +920,7 @@ class ApiService {
           if (imageResponse.statusCode == 200) {
             final imagePath = 'spielerbilder/$playerId.jpg';
 
+            checkSyncSession?.call();
             await supabaseService.supabase.storage
                 .from('spielerbilder')
                 .uploadBinary(
@@ -918,6 +939,7 @@ class ApiService {
 
         // d) Datenbank-Update für diesen Spieler durchführen (NUR NOCH BILD!)
         if (imageUrl != null) {
+          checkSyncSession?.call();
           await supabaseService.supabase
               .from('spieler')
               .update({'profilbild_url': imageUrl})
@@ -934,6 +956,7 @@ class ApiService {
         rethrow; // Werfen wir weiter, damit die Sperre greift
       } else {
         print('❌ Fehler im Reparatur-Job: $e');
+        rethrow;
       }
     }
   }
@@ -951,7 +974,7 @@ class ApiService {
 
       while (hasNextPage) {
         final response = await _throttledGet('https://www.sofascore.com/api/v1/player/$playerId/events/last/$currentPage');
-        if (response.statusCode != 200) break;
+        if (response.statusCode != 200) throw Exception('Player events HTTP ${response.statusCode}');
 
         final data = json.decode(response.body);
         // SICHERHEIT: Prüfen ob das JSON wirklich eine Map ist und nicht leer
@@ -1023,9 +1046,11 @@ class ApiService {
           }
         } catch (e) {
           print('Fehler beim Abrufen der Fallback-Position für $playerId: $e');
+          rethrow;
         }
       }
 
+      checkSyncSession?.call();
       await supabaseService.supabase.rpc('init_player_from_sofascore', params: {
         'p_player_id': playerId,
         'p_season_id': seasonId,
@@ -1040,6 +1065,7 @@ class ApiService {
     } catch (e) {
       if (e.toString().contains('API_LIMIT_REACHED')) rethrow;
       print('❌ Fehler bei der Initialisierung von $playerId: $e');
+      rethrow;
     }
   }}
 
@@ -1803,13 +1829,15 @@ class SupabaseService {
   Future<Map<String, dynamic>> fetchMatchdayData(int leagueId, int seasonId, int round, {String? userId}) async {
     final targetUserId = userId ?? supabase.auth.currentUser!.id;
     try {
-      // 1. Snapshot initialisieren (macht nichts, falls er schon existiert)
-      await supabase.rpc('initialize_matchday_snapshot', params: {
+      // Viewing another manager must not attempt to write their lineup.
+      if (targetUserId == supabase.auth.currentUser?.id) {
+        await supabase.rpc('initialize_matchday_snapshot', params: {
         'p_league_id': leagueId,
         'p_user_id': targetUserId,
         'p_season_id': seasonId,
         'p_round': round,
-      });
+        });
+      }
 
       // 2. Die Meta-Daten des Spieltags holen (Formation, Punkte, is_locked)
       final pointsData = await supabase
@@ -1817,6 +1845,7 @@ class SupabaseService {
           .select()
           .eq('league_id', leagueId)
           .eq('user_id', targetUserId)
+          .eq('season_id', seasonId)
           .eq('round', round)
           .maybeSingle();
 

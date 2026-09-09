@@ -50,7 +50,7 @@ class AppRoot extends StatelessWidget {
     return MultiProvider(
       providers: [
         ChangeNotifierProvider<AuthService>(create: (_) => AuthService()),
-        Provider<DataManagement>(create: (_) => DataManagement(seasonId: 76986)),
+        ChangeNotifierProvider<DataManagement>(create: (_) => DataManagement(seasonId: 76986)),
       ],
       child: MaterialApp(
         title: 'Managerspiel',
