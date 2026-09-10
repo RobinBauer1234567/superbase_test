@@ -19,7 +19,7 @@ class ClientSyncTaskWorker {
     _apiService = apiService ?? ApiService(checkSyncSession: _ensureSession);
   }
 
-  static const String _apiBaseUrl = 'https://www.sofascore.com/api/v1';
+  static const String _apiBaseUrl = 'https://api.sofascore.com/api/v1';
   static const Duration _busyDelay = Duration(seconds: 2);
   static const Duration _idleDelay = Duration(seconds: 20);
   static const Duration _requestDelay = Duration(milliseconds: 350);
@@ -52,6 +52,7 @@ class ClientSyncTaskWorker {
         'Mobile/15E148 Safari/604.1',
     'Accept': 'application/json, text/plain, */*',
     'Accept-Language': 'de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7',
+    'X-Requested-With': 'XMLHttpRequest',
     'Origin': 'https://www.sofascore.com',
     'Referer': 'https://www.sofascore.com/',
   };
@@ -602,13 +603,18 @@ class ClientSyncTaskWorker {
             .get(Uri.parse(url), headers: _headers)
             .timeout(const Duration(seconds: 30));
         _ensureSession();
-        if (response.statusCode == 403 || response.statusCode == 429) {
+        if (response.statusCode == 403) {
+          throw _ApiAccessDeniedException(response.statusCode, url);
+        }
+        if (response.statusCode == 429) {
           throw _ApiLimitException(response.statusCode, url);
         }
         return response;
       } catch (error) {
         _ensureSession();
-        if (error is _ApiLimitException) rethrow;
+        if (error is _ApiLimitException || error is _ApiAccessDeniedException) {
+          rethrow;
+        }
         lastError = error;
         if (attempt < 2) {
           await Future<void>.delayed(Duration(seconds: attempt + 1));
@@ -700,6 +706,17 @@ class ClientSyncTaskWorker {
       DateTime.now().add(duration).millisecondsSinceEpoch,
     );
   }
+}
+
+class _ApiAccessDeniedException implements Exception {
+  const _ApiAccessDeniedException(this.statusCode, this.url);
+
+  final int statusCode;
+  final String url;
+
+  @override
+  String toString() =>
+      'API_ACCESS_DENIED: SofaScore HTTP $statusCode für $url';
 }
 
 class _ApiLimitException implements Exception {
