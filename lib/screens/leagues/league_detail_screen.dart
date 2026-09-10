@@ -43,6 +43,7 @@ class _LeagueDetailScreenState extends State<LeagueDetailScreen> {
         appBar: AppBar(
           toolbarHeight: 0,
           bottom: TabBar(
+            isScrollable: false,
             tabs: const [
               Tab(text: 'AKTIVITÄTEN'),
               Tab(text: 'TRANSFERMARKT'),

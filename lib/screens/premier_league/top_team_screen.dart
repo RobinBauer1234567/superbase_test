@@ -3,10 +3,11 @@ import 'package:flutter/material.dart';
 import 'package:premier_league/data_service.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
-import 'package:premier_league/viewmodels/data_viewmodel.dart';
+import 'package:premier_league/viewmodels/tournament_viewmodel.dart';
 import 'package:premier_league/screens/player_screen.dart';
 import 'package:premier_league/screens/screenelements/player_list_item.dart';
 import 'package:premier_league/screens/screenelements/match_screen/formations.dart';
+import 'package:premier_league/utils/color_helper.dart';
 
 class TopTeamScreen extends StatefulWidget {
   const TopTeamScreen({super.key});
@@ -36,6 +37,12 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
   int? _selectedTeamId;
   String? _selectedPosition;
 
+  int _headerRatingMax() {
+    return _showGesamt
+        ? (_spieltage.length * 250 * 0.8).toInt().clamp(1, 99999999)
+        : 2500;
+  }
+
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
@@ -63,8 +70,8 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
   }
 
   Future<void> _fetchFilterData() async {
-    final dataManagement = Provider.of<DataManagement>(context, listen: false);
-    final seasonId = dataManagement.seasonId;
+    final seasonId = context.read<TournamentViewModel>().currentSeasonId;
+    if (seasonId == null) return;
 
     final teamsResponse = await Supabase.instance.client
         .from('season_teams')
@@ -109,11 +116,11 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
   Future<void> _fetchGesamtStats() async {
     setState(() => _isLoading = true);
     try {
-      final dataManagement = Provider.of<DataManagement>(
-        context,
-        listen: false,
-      );
-      final dynamic rawSeasonId = dataManagement.seasonId;
+      final dynamic rawSeasonId = context.read<TournamentViewModel>().currentSeasonId;
+      if (rawSeasonId == null) {
+        if (mounted) setState(() => _topPlayers = []);
+        return;
+      }
       final String seasonIdStr = rawSeasonId.toString();
       final int? seasonIdInt = int.tryParse(seasonIdStr);
 
@@ -226,11 +233,11 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
       final spieltag = _selectedSpieltag;
       if (spieltag == null) return;
 
-      final dataManagement = Provider.of<DataManagement>(
-        context,
-        listen: false,
-      );
-      final seasonId = dataManagement.seasonId;
+      final seasonId = context.read<TournamentViewModel>().currentSeasonId;
+      if (seasonId == null) {
+        if (mounted) setState(() => _topPlayers = []);
+        return;
+      }
 
       var query = Supabase.instance.client
           .from('matchrating')
@@ -415,7 +422,6 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
   }
 
   @override
-  @override
   Widget build(BuildContext context) {
     return Column(
       children: [
@@ -438,7 +444,6 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
   // --- DIE NEUE, KOMPAKTE KOPFLEISTE ---
   Widget _buildMatchdaySelector() {
     final primaryColor = Theme.of(context).primaryColor;
-
     // Prüfen ob wir gerade den aktuellsten Spieltag anzeigen
     final bool isCurrentRound =
         _spieltage.isNotEmpty && _selectedSpieltag == _spieltage.last;
@@ -860,22 +865,72 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
               ),
               child: Column(
                 children: [
-                  DropdownButton<String>(
-                    value: _selectedFormationName,
-                    isExpanded: true,
-                    items:
-                        sortedFormationKeys.map((String value) {
-                          return DropdownMenuItem<String>(
-                            value: value,
-                            child: Text('Formation: $value'),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: DropdownButton<String>(
+                          value: _selectedFormationName,
+                          isExpanded: true,
+                          items:
+                              sortedFormationKeys.map((String value) {
+                                return DropdownMenuItem<String>(
+                                  value: value,
+                                  child: Text('Formation: $value'),
+                                );
+                              }).toList(),
+                          onChanged: (String? newValue) {
+                            if (newValue != null &&
+                                newValue != _selectedFormationName) {
+                              _calculateTeamForSelectedFormation(newValue);
+                            }
+                          },
+                        ),
+                      ),
+                      const SizedBox(width: 8),
+                      Builder(
+                        builder: (context) {
+                          final int formationScore =
+                              (_bestFormation?['score'] as num?)?.toInt() ?? 0;
+                          final int formationMax = _headerRatingMax();
+                          final Color formationColor =
+                              getColorForRating(formationScore, formationMax);
+
+                          return Container(
+                            padding: const EdgeInsets.symmetric(
+                              horizontal: 12,
+                              vertical: 8,
+                            ),
+                            decoration: BoxDecoration(
+                              color: formationColor.withOpacity(0.1),
+                              borderRadius: BorderRadius.circular(12),
+                              border: Border.all(
+                                color: formationColor.withOpacity(0.3),
+                              ),
+                            ),
+                            child: Column(
+                              children: [
+                                Text(
+                                  'PUNKTE',
+                                  style: TextStyle(
+                                    fontSize: 8,
+                                    fontWeight: FontWeight.bold,
+                                    color: formationColor,
+                                  ),
+                                ),
+                                Text(
+                                  formationScore.toString(),
+                                  style: TextStyle(
+                                    fontWeight: FontWeight.bold,
+                                    fontSize: 14,
+                                    color: formationColor,
+                                  ),
+                                ),
+                              ],
+                            ),
                           );
-                        }).toList(),
-                    onChanged: (String? newValue) {
-                      if (newValue != null &&
-                          newValue != _selectedFormationName) {
-                        _calculateTeamForSelectedFormation(newValue);
-                      }
-                    },
+                        },
+                      ),
+                    ],
                   ),
                 ],
               ),

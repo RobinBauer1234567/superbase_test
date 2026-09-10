@@ -2,11 +2,12 @@
 import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:premier_league/screens/spieltag_screen.dart';
+import 'package:premier_league/screens/spiel_screen.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:premier_league/screens/team_screen.dart';
-import 'package:premier_league/viewmodels/data_viewmodel.dart';
+import 'package:premier_league/viewmodels/tournament_viewmodel.dart';
+import 'package:premier_league/utils/match_time_helper.dart';
 
 // neu: scrollable_positioned_list
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
@@ -28,6 +29,7 @@ class _MatchesScreenState extends State<MatchesScreen> {
   final ItemPositionsListener _itemPositionsListener = ItemPositionsListener.create();
 
   int? _aktuellerSpieltag;
+  bool _hasInitialAutoScroll = false;
 
   @override
   void didChangeDependencies() {
@@ -46,7 +48,11 @@ class _MatchesScreenState extends State<MatchesScreen> {
       setState(() => _isLoading = true);
     }
 
-    final dataManagement = Provider.of<DataManagement>(context, listen: false);
+    final seasonId = context.read<TournamentViewModel>().currentSeasonId;
+    if (seasonId == null) {
+      if (mounted) setState(() => _isLoading = false);
+      return;
+    }
     final supabase = Supabase.instance.client;
 
     try {
@@ -55,15 +61,18 @@ class _MatchesScreenState extends State<MatchesScreen> {
           .select(
         '*, heimteam:team!spiel_heimteam_id_fkey(id, name, image_url), auswaertsteam:team!spiel_auswärtsteam_id_fkey(id, name, image_url)',
       )
-          .eq('season_id', dataManagement.seasonId)
+          .eq('season_id', seasonId)
           .order('datum', ascending: true);
 
       _updateStateWithData(List<Map<String, dynamic>>.from(data));
 
-      // Kleines Delay, dann scrollen (scrollable_positioned_list ist robust gegenüber nicht gebauten Items)
-      WidgetsBinding.instance.addPostFrameCallback((_) {
-        _scrollToAktuellenSpieltag();
-      });
+      if (!_hasInitialAutoScroll) {
+        // Nur beim initialen Laden einmalig auf den aktuellen Spieltag scrollen.
+        WidgetsBinding.instance.addPostFrameCallback((_) {
+          _scrollToAktuellenSpieltag();
+        });
+        _hasInitialAutoScroll = true;
+      }
     } catch (e) {
       print("Fehler beim Laden der Spiele: $e");
     } finally {
@@ -73,7 +82,7 @@ class _MatchesScreenState extends State<MatchesScreen> {
 
   void _updateStateWithData(List<Map<String, dynamic>> data) {
     final Map<int, List<dynamic>> groupedSpiele = {};
-    DateTime now = DateTime.now();
+    DateTime now = DateTime.now().toUtc();
     int? currentRound;
 
     for (var spiel in data) {
@@ -81,8 +90,8 @@ class _MatchesScreenState extends State<MatchesScreen> {
       groupedSpiele.putIfAbsent(round, () => []).add(spiel);
 
       try {
-        final matchDate = DateTime.parse(spiel['datum']);
-        if (matchDate.isAfter(now) && currentRound == null) {
+        final matchDate = MatchTimeHelper.parseToUtc(spiel['datum']);
+        if (matchDate != null && matchDate.isAfter(now) && currentRound == null) {
           currentRound = round;
         }
       } catch (_) {
@@ -121,7 +130,8 @@ class _MatchesScreenState extends State<MatchesScreen> {
   }
 
   void _subscribeToChanges() {
-    final dataManagement = Provider.of<DataManagement>(context, listen: false);
+    final seasonId = context.read<TournamentViewModel>().currentSeasonId;
+    if (seasonId == null) return;
 
     _spieleChannel = Supabase.instance.client
         .channel('public:spiel')
@@ -132,7 +142,7 @@ class _MatchesScreenState extends State<MatchesScreen> {
       filter: PostgresChangeFilter(
         type: PostgresChangeFilterType.eq,
         column: 'season_id',
-        value: dataManagement.seasonId,
+        value: seasonId,
       ),
       callback: (payload) {
         print("🔁 Echtzeit-Update erhalten → Spiele neu laden...");
@@ -264,7 +274,7 @@ class MatchCard extends StatelessWidget {
 
     DateTime datum;
     try {
-      datum = DateTime.parse(spiel['datum']);
+      datum = MatchTimeHelper.parseToLocal(spiel['datum']) ?? DateTime.now();
     } catch (_) {
       datum = DateTime.now();
     }

@@ -6,6 +6,20 @@ import 'package:http/testing.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:premier_league/services/client_sync_task_worker.dart';
+import 'package:premier_league/data_service.dart';
+
+class RecordingImports extends ApiService {
+  final calls = <List<int>>[];
+  @override
+  Future<void> fetchAndStoreSpielerundMatchratings(
+    int match,
+    int home,
+    int away,
+    int season,
+  ) async {
+    calls.add([match, home, away, season]);
+  }
+}
 
 void main() {
   TestWidgetsFlutterBinding.ensureInitialized();
@@ -24,10 +38,19 @@ void main() {
     'database_error',
     'cancel',
     'concurrent',
+    'refetch',
+    'refetch_finished',
+    'refetch_wrong_id',
+    'refetch_wrong_season',
+    'refetch_conflict',
+    'refetch_cancelled',
   ]) {
     test('worker $scenario', () async {
       SharedPreferences.setMockInitialValues({});
       final calls = <String>[];
+      final writes = <Map<String, dynamic>>[];
+      final reimport = scenario.startsWith('refetch');
+      final imports = RecordingImports();
       final started = Completer<void>();
       final unblock = Completer<void>();
       final mock = MockClient((request) async {
@@ -68,15 +91,57 @@ void main() {
             jsonEncode([
               {
                 'id': '10000000-0000-0000-0000-000000000001',
-                'task_type': 'FETCH_ROUNDS',
+                'task_type': reimport ? 'UPDATE_MATCH' : 'FETCH_ROUNDS',
                 'tournament_id': 17,
                 'season_id': 78229,
+                'match_id': 14159939,
+                'round_id': 1,
               },
             ]),
             200,
             request: request,
             headers: {'content-type': 'application/json'},
           );
+        }
+        if (path.endsWith('/event/14159939')) {
+          return http.Response(
+            jsonEncode({
+              'event': {
+                'id': scenario == 'refetch_wrong_id' ? 99 : 14159939,
+                'tournament': {
+                  'uniqueTournament': {'id': 17},
+                },
+                'season': {
+                  'id': scenario == 'refetch_wrong_season' ? 99 : 78229,
+                },
+                'roundInfo': {'round': 3},
+                'homeTeam': {'id': 81},
+                'awayTeam': {'id': 124},
+                'startTimestamp': 1750000000,
+                'status': {
+                  'type':
+                      scenario == 'refetch_cancelled'
+                          ? 'canceled'
+                          : scenario == 'refetch_finished'
+                          ? 'finished'
+                          : 'notstarted',
+                },
+              },
+            }),
+            200,
+            request: request,
+          );
+        }
+        if (path.endsWith('/spiel')) {
+          expect(request.method, isNot('GET'));
+          writes.add(Map<String, dynamic>.from(jsonDecode(request.body)));
+          if (scenario == 'refetch_conflict') {
+            return http.Response(
+              jsonEncode({'message': 'duplicate team slot', 'code': '23505'}),
+              409,
+              request: request,
+            );
+          }
         }
         if (path.endsWith('/rounds')) {
           started.complete();
@@ -112,7 +177,10 @@ void main() {
         email: 'test@example.test',
         password: 'test',
       );
-      final worker = ClientSyncTaskWorker(supabase: client);
+      final worker = ClientSyncTaskWorker(
+        supabase: client,
+        apiService: imports,
+      );
       final future = http.runWithClient(
         () => worker.processNextTask(),
         () => mock,
@@ -127,7 +195,35 @@ void main() {
         unblock.complete();
       }
       final success = await future;
-      expect(success, scenario == 'success' || scenario == 'concurrent');
+      expect(
+        success,
+        [
+          'success',
+          'concurrent',
+          'refetch',
+          'refetch_finished',
+        ].contains(scenario),
+      );
+      if (reimport && success) {
+        expect(writes.first['round'], 3);
+        expect(writes.first['heimteam_id'], 81);
+        expect(writes.first['auswärtsteam_id'], 124);
+        expect(
+          imports.calls,
+          scenario == 'refetch_finished'
+              ? [
+                [14159939, 81, 124, 78229],
+              ]
+              : isEmpty,
+        );
+      }
+      if ([
+        'refetch_wrong_id',
+        'refetch_wrong_season',
+        'refetch_cancelled',
+      ].contains(scenario)) {
+        expect(writes, isEmpty);
+      }
       expect(
         calls.where((p) => p.endsWith('/get_next_sync_task')),
         hasLength(1),

@@ -21,7 +21,8 @@ begin
   return query
   with candidate as (
     select t.id from public.sync_tasks t
-    join public.season s on s.id = t.season_id and s.is_active
+    join public.season s on s.id = t.season_id
+      and (s.is_active or exists(select 1 from private.fixture_reimports r where r.task_id=t.id))
     where (t.status = 'PENDING' and t.next_attempt_at <= now())
        or (t.status = 'PROCESSING' and t.locked_at < now() - interval '10 minutes')
     order by t.priority, t.created_at, t.id
@@ -168,6 +169,8 @@ revoke all on function public.get_next_sync_task(uuid),public.complete_sync_task
 grant execute on function public.get_next_sync_task(uuid),public.complete_sync_task(uuid),
   public.fail_sync_task(uuid,text),public.renew_sync_task(uuid),public.request_match_sync(bigint),public.request_season_sync(bigint)
   to authenticated,service_role;
+grant execute on function public.generate_daily_transfers(bigint,bigint,integer),
+  public.process_expired_transfers() to authenticated,service_role;
 create or replace function private.process_transfer_event(
   p_transfer_id bigint,
   p_player_id bigint,

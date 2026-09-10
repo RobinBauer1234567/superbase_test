@@ -24,6 +24,7 @@ class PremierLeagueScreen extends StatelessWidget {
         appBar: AppBar(
           toolbarHeight: 0,
           bottom: TabBar(
+            isScrollable: false,
             tabs: const [
               Tab(text: 'BEGEGNUNGEN'),
               Tab(text: 'TABELLE'),

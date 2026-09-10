@@ -3,8 +3,9 @@ import subprocess,sys,time
 from pathlib import Path
 psql=r'C:\Program Files\PostgreSQL\17\bin\psql.exe'
 db=sys.argv[1]
+port=sys.argv[2] if len(sys.argv) > 2 else '55439'
 assert db.startswith('managerspiel_test_')
-base=[psql,'-X','-qAt','-h','127.0.0.1','-p','55439','-U','postgres','-d',db,'-v','ON_ERROR_STOP=1']
+base=[psql,'-X','-qAt','-h','127.0.0.1','-p',port,'-U','postgres','-d',db,'-v','ON_ERROR_STOP=1']
 def run(sql):
  r=subprocess.run(base,input=sql,encoding='utf-8',capture_output=True)
  if r.returncode: raise RuntimeError(r.stderr)

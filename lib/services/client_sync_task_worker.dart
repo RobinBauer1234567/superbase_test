@@ -205,7 +205,11 @@ class ClientSyncTaskWorker {
         await _updateSchedule(tournamentId, seasonId);
         return;
       case 'UPDATE_MATCH':
-        await _updateMatch(_requiredInt(task, 'match_id'), seasonId);
+        await _updateMatch(
+          _requiredInt(task, 'match_id'),
+          seasonId,
+          tournamentId,
+        );
         return;
       case 'SYNC_TRANSFERS':
         await _syncTransfers(seasonId);
@@ -454,24 +458,30 @@ class ClientSyncTaskWorker {
     }
   }
 
-  Future<void> _updateMatch(int matchId, int seasonId) async {
+  Future<void> _updateMatch(int matchId, int seasonId, int tournamentId) async {
     final response = await _getJson('$_apiBaseUrl/event/$matchId');
     final event = response['event'] as Map;
-    final match =
-        await _supabase
-            .from('spiel')
-            .select(
-              'season_id,round,heimteam_id,auswärtsteam_id,season(tournament_id)',
-            )
-            .eq('id', matchId)
-            .single();
+    if (event['id'] != matchId) {
+      throw const FormatException(
+        'Event ID does not match the requested match',
+      );
+    }
+    final round = _requiredInt(
+      Map<String, dynamic>.from(event['roundInfo'] as Map),
+      'round',
+    );
     validateMatchEvents(
       [event],
-      tournamentId: (match['season'] as Map)['tournament_id'] as int,
+      tournamentId: tournamentId,
       seasonId: seasonId,
-      round: match['round'] as int,
+      round: round,
     );
     final type = (event['status'] as Map?)?['type'];
+    if (!['finished', 'inprogress', 'notstarted'].contains(type)) {
+      throw FormatException(
+        'Match $matchId has unsupported source status $type',
+      );
+    }
     final status =
         type == 'finished'
             ? 'final'
@@ -479,11 +489,34 @@ class ClientSyncTaskWorker {
             ? 'läuft'
             : 'nicht gestartet';
     _ensureSession();
+    await _supabase
+        .from('spieltag')
+        .upsert(
+          {'season_id': seasonId, 'round': round, 'status': 'nicht gestartet'},
+          onConflict: 'round,season_id',
+          ignoreDuplicates: true,
+        );
+    _ensureSession();
+    // A repair task must also work after the entire old fixture was removed.
+    // Keep the source round, including when the original import used a wrong one.
+    await _supabase.from('spiel').upsert({
+      'id': matchId,
+      'season_id': seasonId,
+      'round': round,
+      'heimteam_id': (event['homeTeam'] as Map)['id'],
+      'auswärtsteam_id': (event['awayTeam'] as Map)['id'],
+      'datum':
+          DateTime.fromMillisecondsSinceEpoch(
+            (event['startTimestamp'] as int) * 1000,
+            isUtc: true,
+          ).toIso8601String(),
+    }, onConflict: 'id');
+    _ensureSession();
     if (status != 'nicht gestartet') {
       await _apiService.fetchAndStoreSpielerundMatchratings(
         matchId,
-        match['heimteam_id'] as int,
-        match['auswärtsteam_id'] as int,
+        (event['homeTeam'] as Map)['id'] as int,
+        (event['awayTeam'] as Map)['id'] as int,
         seasonId,
       );
     }

@@ -5,6 +5,7 @@ import 'package:premier_league/screens/leagues/league_detail_screen.dart';
 import 'package:premier_league/screens/screenelements/player_list_item.dart';
 import 'package:provider/provider.dart';
 import 'package:premier_league/viewmodels/data_viewmodel.dart';
+import 'package:premier_league/viewmodels/tournament_viewmodel.dart';
 
 class StarterTeamRevealScreen extends StatefulWidget {
   final int leagueId;
@@ -277,7 +278,8 @@ class _StarterTeamRevealScreenState extends State<StarterTeamRevealScreen> {
 
   // --- ANSICHT 2: Gesamtkader Liste (Wie TeamScreen) ---
   Widget _buildSummaryView() {
-    final seasonIdStr = Provider.of<DataManagement>(context, listen: false).seasonId.toString();
+    final seasonId = context.read<TournamentViewModel>().currentSeasonId;
+    final seasonIdStr = (seasonId ?? '').toString();
 
     return Column(
       children: [

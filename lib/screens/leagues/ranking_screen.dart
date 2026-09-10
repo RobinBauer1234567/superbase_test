@@ -2,6 +2,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:premier_league/viewmodels/data_viewmodel.dart';
+import 'package:premier_league/viewmodels/tournament_viewmodel.dart';
 import 'package:premier_league/utils/color_helper.dart';
 import 'package:premier_league/screens/User/profile_screen.dart';
 import 'package:premier_league/screens/leagues/matchday_team_overlay.dart';
@@ -40,7 +41,11 @@ class _RankingScreenState extends State<RankingScreen> {
     setState(() => _isLoading = true);
     final dataManagement = Provider.of<DataManagement>(context, listen: false);
     final service = dataManagement.supabaseService;
-    final seasonId = dataManagement.seasonId;
+    final seasonId = context.read<TournamentViewModel>().currentSeasonId;
+    if (seasonId == null) {
+      if (mounted) setState(() => _isLoading = false);
+      return;
+    }
 
     try {
       _currentRound = await service.getCurrentRound(seasonId);
@@ -409,11 +414,17 @@ class _RankingScreenState extends State<RankingScreen> {
                             user['avatar_url']?.toString() ?? '';
                         final int points =
                             (user['total_points'] as num?)?.toInt() ?? 0;
-
-                        final Color pointsColor = getColorForRating(
-                          points,
-                          maxScore < 1 ? 1 : maxScore,
-                        );
+                        final bool isNotStartedRound =
+                            !_isOverallRanking &&
+                            _getMatchdayPhase(_selectedRound) == MatchdayPhase.before;
+                        final Color pointsColor = isNotStartedRound
+                            ? Colors.grey
+                            : getColorForRating(
+                                points,
+                                maxScore < 1 ? 1 : maxScore,
+                              );
+                        final String pointsText =
+                            isNotStartedRound ? '-' : '$points';
 
                         // Farbschema für Top 3 analog zum ActivityFeed (Akzentfarben)
                         Color rankAccentColor = Colors.grey;
@@ -570,7 +581,7 @@ class _RankingScreenState extends State<RankingScreen> {
                                             ),
                                           ),
                                           Text(
-                                            '$points',
+                                            pointsText,
                                             style: TextStyle(
                                               fontWeight: FontWeight.bold,
                                               fontSize: 14,

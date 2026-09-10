@@ -1,7 +1,161 @@
--- Apply only after the preflight report has no unresolved fixture conflicts.
+-- User-authorized repair: remove every fixture participating in a team/round
+-- conflict and queue its complete reimport. This migration has not been deployed.
 create schema if not exists private;
 revoke all on schema private from public,anon;
-lock table public.spiel in share row exclusive mode;
+lock table public.spiel, public.matchrating, public.user_matchday_players,
+  public.user_matchday_points, public.sync_tasks in share row exclusive mode;
+
+-- Retain a private recovery record, never expose it through the client API.
+create table private.fixture_reimports (
+  match_id integer primary key,
+  task_id uuid not null unique,
+  fixture jsonb not null,
+  ratings jsonb not null,
+  snapshots jsonb not null,
+  removed_at timestamptz not null default now()
+);
+alter table private.fixture_reimports enable row level security;
+revoke all on private.fixture_reimports from public,anon,authenticated;
+grant select on private.fixture_reimports to service_role;
+
+create temporary table conflicting_fixture_ids on commit drop as
+with appearances as (
+  select id,season_id,round,heimteam_id as team_id from public.spiel
+  union all select id,season_id,round,auswärtsteam_id from public.spiel
+), conflicts as (
+  select season_id,round,team_id from appearances
+  group by season_id,round,team_id having count(*) > 1
+)
+select distinct a.id from appearances a join conflicts c
+  using(season_id,round,team_id);
+
+insert into private.fixture_reimports(match_id,task_id,fixture,ratings,snapshots)
+select s.id,gen_random_uuid(),to_jsonb(s),
+  coalesce((select jsonb_agg(to_jsonb(m)) from public.matchrating m where m.spiel_id=s.id),'[]'),
+  coalesce((select jsonb_agg(to_jsonb(u)) from public.user_matchday_players u
+    where u.spiel_id=s.id or u.matchrating_id in
+      (select id from public.matchrating where spiel_id=s.id)),'[]')
+from public.spiel s join conflicting_fixture_ids c on c.id=s.id;
+
+-- Supersede old reservations so an old worker cannot complete the new task.
+update public.sync_tasks set status='FAILED',locked_by=null,locked_at=null,
+  error_message='Superseded by fixture conflict reimport',updated_at=now()
+where match_id in (select id from conflicting_fixture_ids)
+  and status not in ('COMPLETED','FAILED');
+insert into public.sync_tasks(id,task_type,season_id,tournament_id,round_id,match_id,priority,status)
+select r.task_id,'UPDATE_MATCH',s.season_id,se.tournament_id,s.round,s.id,0,'PENDING'
+from private.fixture_reimports r join public.spiel s on s.id=r.match_id
+join public.season se on se.id=s.season_id;
+
+-- Preserve ownership, lineup positions and locks; invalidate only imported data.
+update public.user_matchday_players u set spiel_id=null,matchrating_id=null,points=0
+where u.spiel_id in(select id from conflicting_fixture_ids)
+   or u.matchrating_id in(select id from public.matchrating where spiel_id in(select id from conflicting_fixture_ids));
+update public.user_matchday_points p set total_points=(
+  select coalesce(sum(u.points),0) from public.user_matchday_players u
+  where u.matchday_point_id=p.id and u.formation_index<=10
+) where p.id in (
+  select (j->>'matchday_point_id')::bigint from private.fixture_reimports r,
+  lateral jsonb_array_elements(r.snapshots) j
+);
+CREATE OR REPLACE FUNCTION public.update_gesamtstatistiken()
+ RETURNS trigger
+ LANGUAGE plpgsql
+AS $function$
+declare
+  player_id bigint;
+  _season_id bigint;
+  _stats_sum jsonb := '{}'::jsonb;
+  aggregated_stats jsonb;
+  total_punkte numeric := 0;
+  total_matches bigint := 0;
+begin
+  player_id := case when TG_OP = 'DELETE' then OLD.spieler_id else NEW.spieler_id end;
+  select sp.season_id into _season_id from public.spiel sp
+  where sp.id = case when TG_OP = 'DELETE' then OLD.spiel_id else NEW.spiel_id end;
+
+  if player_id is null or _season_id is null then return null; end if;
+
+  select coalesce(jsonb_object_agg(key, val_sum), '{}'::jsonb)
+  into _stats_sum
+  from (
+    select e.key,
+      sum(
+        case jsonb_typeof(e.val)
+          when 'number' then (e.val)::text::numeric
+          when 'object' then coalesce(
+            nullif(regexp_replace(e.val->>'original','[^0-9\.-]+','','g'),'')::numeric,
+            nullif(regexp_replace(e.val->>'alternative','[^0-9\.-]+','','g'),'')::numeric,
+            nullif(regexp_replace(e.val->>'value','[^0-9\.-]+','','g'),'')::numeric,
+            0
+          )
+          when 'string' then coalesce(nullif(regexp_replace(e.val::text,'[^0-9\.-]+','','g'), '')::numeric, 0)
+          else 0
+        end
+      ) as val_sum
+    from matchrating mr
+    join spiel sp on sp.id = mr.spiel_id
+    cross join lateral jsonb_each(coalesce(mr.statistics, '{}'::jsonb)) as e(key, val)
+    where mr.spieler_id = player_id and sp.season_id = _season_id
+    group by e.key
+  ) sub;
+
+  select coalesce(sum(mr.punkte)::numeric, 0), coalesce(count(*)::bigint, 0)
+  into total_punkte, total_matches
+  from matchrating mr
+  join spiel sp on sp.id = mr.spiel_id
+  where mr.spieler_id = player_id and sp.season_id = _season_id;
+
+  if total_matches = 0 then
+    update public.spieler_analytics
+    set gesamtstatistiken = '{}'::jsonb, anzahl_spiele = 0
+    where spieler_id = player_id and season_id = _season_id;
+    return null;
+  end if;
+
+  aggregated_stats := coalesce(_stats_sum, '{}'::jsonb)
+    || jsonb_build_object('gesamtpunkte', total_punkte);
+
+  -- HIER IST DER FIX: marktwert & calculated_marktwert (1000000) wurden zum INSERT hinzugefügt!
+  INSERT INTO public.spieler_analytics (spieler_id, season_id, gesamtstatistiken, anzahl_spiele, marktwert, calculated_marktwert)
+  VALUES (player_id, _season_id, aggregated_stats, total_matches, 1000000, 1000000)
+  ON CONFLICT (spieler_id, season_id) 
+  DO UPDATE SET 
+    gesamtstatistiken = aggregated_stats,
+    anzahl_spiele = total_matches;
+
+  return null;
+end;
+$function$;
+
+-- The corrected aggregate trigger now also recomputes statistics on DELETE.
+delete from public.matchrating where spiel_id in(select id from conflicting_fixture_ids);
+delete from public.api_debug_dump where spiel_id in(select id from conflicting_fixture_ids);
+delete from public.spiel where id in(select id from conflicting_fixture_ids);
+update public.spieltag d set
+  matchday_start=(select min(s.datum)-interval '48 hours' from public.spiel s where s.season_id=d.season_id and s.round=d.round),
+  matchday_end=(select max(s.datum)+interval '24 hours' from public.spiel s where s.season_id=d.season_id and s.round=d.round),
+  status='nicht gestartet'
+where (d.season_id,d.round) in (
+  select (fixture->>'season_id')::bigint,(fixture->>'round')::int from private.fixture_reimports
+);
+
+-- Reconnect preserved snapshots only when the refreshed source still belongs to
+-- the same season/round. The normal points trigger runs after this trigger.
+create function private.restore_reimport_snapshot() returns trigger
+language plpgsql security definer set search_path='' as $$
+begin
+  update public.user_matchday_players u set spiel_id=new.spiel_id
+  from public.user_matchday_points p,public.spiel s,private.fixture_reimports r
+  where r.match_id=new.spiel_id and s.id=new.spiel_id
+    and p.id=u.matchday_point_id and p.season_id=s.season_id and p.round=s.round
+    and u.player_id=new.spieler_id and u.spiel_id is null
+    and exists(select 1 from jsonb_array_elements(r.snapshots) j where (j->>'id')::bigint=u.id);
+  return new;
+end $$;
+revoke all on function private.restore_reimport_snapshot() from public,anon,authenticated;
+create trigger a_restore_reimport_snapshot after insert or update of punkte on public.matchrating
+for each row execute function private.restore_reimport_snapshot();
 
 create table private.match_team_slots (
   season_id bigint not null,
@@ -12,8 +166,7 @@ create table private.match_team_slots (
   unique(match_id,team_id),
   foreign key(round,season_id) references public.spieltag(round,season_id)
 );
--- The unique constraint intentionally fails on dirty production data.
--- No fixture, rating or historical snapshot is discarded during migration.
+-- All remaining fixtures must satisfy the invariant; nothing is silently skipped.
 insert into private.match_team_slots(season_id,round,team_id,match_id)
 select season_id,round,heimteam_id,id from public.spiel
 union all select season_id,round,auswärtsteam_id,id from public.spiel;

@@ -1,5 +1,6 @@
 // lib/screens/profile_screen.dart
 import 'dart:typed_data';
+import 'dart:math' as math;
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:provider/provider.dart';
@@ -8,8 +9,13 @@ import 'package:intl/intl.dart';
 import 'package:premier_league/auth_service.dart';
 import 'package:premier_league/utils/color_helper.dart';
 import 'package:premier_league/viewmodels/data_viewmodel.dart';
+import 'package:premier_league/viewmodels/tournament_viewmodel.dart';
 import 'package:premier_league/screens/screenelements/match_screen/formations.dart';
+import 'package:premier_league/screens/screenelements/matchday_team_shared.dart';
 import 'package:premier_league/screens/player_screen.dart';
+import 'package:premier_league/screens/leagues/matchday_team_overlay.dart';
+import 'package:premier_league/screens/screenelements/league_logo.dart';
+import 'package:premier_league/screens/screenelements/transfer_activity_card.dart';
 
 class ProfileScreen extends StatefulWidget {
   // NEU: Optionale Parameter, um fremde Profile und eine bestimmte Liga direkt zu öffnen
@@ -23,6 +29,10 @@ class ProfileScreen extends StatefulWidget {
 }
 
 class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProviderStateMixin {
+  static const double _headerImageRadius = 50;
+  static const double _collapsedImageRadius = 18;
+  static const double _imageEditButtonSize = 28;
+
   final supabase = Supabase.instance.client;
   final ImagePicker _imagePicker = ImagePicker();
 
@@ -84,23 +94,6 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     return null;
   }
 
-  int _toInt(dynamic value, {int fallback = 0}) {
-    if (value is int) return value;
-    if (value is num) return value.toInt();
-    if (value is String) return int.tryParse(value) ?? fallback;
-    return fallback;
-  }
-
-  int _getPositionOrder(String? position) {
-    if (position == null) return 99;
-    final pos = position.toUpperCase();
-    if (pos.contains('GK') || pos.contains('TW')) return 0;
-    if (pos.contains('IV') || pos.contains('RV') || pos.contains('LV')) return 2;
-    if (pos.contains('ZDM') || pos.contains('ZM') || pos.contains('ZOM')) return 3;
-    if (pos.contains('ST') || pos.contains('RF') || pos.contains('LF')) return 4;
-    return 5;
-  }
-
   Future<void> _loadProfileData() async {
     setState(() => _isLoadingProfile = true);
 
@@ -125,12 +118,13 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       }
 
       // Ligen für diese User-ID holen
-      final leaguesRes = await supabase.from('league_members').select('league_id, leagues(name)').eq('user_id', _effectiveUserId);
+      final leaguesRes = await supabase.from('league_members').select('league_id, leagues(name, image_url)').eq('user_id', _effectiveUserId);
 
       List<Map<String, dynamic>> leaguesWithRanks = [];
       for (var l in leaguesRes) {
         final int leagueId = l['league_id'];
         final String leagueName = l['leagues']['name'];
+        final String? leagueImageUrl = l['leagues']['image_url'] as String?;
         final rankingRes = await supabase.rpc('get_ranking_overall', params: {'p_league_id': leagueId});
         final rankingList = List<Map<String, dynamic>>.from(rankingRes);
 
@@ -143,7 +137,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
             break;
           }
         }
-        leaguesWithRanks.add({'league_id': leagueId, 'name': leagueName, 'rank': rank, 'points': totalPoints});
+        leaguesWithRanks.add({'league_id': leagueId, 'name': leagueName, 'image_url': leagueImageUrl, 'rank': rank, 'points': totalPoints});
       }
 
       leaguesWithRanks.sort((a, b) => b['points'].compareTo(a['points']));
@@ -165,77 +159,11 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
   }
 
   void _parseTeamDataForPitch(Map<String, dynamic> matchdayData) {
-    final pointsData = matchdayData['points_data'] ?? {};
-    final playersData = matchdayData['players'] as List<dynamic>? ?? [];
-
-    _teamFormation = pointsData['formation'] ?? '4-4-2';
-    List<String> positions = _allFormations[_teamFormation] ?? List.filled(11, 'POS');
-
-    List<PlayerInfo> field = List.generate(11, (index) {
-      if (index == 0) return const PlayerInfo(id: -1, name: "TW", position: "TW", rating: 0, goals: 0, assists: 0, ownGoals: 0);
-      return PlayerInfo(id: -1 - index, name: positions[index], position: positions[index], rating: 0, goals: 0, assists: 0, ownGoals: 0);
-    });
-
-    List<PlayerInfo> bench = [];
-    List<int> frozenIds = [];
-
-    for (var pd in playersData) {
-      final spieler = pd['spieler'];
-      if (spieler == null) continue;
-
-      final int pId = _toInt(spieler['id']);
-      final int fIndex = _toInt(pd['formation_index'], fallback: 99);
-      final int rating = _toInt(pd['points'], fallback: 0);
-
-      final bool playerLocked = pd['is_locked'] ?? false;
-      if (playerLocked) {
-        frozenIds.add(pId);
-      }
-
-      final team = spieler['team'];
-      final analytics = spieler['spieler_analytics'];
-      int mw = 0;
-      int totalSeasonPoints = 0;
-      int matchesPlayed = 0;
-
-      if (analytics is Map) {
-        mw = _toInt(analytics['marktwert']);
-        matchesPlayed = _toInt(analytics['anzahl_spiele']);
-        final stats = analytics['gesamtstatistiken'];
-        if (stats is Map) totalSeasonPoints = _toInt(stats['gesamtpunkte']);
-      } else if (analytics is List && analytics.isNotEmpty) {
-        mw = _toInt(analytics[0]['marktwert']);
-        matchesPlayed = _toInt(analytics[0]['anzahl_spiele']);
-        final stats = analytics[0]['gesamtstatistiken'];
-        if (stats is Map) totalSeasonPoints = _toInt(stats['gesamtpunkte']);
-      }
-
-      final playerInfo = PlayerInfo(
-        id: pId,
-        name: (spieler['name'] ?? 'Unbekannt').toString(),
-        position: spieler['position'] ?? 'N/A',
-        profileImageUrl: spieler['profilbild_url'],
-        rating: rating,
-        totalSeasonPoints: totalSeasonPoints,
-        matchCount: matchesPlayed,
-        goals: 0, assists: 0, ownGoals: 0,
-        teamImageUrl: team != null ? team['image_url'] : null,
-        marketValue: mw,
-        teamName: team != null ? team['name'] : null,
-      );
-
-      if (fIndex >= 0 && fIndex <= 10) {
-        field[fIndex] = playerInfo;
-      } else {
-        bench.add(playerInfo);
-      }
-    }
-
-    bench.sort((a, b) => _getPositionOrder(a.position).compareTo(_getPositionOrder(b.position)));
-
-    _teamFieldPlayers = field;
-    _teamSubstitutePlayers = bench;
-    _teamFrozenIds = frozenIds;
+    final parsedData = parseMatchdayTeamData(matchdayData, _allFormations);
+    _teamFormation = parsedData.formation;
+    _teamFieldPlayers = parsedData.fieldPlayers;
+    _teamSubstitutePlayers = parsedData.substitutePlayers;
+    _teamFrozenIds = parsedData.frozenPlayerIds;
   }
 
   Future<void> _loadLeagueSpecificData() async {
@@ -244,11 +172,38 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
 
     try {
       final dataManagement = context.read<DataManagement>();
-      final seasonId = dataManagement.seasonId;
+      final seasonId = context.read<TournamentViewModel>().currentSeasonId;
+      if (seasonId == null) return;
 
-      final matchdaysRes = await supabase.from('user_matchday_points').select('round, total_points, is_locked, spieltag(status)').eq('user_id', _effectiveUserId).eq('league_id', _selectedLeagueId!).order('round', ascending: false);
+      final allMatchdaysRes = await supabase
+          .from('spieltag')
+          .select('round, status')
+          .eq('season_id', seasonId)
+          .order('round', ascending: false);
 
-      final rankingFutures = matchdaysRes.map((md) async {
+      final userMatchdayPointsRes = await supabase
+          .from('user_matchday_points')
+          .select('round, total_points, is_locked')
+          .eq('user_id', _effectiveUserId)
+          .eq('league_id', _selectedLeagueId!);
+
+      final Map<int, Map<String, dynamic>> userMatchdayPointsByRound = {
+        for (final md in userMatchdayPointsRes)
+          (md['round'] as int): Map<String, dynamic>.from(md),
+      };
+
+      final mergedMatchdays = allMatchdaysRes.map((spieltag) {
+        final round = spieltag['round'] as int;
+        final userData = userMatchdayPointsByRound[round];
+        return {
+          'round': round,
+          'total_points': userData?['total_points'] ?? 0,
+          'is_locked': userData?['is_locked'] ?? false,
+          'spieltag': {'status': spieltag['status'] ?? ''},
+        };
+      }).toList();
+
+      final rankingFutures = mergedMatchdays.map((md) async {
         final rankingRes = await supabase.rpc('get_ranking_matchday', params: {'p_league_id': _selectedLeagueId, 'p_round': md['round']});
         final rankingList = List<Map<String, dynamic>>.from(rankingRes);
         int rank = 0;
@@ -345,9 +300,14 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                 flexibleSpace: LayoutBuilder(
                   builder: (BuildContext context, BoxConstraints constraints) {
                     final double safeAreaTop = MediaQuery.of(context).padding.top;
+                    final double screenWidth = MediaQuery.of(context).size.width;
                     final double collapsedHeight = kToolbarHeight + bottomHeight + safeAreaTop;
                     final double expandedHeight = 320.0;
                     final double currentHeight = constraints.maxHeight;
+                    final double avatarRadius = (screenWidth * 0.14).clamp(40.0, _headerImageRadius);
+                    final double cameraButtonSize = (avatarRadius * 0.56).clamp(22.0, _imageEditButtonSize);
+                    final double cameraIconSize = (cameraButtonSize * 0.58).clamp(14.0, 18.0);
+                    final double cameraCenterOffset = avatarRadius + (avatarRadius / math.sqrt2) - (cameraButtonSize / 2);
 
                     double fade = 1.0;
                     if (expandedHeight > collapsedHeight) {
@@ -373,19 +333,19 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                                       alignment: Alignment.bottomRight,
                                       children: [
                                         CircleAvatar(
-                                          radius: 50,
+                                          radius: avatarRadius,
                                           backgroundColor: Colors.grey.shade200,
                                           backgroundImage: _getAvatarProvider(),
-                                          child: _getAvatarProvider() == null ? const Icon(Icons.person, size: 50, color: Colors.grey) : null,
+                                          child: _getAvatarProvider() == null ? Icon(Icons.person, size: avatarRadius, color: Colors.grey) : null,
                                         ),
-                                        // Kamera-Icon nur bei eigenem Profil
                                         if (_isCurrentUser)
-                                          Container(
-                                            decoration: BoxDecoration(color: primaryColor, shape: BoxShape.circle, border: Border.all(color: Colors.white, width: 3)),
-                                            child: IconButton(
-                                              icon: const Icon(Icons.camera_alt, color: Colors.white, size: 18),
-                                              padding: const EdgeInsets.all(6),
-                                              constraints: const BoxConstraints(),
+                                          Positioned(
+                                            left: cameraCenterOffset,
+                                            top: cameraCenterOffset,
+                                            child: _buildEditImageButton(
+                                              primaryColor: primaryColor,
+                                              buttonSize: cameraButtonSize,
+                                              iconSize: cameraIconSize,
                                               onPressed: _pickNewProfileImage,
                                             ),
                                           ),
@@ -414,10 +374,10 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                                 child: Row(
                                   children: [
                                     CircleAvatar(
-                                      radius: 18,
+                                      radius: _collapsedImageRadius,
                                       backgroundColor: Colors.grey.shade200,
                                       backgroundImage: _getAvatarProvider(),
-                                      child: _getAvatarProvider() == null ? const Icon(Icons.person, size: 18, color: Colors.grey) : null,
+                                      child: _getAvatarProvider() == null ? const Icon(Icons.person, size: _collapsedImageRadius, color: Colors.grey) : null,
                                     ),
                                     const SizedBox(width: 12),
                                     Expanded(
@@ -450,8 +410,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                       children: [
                         TabBar(
                           controller: _tabController,
-                          isScrollable: true,
-                          tabAlignment: TabAlignment.center,
+                          isScrollable: false,
                           labelColor: primaryColor,
                           unselectedLabelColor: Colors.grey,
                           indicatorColor: primaryColor,
@@ -488,11 +447,37 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
     );
   }
 
+  Widget _buildEditImageButton({
+    required Color primaryColor,
+    required double buttonSize,
+    required double iconSize,
+    required VoidCallback onPressed,
+  }) {
+    return Container(
+      width: buttonSize,
+      height: buttonSize,
+      decoration: BoxDecoration(
+        color: primaryColor,
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.white, width: 3),
+      ),
+      child: IconButton(
+        icon: Icon(Icons.camera_alt, color: Colors.white, size: iconSize),
+        padding: EdgeInsets.zero,
+        constraints: const BoxConstraints(),
+        visualDensity: VisualDensity.compact,
+        onPressed: onPressed,
+      ),
+    );
+  }
+
   Widget _buildSelectedLeagueRow(Color primaryColor) {
     final selectedLeague = _userLeagues.firstWhere(
             (l) => l['league_id'] == _selectedLeagueId,
         orElse: () => _userLeagues.isNotEmpty ? _userLeagues.first : {'name': 'Liga wählen'}
     );
+
+    final selectedLeagueImageUrl = selectedLeague['image_url'] as String?;
 
     return InkWell(
       onTap: () {
@@ -508,10 +493,9 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
         ),
         child: Row(
           children: [
-            CircleAvatar(
+            LeagueLogo(
+              imageUrl: selectedLeagueImageUrl,
               radius: 16,
-              backgroundColor: primaryColor.withOpacity(0.1),
-              child: Icon(Icons.emoji_events, size: 18, color: primaryColor),
             ),
             const SizedBox(width: 12),
             Expanded(
@@ -550,6 +534,8 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                       final bool isSelected = league['league_id'] == _selectedLeagueId;
                       Color rankColor = rank == 1 ? Colors.amber : (rank == 2 ? Colors.blueGrey : (rank == 3 ? Colors.brown : Colors.grey));
 
+                      final String? leagueImageUrl = league['image_url'] as String?;
+
                       return Card(
                         elevation: isSelected ? 2 : 1,
                         margin: const EdgeInsets.only(bottom: 12),
@@ -560,10 +546,34 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                         color: Colors.white,
                         child: ListTile(
                           contentPadding: const EdgeInsets.all(12),
-                          leading: Container(
-                            width: 40, height: 40,
-                            decoration: BoxDecoration(color: rankColor.withOpacity(0.1), shape: BoxShape.circle),
-                            child: Center(child: Text('$rank', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: rankColor))),
+                          leading: Stack(
+                            clipBehavior: Clip.none,
+                            children: [
+                              LeagueLogo(imageUrl: leagueImageUrl, radius: 20),
+                              Positioned(
+                                right: -4,
+                                bottom: -4,
+                                child: Container(
+                                  width: 20,
+                                  height: 20,
+                                  decoration: BoxDecoration(
+                                    color: rankColor,
+                                    shape: BoxShape.circle,
+                                    border: Border.all(color: Colors.white, width: 2),
+                                  ),
+                                  child: Center(
+                                    child: Text(
+                                      '$rank',
+                                      style: const TextStyle(
+                                        fontWeight: FontWeight.bold,
+                                        fontSize: 10,
+                                        color: Colors.white,
+                                      ),
+                                    ),
+                                  ),
+                                ),
+                              ),
+                            ],
                           ),
                           title: Text(league['name'], style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
                           subtitle: Text("Punkte gesamt: ${league['points']}"),
@@ -614,7 +624,9 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                         final round = matchday['round'];
                         final rank = matchday['rank'] ?? 0;
                         final statusText = matchday['spieltag']?['status'] ?? '';
-                        final ptsColor = getColorForRating(points, 2500);
+                        final bool isPlayed = statusText.toString().toLowerCase() != 'nicht gestartet';
+                        final ptsColor = isPlayed ? getColorForRating(points, 2500) : Colors.grey;
+                        final ptsText = isPlayed ? '$points' : '-';
                         final rankColor = rank == 1 ? Colors.amber : (rank == 2 ? Colors.blueGrey : (rank == 3 ? Colors.brown : Colors.grey));
 
                         return Padding(
@@ -640,16 +652,34 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                                       ],
                                     ),
                                   ),
-                                  Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
-                                    decoration: BoxDecoration(
-                                      color: ptsColor.withOpacity(0.1), border: Border.all(color: ptsColor.withOpacity(0.3)), borderRadius: BorderRadius.circular(12),
-                                    ),
-                                    child: Column(
-                                      children: [
-                                        Text("PUNKTE", style: TextStyle(fontSize: 8, fontWeight: FontWeight.bold, color: ptsColor)),
-                                        Text('$points', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: ptsColor)),
-                                      ],
+                                  Material(
+                                    color: Colors.transparent,
+                                    child: InkWell(
+                                      borderRadius: BorderRadius.circular(12),
+                                      onTap: () {
+                                        if (_selectedLeagueId == null) return;
+                                        showDialog(
+                                          context: context,
+                                          builder: (context) => MatchdayTeamOverlay(
+                                            leagueId: _selectedLeagueId!,
+                                            userId: _effectiveUserId,
+                                            userName: _username,
+                                            round: round,
+                                          ),
+                                        );
+                                      },
+                                      child: Container(
+                                        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                                        decoration: BoxDecoration(
+                                          color: ptsColor.withOpacity(0.1), border: Border.all(color: ptsColor.withOpacity(0.3)), borderRadius: BorderRadius.circular(12),
+                                        ),
+                                        child: Column(
+                                          children: [
+                                            Text("PUNKTE", style: TextStyle(fontSize: 8, fontWeight: FontWeight.bold, color: ptsColor)),
+                                            Text(ptsText, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 16, color: ptsColor)),
+                                          ],
+                                        ),
+                                      ),
                                     ),
                                   ),
                                 ],
@@ -676,6 +706,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
 
         // NEU: Punktzahl auslesen
         final int totalPoints = _currentMatchdayData?['points_data']?['total_points'] ?? 0;
+        final bool isLocked = _currentMatchdayData?['points_data']?['is_locked'] == true;
 
         final bool showLeagueRow = _tabController.index != 0 && _userLeagues.isNotEmpty;
         final double bottomHeight = showLeagueRow ? 104.0 : 48.0;
@@ -684,7 +715,8 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
 
         final double screenHeight = MediaQuery.of(context).size.height;
         final double availablePitchHeight = screenHeight - collapsedAppBarHeight - 64.0 - 24.0;
-        final pointsColor = getColorForRating(totalPoints, 2500); // NEU: Farbe berechnen
+        final pointsColor = isLocked ? getColorForRating(totalPoints, 2500) : Colors.grey;
+        final pointsText = isLocked ? '$totalPoints' : '-';
 
         return CustomScrollView(
           key: const PageStorageKey<String>('teamTab'),
@@ -719,7 +751,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                               mainAxisSize: MainAxisSize.min,
                               children: [
                                 Text("PUNKTE", style: TextStyle(fontSize: 8, fontWeight: FontWeight.bold, color: pointsColor)),
-                                Text('$totalPoints', style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: pointsColor)),
+                                Text(pointsText, style: TextStyle(fontWeight: FontWeight.bold, fontSize: 14, color: pointsColor)),
                               ],
                             ),
                           ),
@@ -764,6 +796,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                             currentRound: _currentRound,
                             displayMode: AvatarDisplayMode.matchday,
                             isReadOnly: true,
+                            hideUnlockedMatchdayRating: true,
                             onPlayerTap: (playerId, radius) {
                               if (playerId > 0) {
                                 Navigator.push(context, MaterialPageRoute(builder: (_) => PlayerScreen(playerId: playerId)));
@@ -781,71 +814,14 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
   }
 
   List<Widget> _buildTeamPlayerList() {
-    final players = List<Map<String, dynamic>>.from(_currentMatchdayData!['players']);
-    players.sort((a, b) => (a['formation_index'] as int).compareTo(b['formation_index'] as int));
-
-    final startingXI = players.where((p) => (p['formation_index'] as int) <= 10).toList();
-    final bench = players.where((p) => (p['formation_index'] as int) > 10).toList();
-
-    List<Widget> items = [];
-    if (startingXI.isNotEmpty) {
-      items.add(const Padding(padding: EdgeInsets.symmetric(horizontal: 12, vertical: 8), child: Text("Startelf", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey))));
-      items.addAll(startingXI.map((p) => Padding(padding: const EdgeInsets.symmetric(horizontal: 12), child: _buildPlayerCard(p))));
-    }
-    if (bench.isNotEmpty) {
-      items.add(const Padding(padding: EdgeInsets.only(left: 12, right: 12, top: 16, bottom: 8), child: Text("Bank", style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey))));
-      items.addAll(bench.map((p) => Padding(padding: const EdgeInsets.symmetric(horizontal: 12), child: _buildPlayerCard(p))));
-    }
-    return items;
-  }
-
-  Widget _buildPlayerCard(Map<String, dynamic> playerData) {
-    final spieler = playerData['spieler'] ?? {};
-    final avatarUrl = spieler['profilbild_url'] ?? '';
-    final int playerId = _toInt(spieler['id']);
-
-    // --- NEU: Logik für noch nicht gestartete Spiele ---
-    final bool isLocked = playerData['is_locked'] == true;
-    final int points = playerData['points'] ?? 0;
-
-    // Wenn gelockt -> normale Farbe. Wenn nicht -> Grau.
-    final Color pointsColor = isLocked ? getColorForRating(points, 250) : Colors.grey;
-    final String pointsText = isLocked ? '$points' : '-';
-
-    return Card(
-      margin: const EdgeInsets.only(bottom: 8),
-      shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
-      child: ListTile(
-        contentPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-        leading: CircleAvatar(
-          backgroundColor: Colors.grey.shade200,
-          backgroundImage: avatarUrl.isNotEmpty ? NetworkImage(avatarUrl) : null,
-          child: avatarUrl.isEmpty ? Icon(Icons.person, color: Colors.grey.shade400) : null,
-        ),
-        title: Text(spieler['name'] ?? 'Unbekannt', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 14)),
-        subtitle: Text(spieler['position'] ?? 'N/A', style: TextStyle(fontSize: 12, color: Colors.grey.shade600)),
-        trailing: Container(
-          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-          decoration: BoxDecoration(
-            // Grauer Hintergrund und Rand, wenn das Spiel noch nicht gestartet ist
-              color: isLocked ? pointsColor.withOpacity(0.1) : Colors.grey.shade100,
-              borderRadius: BorderRadius.circular(8),
-              border: Border.all(color: isLocked ? pointsColor.withOpacity(0.3) : Colors.grey.shade300)
-          ),
-          child: Text(
-              pointsText,
-              style: TextStyle(
-                  fontWeight: FontWeight.bold,
-                  color: isLocked ? pointsColor : Colors.grey.shade600
-              )
-          ),
-        ),
-        onTap: () {
-          if (playerId > 0) {
-            Navigator.push(context, MaterialPageRoute(builder: (_) => PlayerScreen(playerId: playerId)));
-          }
-        },
-      ),
+    return buildTeamPlayerListSections(
+      context,
+      _currentMatchdayData!,
+      onPlayerTap: (playerId) {
+        Navigator.push(context, MaterialPageRoute(builder: (_) => PlayerScreen(playerId: playerId)));
+      },
+      startHeaderPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
+      benchHeaderPadding: const EdgeInsets.only(left: 12, right: 12, top: 16, bottom: 8),
     );
   }
 
@@ -869,52 +845,21 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                   sliver: SliverList(
                     delegate: SliverChildBuilderDelegate(
                           (context, index) {
-                        final fmt = NumberFormat.currency(locale: 'de_DE', symbol: '€', decimalDigits: 0);
                         final transfer = _transfers[index];
                         final content = transfer['content'] as Map<String, dynamic>;
-                        final date = DateFormat('dd.MM.yyyy HH:mm').format(DateTime.parse(transfer['created_at']).toLocal());
-                        final isBuyer = content['buyer_name'] == _username;
-                        final price = content['price'] ?? 0;
-                        final otherParty = isBuyer ? (content['seller_name'] ?? 'System') : (content['buyer_name'] ?? 'System');
-                        final iconColor = isBuyer ? Colors.green : Colors.red;
-
                         return Padding(
-                          padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
-                          child: Card(
-                            elevation: 1, shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-                            child: Padding(
-                              padding: const EdgeInsets.all(16.0),
-                              child: Row(
-                                children: [
-                                  Container(
-                                    width: 44, height: 44,
-                                    decoration: BoxDecoration(color: iconColor.withOpacity(0.1), shape: BoxShape.circle),
-                                    child: Icon(isBuyer ? Icons.arrow_downward : Icons.arrow_upward, color: iconColor),
-                                  ),
-                                  const SizedBox(width: 16),
-                                  Expanded(
-                                    child: Column(
-                                      crossAxisAlignment: CrossAxisAlignment.start,
-                                      children: [
-                                        Text(content['player_name'] ?? 'Unbekannt', style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 16)),
-                                        const SizedBox(height: 4),
-                                        Text(isBuyer ? 'Von: $otherParty' : 'An: $otherParty', style: TextStyle(fontSize: 13, color: Colors.grey.shade600)),
-                                        const SizedBox(height: 2),
-                                        Text(date, style: TextStyle(fontSize: 11, color: Colors.grey.shade400)),
-                                      ],
-                                    ),
-                                  ),
-                                  Column(
-                                    crossAxisAlignment: CrossAxisAlignment.end,
-                                    children: [
-                                      Text(isBuyer ? 'Zugang' : 'Abgang', style: TextStyle(fontSize: 11, fontWeight: FontWeight.bold, color: iconColor)),
-                                      const SizedBox(height: 4),
-                                      Text(fmt.format(price), style: TextStyle(fontWeight: FontWeight.bold, fontSize: 15, color: iconColor)),
-                                    ],
-                                  ),
-                                ],
-                              ),
-                            ),
+                          padding: const EdgeInsets.symmetric(horizontal: 12),
+                          child: TransferActivityCard(
+                            content: content,
+                            createdAt: DateTime.parse(transfer['created_at']).toLocal(),
+                            datePattern: 'dd.MM.yyyy HH:mm',
+                            showDetailsTap: false,
+                            onPlayerTap: () {
+                              final playerId = content['player_id'] ?? 0;
+                              if (playerId != 0) {
+                                Navigator.push(context, MaterialPageRoute(builder: (_) => PlayerScreen(playerId: playerId)));
+                              }
+                            },
                           ),
                         );
                       },

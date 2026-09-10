@@ -12,8 +12,9 @@ List<Map<String, dynamic>> validateMatchEvents(
     if (raw is! Map) throw const FormatException('Ungültige Spieldaten.');
     final event = Map<String, dynamic>.from(raw);
     final tournament = event['tournament'];
-    final uniqueTournament =
-        tournament is Map ? tournament['uniqueTournament'] : null;
+    final uniqueTournament = tournament is Map
+        ? tournament['uniqueTournament']
+        : null;
     final season = event['season'];
     final roundInfo = event['roundInfo'];
     final home = event['homeTeam'];
