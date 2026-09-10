@@ -8,13 +8,14 @@ import 'package:pool/pool.dart';
 import 'package:premier_league/utils/match_time_helper.dart';
 
 class ApiService {
-  final String baseUrl = 'https://www.sofascore.com/api/v1';
+  final String baseUrl = 'https://api.sofascore.com/api/v1';
   final SupabaseService supabaseService = SupabaseService();
   final Map<String, String> _headers = {
     // Ein sehr gängiger iPhone-User-Agent (damit das Handy nicht behauptet, ein Windows-PC zu sein)
     'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
     'Accept': 'application/json, text/plain, */*',
     'Accept-Language': 'de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7',
+    'X-Requested-With': 'XMLHttpRequest',
     'Accept-Encoding': 'gzip, deflate, br',
     'Origin': 'https://www.sofascore.com',
     'Referer': 'https://www.sofascore.com/',
@@ -38,7 +39,7 @@ class ApiService {
         String? logoUrl;
 
         try {
-          final imageResponse = await http.get(Uri.parse('https://www.sofascore.com/api/v1/team/$teamId/image'));
+          final imageResponse = await http.get(Uri.parse('https://api.sofascore.com/api/v1/team/$teamId/image'));
           if (imageResponse.statusCode == 200) {
             final imageBytes = imageResponse.bodyBytes;
             final imagePath = 'wappen/$teamId.jpg';
@@ -188,7 +189,7 @@ class ApiService {
   }
 
   Future<void> fetchAndStoreSpielerundMatchratings(int spielId, int hometeamId, int awayteamId, int seasonId) async {
-    final url = 'https://www.sofascore.com/api/v1/event/$spielId/lineups';
+    final url = 'https://api.sofascore.com/api/v1/event/$spielId/lineups';
 
     // 1. Abruf mit Bremse (gegen API-Limit)
     final response = await _throttledGet(url);
@@ -272,7 +273,7 @@ class ApiService {
         await initializePlayerInDB(playerId, seasonId);
       }
 
-      final imageResponse = await http.get(Uri.parse('https://www.sofascore.com/api/v1/player/$playerId/image'));
+      final imageResponse = await http.get(Uri.parse('https://api.sofascore.com/api/v1/player/$playerId/image'));
       if (imageResponse.statusCode == 200) {
         final imageBytes = imageResponse.bodyBytes;
         final imagePath = 'spielerbilder/$playerId.jpg';
@@ -722,7 +723,7 @@ class ApiService {
   }
 
   Future<({List<String> urls, bool hasNextPage})> _getLineupUrlsAndPageInfo(int playerId, int page) async {
-    final playerEventsUrl = 'https://www.sofascore.com/api/v1/player/$playerId/events/last/$page';
+    final playerEventsUrl = 'https://api.sofascore.com/api/v1/player/$playerId/events/last/$page';
     final List<String> lineupUrls = [];
 
     final response = await http.get(Uri.parse(playerEventsUrl));
@@ -737,7 +738,7 @@ class ApiService {
         final String eventIdString = event['id'].toString();
         if (!benchMatchIds.contains(eventIdString)) {
           final int eventId = event['id'];
-          final String lineupUrl = 'https://www.sofascore.com/api/v1/event/$eventId/lineups';
+          final String lineupUrl = 'https://api.sofascore.com/api/v1/event/$eventId/lineups';
           lineupUrls.add(lineupUrl);
         }
       }
@@ -779,7 +780,7 @@ class ApiService {
 
   Future<String> guessPlayerPosition(int playerId) async {
     try {
-      final playerData = 'https://www.sofascore.com/api/v1/player/$playerId';
+      final playerData = 'https://api.sofascore.com/api/v1/player/$playerId';
       final response = await http.get(Uri.parse(playerData));
 
       if (response.statusCode == 200) {
@@ -830,16 +831,22 @@ class ApiService {
         if (response.statusCode == 200) {
           return response;
         }
-        // WICHTIG: Sofortiger Abbruch bei Limit-Fehlern
-        else if (response.statusCode == 429 || response.statusCode == 403) {
+        else if (response.statusCode == 429) {
           print('🛑 API-Limit erreicht ($url). Code: ${response.statusCode}. Breche Update-Prozess sofort ab!');
           throw Exception('API_LIMIT_REACHED');
+        }
+        else if (response.statusCode == 403) {
+          print('⛔ SofaScore-Zugriff verweigert ($url). Code: 403.');
+          throw Exception('API_ACCESS_DENIED');
         }
         else {
           return response;
         }
       } catch (e) {
-        if (e.toString().contains('API_LIMIT_REACHED')) rethrow;
+        if (e.toString().contains('API_LIMIT_REACHED') ||
+            e.toString().contains('API_ACCESS_DENIED')) {
+          rethrow;
+        }
 
         print('Netzwerkfehler: $e. Retry...');
         await Future.delayed(const Duration(seconds: 2));
@@ -882,7 +889,7 @@ class ApiService {
         // c) Profilbild herunterladen und in Storage laden
         String? imageUrl;
         try {
-          final imageResponse = await _throttledGet('https://www.sofascore.com/api/v1/player/$playerId/image');
+          final imageResponse = await _throttledGet('https://api.sofascore.com/api/v1/player/$playerId/image');
           if (imageResponse.statusCode == 200) {
             final imagePath = 'spielerbilder/$playerId.jpg';
 
@@ -934,7 +941,7 @@ class ApiService {
       bool positionFound = false;
 
       // Wir holen die letzten ~20 Spiele des Spielers
-      final response = await _throttledGet('https://www.sofascore.com/api/v1/player/$playerId/events/last/0');
+      final response = await _throttledGet('https://api.sofascore.com/api/v1/player/$playerId/events/last/0');
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
@@ -955,7 +962,7 @@ class ApiService {
 
             String eventId = event['id'].toString();
 
-            final lineupResp = await _throttledGet('https://www.sofascore.com/api/v1/event/$eventId/lineups');
+            final lineupResp = await _throttledGet('https://api.sofascore.com/api/v1/event/$eventId/lineups');
             if (lineupResp.statusCode == 200) {
               final lineupData = json.decode(lineupResp.body);
               if (lineupData == null || lineupData is! Map) continue;
@@ -1000,7 +1007,7 @@ class ApiService {
       // holen wir uns seine grobe Position aus dem Spielerprofil.
       if (!positionFound) {
         try {
-          final playerInfoResp = await _throttledGet('https://www.sofascore.com/api/v1/player/$playerId');
+          final playerInfoResp = await _throttledGet('https://api.sofascore.com/api/v1/player/$playerId');
           if (playerInfoResp.statusCode == 200) {
             final playerInfoData = json.decode(playerInfoResp.body);
             if (playerInfoData != null && playerInfoData is Map && playerInfoData['player'] is Map) {
@@ -1330,7 +1337,7 @@ class ApiService {
       // 4. Profilbild herunterladen und speichern (Logik aus fixIncompletePlayers)
       String? imageUrl;
       try {
-        final imageResponse = await _throttledGet('https://www.sofascore.com/api/v1/player/$playerId/image');
+        final imageResponse = await _throttledGet('https://api.sofascore.com/api/v1/player/$playerId/image');
         if (imageResponse.statusCode == 200) {
           final imagePath = 'spielerbilder/$playerId.jpg';
 
@@ -1536,7 +1543,7 @@ class SupabaseService {
 
     } catch (error) {
       print('Fehler beim Speichern des Spielers: $error');
-      throw e;
+      throw error;
     }
   }
 
@@ -1550,7 +1557,7 @@ class SupabaseService {
           onConflict: 'season_id, player_id, team_id');
     } catch (error) {
       print('Fehler beim Speichern der Spieler-Saison-Beziehung: $error');
-      throw e;
+      throw error;
     }
   }
 
