@@ -2,23 +2,20 @@
 import 'dart:convert';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'dart:math';
 import 'package:premier_league/models/league_activity.dart';
 import 'package:pool/pool.dart';
 import 'package:premier_league/utils/match_time_helper.dart';
 
 class ApiService {
-  ApiService({this.checkSyncSession});
-
-  final void Function()? checkSyncSession;
-
-  final String baseUrl = 'https://www.sofascore.com/api/v1';
+  final String baseUrl = 'https://api.sofascore.com/api/v1';
   final SupabaseService supabaseService = SupabaseService();
   final Map<String, String> _headers = {
     // Ein sehr gängiger iPhone-User-Agent (damit das Handy nicht behauptet, ein Windows-PC zu sein)
-    'User-Agent':
-        'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
+    'User-Agent': 'Mozilla/5.0 (iPhone; CPU iPhone OS 16_6 like Mac OS X) AppleWebKit/605.1.15 (KHTML, like Gecko) Version/16.6 Mobile/15E148 Safari/604.1',
     'Accept': 'application/json, text/plain, */*',
     'Accept-Language': 'de-DE,de;q=0.9,en-US;q=0.8,en;q=0.7',
+    'X-Requested-With': 'XMLHttpRequest',
     'Accept-Encoding': 'gzip, deflate, br',
     'Origin': 'https://www.sofascore.com',
     'Referer': 'https://www.sofascore.com/',
@@ -29,8 +26,7 @@ class ApiService {
   };
 
   Future<void> fetchAndStoreTeams(int tournamentId, int seasonId) async {
-    final url =
-        '$baseUrl/unique-tournament/$tournamentId/season/$seasonId/teams';
+    final url = '$baseUrl/unique-tournament/$tournamentId/season/$seasonId/teams';
     final response = await http.get(Uri.parse(url));
 
     if (response.statusCode == 200) {
@@ -43,9 +39,7 @@ class ApiService {
         String? logoUrl;
 
         try {
-          final imageResponse = await http.get(
-            Uri.parse('https://www.sofascore.com/api/v1/team/$teamId/image'),
-          );
+          final imageResponse = await http.get(Uri.parse('https://api.sofascore.com/api/v1/team/$teamId/image'));
           if (imageResponse.statusCode == 200) {
             final imageBytes = imageResponse.bodyBytes;
             final imagePath = 'wappen/$teamId.jpg';
@@ -53,13 +47,13 @@ class ApiService {
             await supabaseService.supabase.storage
                 .from('wappen')
                 .uploadBinary(
-                  imagePath,
-                  imageBytes,
-                  fileOptions: const FileOptions(
-                    cacheControl: '3600',
-                    upsert: true,
-                  ),
-                );
+              imagePath,
+              imageBytes,
+              fileOptions: const FileOptions(
+                cacheControl: '3600',
+                upsert: true,
+              ),
+            );
 
             logoUrl = supabaseService.supabase.storage
                 .from('wappen')
@@ -72,17 +66,14 @@ class ApiService {
         await supabaseService.saveTeam(teamId, teamName, logoUrl);
         await supabaseService.saveSeasonTeam(seasonId, teamId);
       }
-      print(
-        '✅ Alle Teams (Turnier: $tournamentId, Saison: $seasonId) wurden gespeichert.',
-      );
+      print('✅ Alle Teams (Turnier: $tournamentId, Saison: $seasonId) wurden gespeichert.');
     } else {
       throw Exception("Fehler beim Abrufen der Teams: ${response.statusCode}");
     }
   }
 
   Future<void> fetchAndStoreSpieltage(int tournamentId, int seasonId) async {
-    final url =
-        '$baseUrl/unique-tournament/$tournamentId/season/$seasonId/rounds';
+    final url = '$baseUrl/unique-tournament/$tournamentId/season/$seasonId/rounds';
     final response = await http.get(Uri.parse(url));
 
     if (response.statusCode == 200) {
@@ -91,29 +82,16 @@ class ApiService {
 
       for (var round in roundsJson) {
         int roundNumber = int.tryParse(round['round'].toString()) ?? 0;
-        await supabaseService.saveSpieltag(
-          roundNumber,
-          'nicht gestartet',
-          seasonId,
-        );
+        await supabaseService.saveSpieltag(roundNumber, 'nicht gestartet', seasonId);
       }
-      print(
-        '✅ Spieltage (Turnier: $tournamentId, Saison: $seasonId) wurden gespeichert.',
-      );
+      print('✅ Spieltage (Turnier: $tournamentId, Saison: $seasonId) wurden gespeichert.');
     } else {
-      throw Exception(
-        "Fehler beim Abrufen der Spieltage: ${response.statusCode}",
-      );
+      throw Exception("Fehler beim Abrufen der Spieltage: ${response.statusCode}");
     }
   }
 
-  Future<void> fetchAndStoreSpiele(
-    int tournamentId,
-    int seasonId,
-    int round,
-  ) async {
-    final url =
-        '$baseUrl/unique-tournament/$tournamentId/season/$seasonId/events/round/$round';
+  Future<void> fetchAndStoreSpiele(int tournamentId, int seasonId, int round) async {
+    final url = '$baseUrl/unique-tournament/$tournamentId/season/$seasonId/events/round/$round';
     final response = await http.get(Uri.parse(url));
 
     if (response.statusCode == 200) {
@@ -133,10 +111,9 @@ class ApiService {
         var homeScore = event['homeScore']?['current'] ?? 0;
         var awayScore = event['awayScore']?['current'] ?? 0;
 
-        String ergebnis =
-            (event['homeScore'] == null || event['awayScore'] == null)
-                ? "Noch kein Ergebnis"
-                : "$homeScore:$awayScore";
+        String ergebnis = (event['homeScore'] == null || event['awayScore'] == null)
+            ? "Noch kein Ergebnis"
+            : "$homeScore:$awayScore";
 
         await supabaseService.saveSpiel(
           matchId,
@@ -150,9 +127,7 @@ class ApiService {
         );
       }
     } else {
-      throw Exception(
-        "Fehler beim Abrufen der Spiele für Runde $round: ${response.statusCode}",
-      );
+      throw Exception("Fehler beim Abrufen der Spiele für Runde $round: ${response.statusCode}");
     }
   }
 
@@ -167,11 +142,10 @@ class ApiService {
       var homeScore = parsedJson['event']['homeScore']?['current'] ?? 0;
       var awayScore = parsedJson['event']['awayScore']?['current'] ?? 0;
 
-      String ergebnis =
-          (parsedJson['event']['homeScore'] == null ||
-                  parsedJson['event']['awayScore'] == null)
-              ? "Noch kein Ergebnis"
-              : "$homeScore:$awayScore";
+      String ergebnis = (parsedJson['event']['homeScore'] == null ||
+          parsedJson['event']['awayScore'] == null)
+          ? "Noch kein Ergebnis"
+          : "$homeScore:$awayScore";
 
       // NEU: Variablen für Incidents und Farben vorbereiten
       List<dynamic> incidents = [];
@@ -191,12 +165,10 @@ class ApiService {
 
           // Farben extrahieren (falls vorhanden)
           homeColorPrimary = incidentsJson['home']?['playerColor']?['primary'];
-          homeGkColorPrimary =
-              incidentsJson['home']?['goalkeeperColor']?['primary'];
+          homeGkColorPrimary = incidentsJson['home']?['goalkeeperColor']?['primary'];
 
           awayColorPrimary = incidentsJson['away']?['playerColor']?['primary'];
-          awayGkColorPrimary =
-              incidentsJson['away']?['goalkeeperColor']?['primary'];
+          awayGkColorPrimary = incidentsJson['away']?['goalkeeperColor']?['primary'];
         }
       } catch (e) {
         print('Fehler beim Abrufen der Incidents für Spiel $spielId: $e');
@@ -216,13 +188,8 @@ class ApiService {
     }
   }
 
-  Future<void> fetchAndStoreSpielerundMatchratings(
-    int spielId,
-    int hometeamId,
-    int awayteamId,
-    int seasonId,
-  ) async {
-    final url = 'https://www.sofascore.com/api/v1/event/$spielId/lineups';
+  Future<void> fetchAndStoreSpielerundMatchratings(int spielId, int hometeamId, int awayteamId, int seasonId) async {
+    final url = 'https://api.sofascore.com/api/v1/event/$spielId/lineups';
 
     // 1. Abruf mit Bremse (gegen API-Limit)
     final response = await _throttledGet(url);
@@ -243,13 +210,10 @@ class ApiService {
 
         // 2. WICHTIG: Wir nutzen die SQL-Funktion (RPC) statt Dart-Schleifen!
         // Das repariert auch automatisch die team_id.
-        await supabaseService.uploadMatchLineupRPC(
-          spielId,
-          seasonId,
-          parsedJson,
-        );
+        await supabaseService.uploadMatchLineupRPC(spielId, seasonId, parsedJson);
 
         print("--- Update erfolgreich für Spiel $spielId (via RPC) ---");
+
       } catch (e) {
         // Fehler weitergeben für die lokale Sperre (API Limit)
         if (e.toString().contains('API_LIMIT_REACHED')) rethrow;
@@ -259,43 +223,32 @@ class ApiService {
     }
   }
 
-  Future<void> processPlayerData(
-    Map<String, dynamic> playerData,
-    int teamId,
-    int spielId,
-    String formation,
-    int formationIndex,
-    int seasonId,
-  ) async {
+  Future<void> processPlayerData(Map<String, dynamic> playerData, int teamId, int spielId, String formation, int formationIndex, int seasonId) async {
     var player = playerData['player'];
     int playerId = player['id'];
     String playerName = player['name'];
-    String matchPosition = await _getPositionFromFormation(
-      formation,
-      formationIndex,
-    );
+    String matchPosition = await _getPositionFromFormation(formation, formationIndex);
     String finalPositionsToSave = '';
     String? imageUrl;
     int? marktwert;
 
     try {
-      final playerResponse =
-          await supabaseService.supabase
-              .from('spieler')
-              .select('position')
-              .eq('id', playerId)
-              .eq('is_active', true)
-              .maybeSingle();
+      final playerResponse = await supabaseService.supabase
+          .from('spieler')
+          .select('position')
+          .eq('id', playerId)
+          .eq('is_active', true)
+          .maybeSingle();
 
       String currentPositions = playerResponse?['position'] ?? '';
 
-      List<String> positionList =
-          (currentPositions.isNotEmpty)
-              ? currentPositions.split(',').map((p) => p.trim()).toList()
-              : [];
+      List<String> positionList = (currentPositions.isNotEmpty)
+          ? currentPositions.split(',').map((p) => p.trim()).toList()
+          : [];
 
       positionList.remove('N/V');
       bool positionExists = positionList.contains(matchPosition);
+
 
       if (positionList.isEmpty) {
         if (!['N/A', 'SUB'].contains(matchPosition)) {
@@ -309,21 +262,18 @@ class ApiService {
       } else {
         finalPositionsToSave = currentPositions;
       }
-      final existingPlayer =
-          await supabaseService.supabase
-              .from('spieler_analytics') // <-- NEU
-              .select('marktwert')
-              .eq('spieler_id', playerId) // <-- NEU
-              .maybeSingle();
+      final existingPlayer = await supabaseService.supabase
+          .from('spieler_analytics') // <-- NEU
+          .select('marktwert')
+          .eq('spieler_id', playerId) // <-- NEU
+          .maybeSingle();
 
       if (existingPlayer == null || existingPlayer['marktwert'] == null) {
         print('Initialisiere Spieler $playerId ...');
         await initializePlayerInDB(playerId, seasonId);
       }
 
-      final imageResponse = await http.get(
-        Uri.parse('https://www.sofascore.com/api/v1/player/$playerId/image'),
-      );
+      final imageResponse = await http.get(Uri.parse('https://api.sofascore.com/api/v1/player/$playerId/image'));
       if (imageResponse.statusCode == 200) {
         final imageBytes = imageResponse.bodyBytes;
         final imagePath = 'spielerbilder/$playerId.jpg';
@@ -331,13 +281,13 @@ class ApiService {
         await supabaseService.supabase.storage
             .from('spielerbilder')
             .uploadBinary(
-              imagePath,
-              imageBytes,
-              fileOptions: const FileOptions(
-                cacheControl: '3600',
-                upsert: true,
-              ),
-            );
+          imagePath,
+          imageBytes,
+          fileOptions: const FileOptions(
+            cacheControl: '3600',
+            upsert: true,
+          ),
+        );
         imageUrl = supabaseService.supabase.storage
             .from('spielerbilder')
             .getPublicUrl(imagePath);
@@ -350,29 +300,19 @@ class ApiService {
     double rating = playerData['statistics']?['rating'] ?? 6.0;
     int punktzahl = ((rating - 6) * 100).round();
     int ratingId = int.parse('$spielId$playerId');
-    Map<String, dynamic> stats =
-        playerData['statistics'] as Map<String, dynamic>? ?? {};
+    Map<String, dynamic> stats = playerData['statistics'] as Map<String, dynamic>? ?? {};
     int newRating = buildNewRating(primaryPosition, stats);
 
     await supabaseService.saveSpieler(
-      playerId,
-      playerName,
-      finalPositionsToSave,
-      imageUrl,
-      marktwert,
-      seasonId,
+        playerId,
+        playerName,
+        finalPositionsToSave,
+        imageUrl,
+        marktwert,
+        seasonId,
     );
     await supabaseService.saveSeasonPlayer(seasonId, playerId, teamId);
-    await supabaseService.saveMatchrating(
-      ratingId,
-      spielId,
-      playerId,
-      punktzahl,
-      stats,
-      newRating,
-      formationIndex,
-      matchPosition,
-    );
+    await supabaseService.saveMatchrating(ratingId, spielId, playerId, punktzahl, stats, newRating, formationIndex, matchPosition);
   }
 
   Future<String> _getPositionFromFormation(String formation, int index) async {
@@ -382,12 +322,11 @@ class ApiService {
 
     try {
       // 1. Prüfen, ob die Formation existiert
-      final existing =
-          await supabaseService.supabase
-              .from('formation')
-              .select('positionsliste')
-              .eq('formation', formation)
-              .maybeSingle();
+      final existing = await supabaseService.supabase
+          .from('formation')
+          .select('positionsliste')
+          .eq('formation', formation)
+          .maybeSingle();
 
       List<String> positionsList;
 
@@ -425,8 +364,7 @@ class ApiService {
       });
     } catch (e) {
       // Ignoriert den Fehler, wenn die Formation bereits existiert (Race Condition)
-      if (e is PostgrestException && e.code == '23505') {
-        // 23505 = unique_violation
+      if (e is PostgrestException && e.code == '23505') { // 23505 = unique_violation
         // Bereits von einem anderen Prozess hinzugefügt, alles gut.
       } else {
         print('Fehler beim Speichern der Formation $formation: $e');
@@ -436,16 +374,14 @@ class ApiService {
   }
 
   Future<void> ensureFormationExists(String formation) async {
-    if (formation == 'N/A' || formation.isEmpty)
-      return; // 'N/A' nicht speichern
+    if (formation == 'N/A' || formation.isEmpty) return; // 'N/A' nicht speichern
 
     // 1. Prüfen, ob die Formation bereits existiert
-    final existing =
-        await supabaseService.supabase
-            .from('formation')
-            .select('formation')
-            .eq('formation', formation)
-            .maybeSingle();
+    final existing = await supabaseService.supabase
+        .from('formation')
+        .select('formation')
+        .eq('formation', formation)
+        .maybeSingle();
 
     // 2. Wenn nicht, erstelle sie
     if (existing == null) {
@@ -456,18 +392,13 @@ class ApiService {
   String _computePositionFromFormation(String formation, int index) {
     if (index == 0) return 'TW'; // Torwart
 
-    final parts =
-        formation
-            .split('-')
-            .map(int.tryParse)
-            .where((i) => i != null)
-            .cast<int>()
-            .toList();
+    final parts = formation.split('-').map(int.tryParse).where((i) => i != null).cast<int>().toList();
     if (parts.length < 2) return 'N/A'; // Ungültige Formation
 
     final defenders = parts.first;
     final attackers = parts.last;
     final midfielders = parts.sublist(1, parts.length - 1);
+
 
     int defenseEndIndex = defenders;
     if (index > 0 && index <= defenseEndIndex) {
@@ -485,22 +416,21 @@ class ApiService {
       }
     }
 
-    int midfieldEndIndex =
-        defenseEndIndex + midfielders.reduce((a, b) => a + b);
+    int midfieldEndIndex = defenseEndIndex + midfielders.reduce((a, b) => a + b);
     if (index > defenseEndIndex && index <= midfieldEndIndex) {
       int posIndex = index - defenseEndIndex;
-      if (midfielders.length == 1) {
-        if (midfielders.first > 3) {
+      if(midfielders.length == 1) {
+        if (midfielders.first > 3){
           if (posIndex == 1) return 'RA';
           if (posIndex == midfielders.first) return 'LA';
         }
         return 'ZM';
       }
 
-      if (posIndex <= midfielders.first) {
+      if (posIndex <= midfielders.first){
         if (midfielders.first >= 3) {
-          if (posIndex == 1) return 'RV';
-          if (posIndex == midfielders.first) return 'LV';
+          if(posIndex == 1) return 'RV';
+          if(posIndex == midfielders.first) return 'LV';
         }
         if (midfielders.first == 3) return 'ZM';
         return 'ZDM';
@@ -515,7 +445,7 @@ class ApiService {
         if (midfielders.length >= 3) return 'ZM';
         return 'ZOM';
       }
-      if (posIndex <= midfielders[0] + midfielders[1] + midfielders[2]) {
+      if (posIndex <= midfielders[0] + midfielders[1]+ midfielders[2]){
         return 'ZOM';
       }
       return 'M';
@@ -538,6 +468,7 @@ class ApiService {
     double bewertung = 0;
 
     if (position == 'G') {
+
       if (stats.containsKey('totalPass')) {
         bewertung += 0.002 * (stats['totalPass'] ?? 0);
       }
@@ -634,223 +565,136 @@ class ApiService {
 
       // Spezifische Torhüter-Aktionen (neu hinzugefügt)
       if (stats.containsKey('saves')) {
-        bewertung +=
-            0.2 * (stats['saves'] ?? 0); // Wichtiger Punkt für Torhüter
+        bewertung += 0.2 * (stats['saves'] ?? 0); // Wichtiger Punkt für Torhüter
       }
       if (stats.containsKey('goalsConceded')) {
-        bewertung -=
-            0.15 * (stats['goalsConceded'] ?? 0); // Minuspunkte für Gegentore
+        bewertung -= 0.15 * (stats['goalsConceded'] ?? 0); // Minuspunkte für Gegentore
       }
       if (stats.containsKey('cleanSheet')) {
-        bewertung +=
-            1 * (stats['cleanSheet'] ?? 0); // Punkte für "zu Null" spielen
+        bewertung += 1 * (stats['cleanSheet'] ?? 0); // Punkte für "zu Null" spielen
       }
-      if (stats.containsKey('shotsFaced')) {
+      if(stats.containsKey('shotsFaced')){
         bewertung += 0.02 * (stats['shotsFaced'] ?? 0);
       }
 
-      return (bewertung * 50).round();
-    } else {
+      return (bewertung*50).round();
+    }
+    else {
       return 0;
     }
 
+
     if (position == 'D') {
-      if (stats.containsKey('totalPass'))
-        bewertung += 0.005 * stats['totalPass'];
-      if (stats.containsKey('accuratePass'))
-        bewertung += 0.005 * stats['accuratePass'];
-      if (stats.containsKey('totalLongBalls'))
-        bewertung += 0.05 * stats['totalLongBalls'];
-      if (stats.containsKey('accurateLongBalls'))
-        bewertung += 0.05 * stats['accurateLongBalls'];
-      if (stats.containsKey('goalAssist'))
-        bewertung += 0.5 * stats['goalAssist'];
+      if (stats.containsKey('totalPass')) bewertung += 0.005 * stats['totalPass'];
+      if (stats.containsKey('accuratePass')) bewertung += 0.005 * stats['accuratePass'];
+      if (stats.containsKey('totalLongBalls')) bewertung += 0.05 * stats['totalLongBalls'];
+      if (stats.containsKey('accurateLongBalls')) bewertung += 0.05 * stats['accurateLongBalls'];
+      if (stats.containsKey('goalAssist')) bewertung += 0.5 * stats['goalAssist'];
       if (stats.containsKey('goals')) bewertung += 1.0 * stats['goals'];
-      if (stats.containsKey('totalCross'))
-        bewertung += 0.05 * stats['totalCross'];
-      if (stats.containsKey('accurateCross'))
-        bewertung += 0.05 * stats['accurateCross'];
-      if (stats.containsKey('aerialLost'))
-        bewertung -= 0.05 * stats['aerialLost'];
+      if (stats.containsKey('totalCross')) bewertung += 0.05 * stats['totalCross'];
+      if (stats.containsKey('accurateCross')) bewertung += 0.05 * stats['accurateCross'];
+      if (stats.containsKey('aerialLost')) bewertung -= 0.05 * stats['aerialLost'];
       if (stats.containsKey('aerialWon')) bewertung += 0.1 * stats['aerialWon'];
       if (stats.containsKey('duelLost')) bewertung -= 0.05 * stats['duelLost'];
       if (stats.containsKey('duelWon')) bewertung += 0.1 * stats['duelWon'];
-      if (stats.containsKey('dispossessed'))
-        bewertung -= 0.1 * stats['dispossessed'];
-      if (stats.containsKey('shotOffTarget'))
-        bewertung -= 0.05 * stats['shotOffTarget'];
-      if (stats.containsKey('totalClearance'))
-        bewertung += 0.05 * stats['totalClearance'];
-      if (stats.containsKey('clearanceOffLine'))
-        bewertung -= 0.1 * stats['clearanceOffLine'];
+      if (stats.containsKey('dispossessed')) bewertung -= 0.1 * stats['dispossessed'];
+      if (stats.containsKey('shotOffTarget')) bewertung -= 0.05 * stats['shotOffTarget'];
+      if (stats.containsKey('totalClearance')) bewertung += 0.05 * stats['totalClearance'];
+      if (stats.containsKey('clearanceOffLine')) bewertung -= 0.1 * stats['clearanceOffLine'];
       if (stats.containsKey('fouls')) bewertung -= 0.1 * stats['fouls'];
       if (stats.containsKey('touches')) bewertung += 0.01 * stats['touches'];
-      if (stats.containsKey('possessionLostCtrl'))
-        bewertung -= 0.05 * stats['possessionLostCtrl'];
-      if (stats.containsKey('expectedAssists'))
-        bewertung += 1.0 * stats['expectedAssists'];
+      if (stats.containsKey('possessionLostCtrl')) bewertung -= 0.05 * stats['possessionLostCtrl'];
+      if (stats.containsKey('expectedAssists')) bewertung += 1.0 * stats['expectedAssists'];
       if (stats.containsKey('keyPass')) bewertung += 0.2 * stats['keyPass'];
-      if (stats.containsKey('totalTackle'))
-        bewertung += 0.1 * stats['totalTackle'];
-      if (stats.containsKey('wonContest'))
-        bewertung += 0.05 * stats['wonContest'];
-      if (stats.containsKey('challengeLost'))
-        bewertung -= 0.05 * stats['challengeLost'];
-      if (stats.containsKey('outfielderBlock'))
-        bewertung += 0.05 * stats['outfielderBlock'];
-      if (stats.containsKey('interceptionWon'))
-        bewertung += 0.1 * stats['interceptionWon'];
-      if (stats.containsKey('lastManTackle'))
-        bewertung += 0.2 * stats['lastManTackle'];
-      if (stats.containsKey('bigChanceCreated'))
-        bewertung += 0.2 * stats['bigChanceCreated'];
-      if (stats.containsKey('bigChanceMissed'))
-        bewertung -= 0.2 * stats['bigChanceMissed'];
-      if (stats.containsKey('errorLeadToAShot'))
-        bewertung -= 0.2 * stats['errorLeadToAShot'];
-      if (stats.containsKey('errorLeadToAGoal'))
-        bewertung -= 0.3 * stats['errorLeadToAGoal'];
+      if (stats.containsKey('totalTackle')) bewertung += 0.1 * stats['totalTackle'];
+      if (stats.containsKey('wonContest')) bewertung += 0.05 * stats['wonContest'];
+      if (stats.containsKey('challengeLost')) bewertung -= 0.05 * stats['challengeLost'];
+      if (stats.containsKey('outfielderBlock')) bewertung += 0.05 * stats['outfielderBlock'];
+      if (stats.containsKey('interceptionWon')) bewertung += 0.1 * stats['interceptionWon'];
+      if (stats.containsKey('lastManTackle')) bewertung += 0.2 * stats['lastManTackle'];
+      if (stats.containsKey('bigChanceCreated')) bewertung += 0.2 * stats['bigChanceCreated'];
+      if (stats.containsKey('bigChanceMissed')) bewertung -= 0.2 * stats['bigChanceMissed'];
+      if (stats.containsKey('errorLeadToAShot')) bewertung -= 0.2 * stats['errorLeadToAShot'];
+      if (stats.containsKey('errorLeadToAGoal')) bewertung -= 0.3 * stats['errorLeadToAGoal'];
     }
 
     if (position == 'M') {
-      if (stats.containsKey('totalPass'))
-        bewertung += 0.008 * stats['totalPass'];
-      if (stats.containsKey('accuratePass'))
-        bewertung += 0.017 * stats['accuratePass'];
+      if (stats.containsKey('totalPass')) bewertung += 0.008 * stats['totalPass'];
+      if (stats.containsKey('accuratePass')) bewertung += 0.017 * stats['accuratePass'];
       if (stats.containsKey('touches')) bewertung += 0.020 * stats['touches'];
-      if (stats.containsKey('totalLongBalls'))
-        bewertung += 0.025 * stats['totalLongBalls'];
-      if (stats.containsKey('accurateLongBalls'))
-        bewertung += 0.025 * stats['accurateLongBalls'];
-      if (stats.containsKey('totalCross'))
-        bewertung += 0.060 * stats['totalCross'];
-      if (stats.containsKey('accurateCross'))
-        bewertung += 0.120 * stats['accurateCross'];
-      if (stats.containsKey('goalAssist'))
-        bewertung += 0.400 * stats['goalAssist'];
+      if (stats.containsKey('totalLongBalls')) bewertung += 0.025 * stats['totalLongBalls'];
+      if (stats.containsKey('accurateLongBalls')) bewertung += 0.025 * stats['accurateLongBalls'];
+      if (stats.containsKey('totalCross')) bewertung += 0.060 * stats['totalCross'];
+      if (stats.containsKey('accurateCross')) bewertung += 0.120 * stats['accurateCross'];
+      if (stats.containsKey('goalAssist')) bewertung += 0.400 * stats['goalAssist'];
       if (stats.containsKey('keyPass')) bewertung += 0.350 * stats['keyPass'];
-      if (stats.containsKey('onTargetScoringAttempt'))
-        bewertung += 0.200 * stats['onTargetScoringAttempt'];
+      if (stats.containsKey('onTargetScoringAttempt')) bewertung += 0.200 * stats['onTargetScoringAttempt'];
       if (stats.containsKey('goals')) bewertung += 0.600 * stats['goals'];
-      if (stats.containsKey('expectedAssists'))
-        bewertung += 1.800 * stats['expectedAssists'];
-      if (stats.containsKey('aerialLost'))
-        bewertung -= 0.040 * stats['aerialLost'];
-      if (stats.containsKey('aerialWon'))
-        bewertung += 0.060 * stats['aerialWon'];
+      if (stats.containsKey('expectedAssists')) bewertung += 1.800 * stats['expectedAssists'];
+      if (stats.containsKey('aerialLost')) bewertung -= 0.040 * stats['aerialLost'];
+      if (stats.containsKey('aerialWon')) bewertung += 0.060 * stats['aerialWon'];
       if (stats.containsKey('duelLost')) bewertung -= 0.040 * stats['duelLost'];
       if (stats.containsKey('duelWon')) bewertung += 0.060 * stats['duelWon'];
-      if (stats.containsKey('totalContest'))
-        bewertung += 0.040 * stats['totalContest'];
-      if (stats.containsKey('wonContest'))
-        bewertung += 0.040 * stats['wonContest'];
-      if (stats.containsKey('blockedScoringAttempt'))
-        bewertung += 0.120 * stats['blockedScoringAttempt'];
-      if (stats.containsKey('outfielderBlock'))
-        bewertung += 0.100 * stats['outfielderBlock'];
-      if (stats.containsKey('totalClearance'))
-        bewertung += 0.080 * stats['totalClearance'];
-      if (stats.containsKey('interceptionWon'))
-        bewertung += 0.120 * stats['interceptionWon'];
-      if (stats.containsKey('totalTackle'))
-        bewertung += 0.120 * stats['totalTackle'];
-      if (stats.containsKey('challengeLost'))
-        bewertung -= 0.080 * stats['challengeLost'];
+      if (stats.containsKey('totalContest')) bewertung += 0.040 * stats['totalContest'];
+      if (stats.containsKey('wonContest')) bewertung += 0.040 * stats['wonContest'];
+      if (stats.containsKey('blockedScoringAttempt')) bewertung += 0.120 * stats['blockedScoringAttempt'];
+      if (stats.containsKey('outfielderBlock')) bewertung += 0.100 * stats['outfielderBlock'];
+      if (stats.containsKey('totalClearance')) bewertung += 0.080 * stats['totalClearance'];
+      if (stats.containsKey('interceptionWon')) bewertung += 0.120 * stats['interceptionWon'];
+      if (stats.containsKey('totalTackle')) bewertung += 0.120 * stats['totalTackle'];
+      if (stats.containsKey('challengeLost')) bewertung -= 0.080 * stats['challengeLost'];
       if (stats.containsKey('fouls')) bewertung -= 0.040 * stats['fouls'];
-      if (stats.containsKey('dispossessed'))
-        bewertung -= 0.080 * stats['dispossessed'];
-      if (stats.containsKey('totalOffside'))
-        bewertung -= 0.040 * stats['totalOffside'];
-      if (stats.containsKey('shotOffTarget'))
-        bewertung -= 0.040 * stats['shotOffTarget'];
-      if (stats.containsKey('errorLeadToAGoal'))
-        bewertung -= 0.200 * stats['errorLeadToAGoal'];
-      if (stats.containsKey('errorLeadToAShot'))
-        bewertung -= 0.150 * stats['errorLeadToAShot'];
-      if (stats.containsKey('bigChanceCreated'))
-        bewertung += 0.350 * stats['bigChanceCreated'];
-      if (stats.containsKey('bigChanceMissed'))
-        bewertung -= 0.250 * stats['bigChanceMissed'];
-      if (stats.containsKey('possessionLostCtrl'))
-        bewertung -= 0.030 * stats['possessionLostCtrl'];
-      if (stats.containsKey('penaltyWon'))
-        bewertung += 0.300 * stats['penaltyWon'];
-      if (stats.containsKey('clearanceOffLine'))
-        bewertung += 0.080 * stats['clearanceOffLine'];
-      if (stats.containsKey('hitWoodwork'))
-        bewertung += 0.100 * stats['hitWoodwork'];
+      if (stats.containsKey('dispossessed')) bewertung -= 0.080 * stats['dispossessed'];
+      if (stats.containsKey('totalOffside')) bewertung -= 0.040 * stats['totalOffside'];
+      if (stats.containsKey('shotOffTarget')) bewertung -= 0.040 * stats['shotOffTarget'];
+      if (stats.containsKey('errorLeadToAGoal')) bewertung -= 0.200 * stats['errorLeadToAGoal'];
+      if (stats.containsKey('errorLeadToAShot')) bewertung -= 0.150 * stats['errorLeadToAShot'];
+      if (stats.containsKey('bigChanceCreated')) bewertung += 0.350 * stats['bigChanceCreated'];
+      if (stats.containsKey('bigChanceMissed')) bewertung -= 0.250 * stats['bigChanceMissed'];
+      if (stats.containsKey('possessionLostCtrl')) bewertung -= 0.030 * stats['possessionLostCtrl'];
+      if (stats.containsKey('penaltyWon')) bewertung += 0.300 * stats['penaltyWon'];
+      if (stats.containsKey('clearanceOffLine')) bewertung += 0.080 * stats['clearanceOffLine'];
+      if (stats.containsKey('hitWoodwork')) bewertung += 0.100 * stats['hitWoodwork'];
     }
 
     if (position == 'F') {
-      if (stats.containsKey('totalPass'))
-        bewertung += 0.005 * stats['totalPass'];
-      if (stats.containsKey('accuratePass'))
-        bewertung += 0.010 * stats['accuratePass'];
-      if (stats.containsKey('totalLongBalls'))
-        bewertung += 0.005 * stats['totalLongBalls'];
-      if (stats.containsKey('accurateLongBalls'))
-        bewertung += 0.015 * stats['accurateLongBalls'];
+      if (stats.containsKey('totalPass')) bewertung += 0.005 * stats['totalPass'];
+      if (stats.containsKey('accuratePass')) bewertung += 0.010 * stats['accuratePass'];
+      if (stats.containsKey('totalLongBalls')) bewertung += 0.005 * stats['totalLongBalls'];
+      if (stats.containsKey('accurateLongBalls')) bewertung += 0.015 * stats['accurateLongBalls'];
       if (stats.containsKey('keyPass')) bewertung += 0.200 * stats['keyPass'];
-      if (stats.containsKey('goalAssist'))
-        bewertung += 0.500 * stats['goalAssist'];
-      if (stats.containsKey('expectedAssists'))
-        bewertung += 1.000 * stats['expectedAssists'];
-      if (stats.containsKey('expectedGoals'))
-        bewertung += 1.000 * stats['expectedGoals'];
-      if (stats.containsKey('totalCross'))
-        bewertung -= 0.050 * stats['totalCross'];
-      if (stats.containsKey('accurateCross'))
-        bewertung += 0.200 * stats['accurateCross'];
-      if (stats.containsKey('aerialWon'))
-        bewertung += 0.100 * stats['aerialWon'];
-      if (stats.containsKey('aerialLost'))
-        bewertung -= 0.100 * stats['aerialLost'];
+      if (stats.containsKey('goalAssist')) bewertung += 0.500 * stats['goalAssist'];
+      if (stats.containsKey('expectedAssists')) bewertung += 1.000 * stats['expectedAssists'];
+      if (stats.containsKey('expectedGoals')) bewertung += 1.000 * stats['expectedGoals'];
+      if (stats.containsKey('totalCross')) bewertung -= 0.050 * stats['totalCross'];
+      if (stats.containsKey('accurateCross')) bewertung += 0.200 * stats['accurateCross'];
+      if (stats.containsKey('aerialWon')) bewertung += 0.100 * stats['aerialWon'];
+      if (stats.containsKey('aerialLost')) bewertung -= 0.100 * stats['aerialLost'];
       if (stats.containsKey('duelWon')) bewertung += 0.050 * stats['duelWon'];
       if (stats.containsKey('duelLost')) bewertung -= 0.050 * stats['duelLost'];
-      if (stats.containsKey('challengeLost'))
-        bewertung -= 0.100 * stats['challengeLost'];
-      if (stats.containsKey('dispossessed'))
-        bewertung -= 0.150 * stats['dispossessed'];
-      if (stats.containsKey('totalContest'))
-        bewertung += 0.020 * stats['totalContest'];
-      if (stats.containsKey('wonContest'))
-        bewertung += 0.030 * stats['wonContest'];
-      if (stats.containsKey('shotOffTarget'))
-        bewertung -= 0.100 * stats['shotOffTarget'];
-      if (stats.containsKey('onTargetScoringAttempt'))
-        bewertung += 0.200 * stats['onTargetScoringAttempt'];
-      if (stats.containsKey('blockedScoringAttempt'))
-        bewertung -= 0.050 * stats['blockedScoringAttempt'];
-      if (stats.containsKey('bigChanceCreated'))
-        bewertung += 0.300 * stats['bigChanceCreated'];
-      if (stats.containsKey('bigChanceMissed'))
-        bewertung -= 0.300 * stats['bigChanceMissed'];
-      if (stats.containsKey('errorLeadToAGoal'))
-        bewertung -= 0.500 * stats['errorLeadToAGoal'];
-      if (stats.containsKey('errorLeadToAShot'))
-        bewertung -= 0.200 * stats['errorLeadToAShot'];
-      if (stats.containsKey('hitWoodwork'))
-        bewertung += 0.200 * stats['hitWoodwork'];
-      if (stats.containsKey('penaltyWon'))
-        bewertung += 0.500 * stats['penaltyWon'];
-      if (stats.containsKey('penaltyMiss'))
-        bewertung -= 0.300 * stats['penaltyMiss'];
-      if (stats.containsKey('totalClearance'))
-        bewertung += 0.030 * stats['totalClearance'];
-      if (stats.containsKey('clearanceOffLine'))
-        bewertung -= 0.100 * stats['clearanceOffLine'];
-      if (stats.containsKey('interceptionWon'))
-        bewertung += 0.100 * stats['interceptionWon'];
-      if (stats.containsKey('totalTackle'))
-        bewertung += 0.100 * stats['totalTackle'];
-      if (stats.containsKey('outfielderBlock'))
-        bewertung += 0.100 * stats['outfielderBlock'];
+      if (stats.containsKey('challengeLost')) bewertung -= 0.100 * stats['challengeLost'];
+      if (stats.containsKey('dispossessed')) bewertung -= 0.150 * stats['dispossessed'];
+      if (stats.containsKey('totalContest')) bewertung += 0.020 * stats['totalContest'];
+      if (stats.containsKey('wonContest')) bewertung += 0.030 * stats['wonContest'];
+      if (stats.containsKey('shotOffTarget')) bewertung -= 0.100 * stats['shotOffTarget'];
+      if (stats.containsKey('onTargetScoringAttempt')) bewertung += 0.200 * stats['onTargetScoringAttempt'];
+      if (stats.containsKey('blockedScoringAttempt')) bewertung -= 0.050 * stats['blockedScoringAttempt'];
+      if (stats.containsKey('bigChanceCreated')) bewertung += 0.300 * stats['bigChanceCreated'];
+      if (stats.containsKey('bigChanceMissed')) bewertung -= 0.300 * stats['bigChanceMissed'];
+      if (stats.containsKey('errorLeadToAGoal')) bewertung -= 0.500 * stats['errorLeadToAGoal'];
+      if (stats.containsKey('errorLeadToAShot')) bewertung -= 0.200 * stats['errorLeadToAShot'];
+      if (stats.containsKey('hitWoodwork')) bewertung += 0.200 * stats['hitWoodwork'];
+      if (stats.containsKey('penaltyWon')) bewertung += 0.500 * stats['penaltyWon'];
+      if (stats.containsKey('penaltyMiss')) bewertung -= 0.300 * stats['penaltyMiss'];
+      if (stats.containsKey('totalClearance')) bewertung += 0.030 * stats['totalClearance'];
+      if (stats.containsKey('clearanceOffLine')) bewertung -= 0.100 * stats['clearanceOffLine'];
+      if (stats.containsKey('interceptionWon')) bewertung += 0.100 * stats['interceptionWon'];
+      if (stats.containsKey('totalTackle')) bewertung += 0.100 * stats['totalTackle'];
+      if (stats.containsKey('outfielderBlock')) bewertung += 0.100 * stats['outfielderBlock'];
       if (stats.containsKey('touches')) bewertung += 0.005 * stats['touches'];
-      if (stats.containsKey('possessionLostCtrl'))
-        bewertung -= 0.050 * stats['possessionLostCtrl'];
+      if (stats.containsKey('possessionLostCtrl')) bewertung -= 0.050 * stats['possessionLostCtrl'];
       if (stats.containsKey('fouls')) bewertung -= 0.100 * stats['fouls'];
-      if (stats.containsKey('totalOffside'))
-        bewertung -= 0.100 * stats['totalOffside'];
+      if (stats.containsKey('totalOffside')) bewertung -= 0.100 * stats['totalOffside'];
     }
 
     return (bewertung * 100).round();
@@ -878,12 +722,8 @@ class ApiService {
     return position ?? 'N/V';
   }
 
-  Future<({List<String> urls, bool hasNextPage})> _getLineupUrlsAndPageInfo(
-    int playerId,
-    int page,
-  ) async {
-    final playerEventsUrl =
-        'https://www.sofascore.com/api/v1/player/$playerId/events/last/$page';
+  Future<({List<String> urls, bool hasNextPage})> _getLineupUrlsAndPageInfo(int playerId, int page) async {
+    final playerEventsUrl = 'https://api.sofascore.com/api/v1/player/$playerId/events/last/$page';
     final List<String> lineupUrls = [];
 
     final response = await http.get(Uri.parse(playerEventsUrl));
@@ -898,24 +738,18 @@ class ApiService {
         final String eventIdString = event['id'].toString();
         if (!benchMatchIds.contains(eventIdString)) {
           final int eventId = event['id'];
-          final String lineupUrl =
-              'https://www.sofascore.com/api/v1/event/$eventId/lineups';
+          final String lineupUrl = 'https://api.sofascore.com/api/v1/event/$eventId/lineups';
           lineupUrls.add(lineupUrl);
         }
       }
       // Gib sowohl die URLs als auch die Info zur nächsten Seite zurück
       return (urls: lineupUrls, hasNextPage: hasNextPage);
     } else {
-      throw Exception(
-        'Fehler beim Laden der Spieldaten für Seite $page: ${response.statusCode}',
-      );
+      throw Exception('Fehler beim Laden der Spieldaten für Seite $page: ${response.statusCode}');
     }
   }
 
-  Future<String> _findPositionInLineups(
-    List<String> lineupUrls,
-    int playerId,
-  ) async {
+  Future<String> _findPositionInLineups(List<String> lineupUrls, int playerId) async {
     for (final url in lineupUrls) {
       try {
         final response = await http.get(Uri.parse(url));
@@ -946,7 +780,7 @@ class ApiService {
 
   Future<String> guessPlayerPosition(int playerId) async {
     try {
-      final playerData = 'https://www.sofascore.com/api/v1/player/$playerId';
+      final playerData = 'https://api.sofascore.com/api/v1/player/$playerId';
       final response = await http.get(Uri.parse(playerData));
 
       if (response.statusCode == 200) {
@@ -958,6 +792,7 @@ class ApiService {
           print('⚠️ Keine Position gefunden für Spieler $playerId');
           return 'N/V';
         }
+
 
         switch (position) {
           case 'G':
@@ -988,22 +823,30 @@ class ApiService {
     while (retryCount < 3) {
       try {
         // NEU: Wir übergeben unsere Tarn-Headers!
-        final response = await http.get(Uri.parse(url), headers: _headers);
+        final response = await http.get(
+          Uri.parse(url),
+          headers: _headers,
+        );
 
         if (response.statusCode == 200) {
           return response;
         }
-        // WICHTIG: Sofortiger Abbruch bei Limit-Fehlern
-        else if (response.statusCode == 429 || response.statusCode == 403) {
-          print(
-            '🛑 API-Limit erreicht ($url). Code: ${response.statusCode}. Breche Update-Prozess sofort ab!',
-          );
+        else if (response.statusCode == 429) {
+          print('🛑 API-Limit erreicht ($url). Code: ${response.statusCode}. Breche Update-Prozess sofort ab!');
           throw Exception('API_LIMIT_REACHED');
-        } else {
+        }
+        else if (response.statusCode == 403) {
+          print('⛔ SofaScore-Zugriff verweigert ($url). Code: 403.');
+          throw Exception('API_ACCESS_DENIED');
+        }
+        else {
           return response;
         }
       } catch (e) {
-        if (e.toString().contains('API_LIMIT_REACHED')) rethrow;
+        if (e.toString().contains('API_LIMIT_REACHED') ||
+            e.toString().contains('API_ACCESS_DENIED')) {
+          rethrow;
+        }
 
         print('Netzwerkfehler: $e. Retry...');
         await Future.delayed(const Duration(seconds: 2));
@@ -1020,26 +863,21 @@ class ApiService {
       // Wir suchen explizit nach Spielern ohne Bild ODER mit der Position SUB / N/V
       final response = await supabaseService.supabase
           .from('spieler')
-          .select(
-            'id, name, position, profilbild_url, spieler_analytics(marktwert)',
-          )
+          .select('id, name, position, profilbild_url, spieler_analytics(marktwert)')
           .eq('spieler_analytics.season_id', seasonId)
-          .or(
-            'profilbild_url.is.null,position.eq.SUB,position.eq.N/V',
-          ) // Das ist der entscheidende Filter!
+          .or('profilbild_url.is.null,position.eq.SUB,position.eq.N/V') // Das ist der entscheidende Filter!
           .limit(50);
 
       final List<dynamic> allFetched = response as List<dynamic>;
       final List<dynamic> incompletePlayers = allFetched.take(25).toList();
+
 
       if (incompletePlayers.isEmpty) {
         print('✅ Alles sauber! Keine unvollständigen Spieler gefunden.');
         return;
       }
 
-      print(
-        '🔧 Repariere ${incompletePlayers.length} unvollständige Spieler...',
-      );
+      print('🔧 Repariere ${incompletePlayers.length} unvollständige Spieler...');
 
       for (var p in incompletePlayers) {
         int playerId = p['id'];
@@ -1051,22 +889,17 @@ class ApiService {
         // c) Profilbild herunterladen und in Storage laden
         String? imageUrl;
         try {
-          final imageResponse = await _throttledGet(
-            'https://www.sofascore.com/api/v1/player/$playerId/image',
-          );
+          final imageResponse = await _throttledGet('https://api.sofascore.com/api/v1/player/$playerId/image');
           if (imageResponse.statusCode == 200) {
             final imagePath = 'spielerbilder/$playerId.jpg';
 
             await supabaseService.supabase.storage
                 .from('spielerbilder')
                 .uploadBinary(
-                  imagePath,
-                  imageResponse.bodyBytes,
-                  fileOptions: const FileOptions(
-                    cacheControl: '3600',
-                    upsert: true,
-                  ),
-                );
+              imagePath,
+              imageResponse.bodyBytes,
+              fileOptions: const FileOptions(cacheControl: '3600', upsert: true),
+            );
 
             imageUrl = supabaseService.supabase.storage
                 .from('spielerbilder')
@@ -1090,9 +923,7 @@ class ApiService {
       }
     } catch (e) {
       if (e.toString().contains('API_LIMIT_REACHED')) {
-        print(
-          '🛑 API-Limit während der Spieler-Reparatur erreicht. Breche ab.',
-        );
+        print('🛑 API-Limit während der Spieler-Reparatur erreicht. Breche ab.');
         rethrow; // Werfen wir weiter, damit die Sperre greift
       } else {
         print('❌ Fehler im Reparatur-Job: $e');
@@ -1110,9 +941,7 @@ class ApiService {
       bool positionFound = false;
 
       // Wir holen die letzten ~20 Spiele des Spielers
-      final response = await _throttledGet(
-        'https://www.sofascore.com/api/v1/player/$playerId/events/last/0',
-      );
+      final response = await _throttledGet('https://api.sofascore.com/api/v1/player/$playerId/events/last/0');
 
       if (response.statusCode == 200) {
         final data = json.decode(response.body);
@@ -1121,6 +950,7 @@ class ApiService {
           final List<dynamic> events = data['events'] as List<dynamic>? ?? [];
 
           for (var event in events) {
+
             // --- DIE NEUE ABBRUCHBEDINGUNG ---
             // Wir brechen erst ab, wenn wir MINDESTENS 5 Ratings haben
             // UND die echte Startelf-Position gefunden wurde.
@@ -1132,9 +962,7 @@ class ApiService {
 
             String eventId = event['id'].toString();
 
-            final lineupResp = await _throttledGet(
-              'https://www.sofascore.com/api/v1/event/$eventId/lineups',
-            );
+            final lineupResp = await _throttledGet('https://api.sofascore.com/api/v1/event/$eventId/lineups');
             if (lineupResp.statusCode == 200) {
               final lineupData = json.decode(lineupResp.body);
               if (lineupData == null || lineupData is! Map) continue;
@@ -1151,9 +979,8 @@ class ApiService {
                   if (p == null || p is! Map) continue;
 
                   final playerMap = p['player'];
-                  if (playerMap != null &&
-                      playerMap is Map &&
-                      playerMap['id'] == playerId) {
+                  if (playerMap != null && playerMap is Map && playerMap['id'] == playerId) {
+
                     // 1. RATING SAMMELN (Immer, wenn eines vorhanden ist, auch bei Einwechslung!)
                     if (p['statistics'] != null && p['statistics'] is Map) {
                       final stats = p['statistics'];
@@ -1180,14 +1007,10 @@ class ApiService {
       // holen wir uns seine grobe Position aus dem Spielerprofil.
       if (!positionFound) {
         try {
-          final playerInfoResp = await _throttledGet(
-            'https://www.sofascore.com/api/v1/player/$playerId',
-          );
+          final playerInfoResp = await _throttledGet('https://api.sofascore.com/api/v1/player/$playerId');
           if (playerInfoResp.statusCode == 200) {
             final playerInfoData = json.decode(playerInfoResp.body);
-            if (playerInfoData != null &&
-                playerInfoData is Map &&
-                playerInfoData['player'] is Map) {
+            if (playerInfoData != null && playerInfoData is Map && playerInfoData['player'] is Map) {
               fallbackPos = playerInfoData['player']['position'];
             }
           }
@@ -1197,21 +1020,17 @@ class ApiService {
       }
 
       // Speichern in der Datenbank
-      await supabaseService.supabase.rpc(
-        'init_player_from_sofascore',
-        params: {
-          'p_player_id': playerId,
-          'p_season_id': seasonId,
-          'p_formation': foundFormation,
-          'p_lineup_index': foundIndex,
-          'p_api_position': fallbackPos ?? 'M',
-          'p_ratings': ratings,
-        },
-      );
+      await supabaseService.supabase.rpc('init_player_from_sofascore', params: {
+        'p_player_id': playerId,
+        'p_season_id': seasonId,
+        'p_formation': foundFormation,
+        'p_lineup_index': foundIndex,
+        'p_api_position': fallbackPos ?? 'M',
+        'p_ratings': ratings,
+      });
 
-      print(
-        '✅ Spieler $playerId via DB initialisiert! (Gefundene Ratings: ${ratings.length})',
-      );
+      print('✅ Spieler $playerId via DB initialisiert! (Gefundene Ratings: ${ratings.length})');
+
     } catch (e) {
       if (e.toString().contains('API_LIMIT_REACHED')) rethrow;
       print('❌ Fehler bei der Initialisierung von $playerId: $e');
@@ -1257,15 +1076,11 @@ class ApiService {
           );
 
           if (wasProcessed) {
-            print(
-              '✅ Neuer Transfer verarbeitet: Spieler $playerId gewechselt!',
-            );
+            print('✅ Neuer Transfer verarbeitet: Spieler $playerId gewechselt!');
           }
         }
       } else {
-        print(
-          '⚠️ Konnte Transfers für Team $teamId nicht laden: ${response.statusCode}',
-        );
+        print('⚠️ Konnte Transfers für Team $teamId nicht laden: ${response.statusCode}');
       }
     } catch (e) {
       if (e.toString().contains('API_LIMIT_REACHED')) rethrow;
@@ -1290,9 +1105,7 @@ class ApiService {
         String categoryName = cat['name'] ?? 'Unbekannt';
 
         // Optionale Filterung: Wir überspringen eSoccer, Virtual Leagues etc.
-        if (categoryName == 'Virtual Leagues' ||
-            categoryName == 'eSoccer' ||
-            categoryName == 'Simulated Reality Women') {
+        if (categoryName == 'Virtual Leagues' || categoryName == 'eSoccer' || categoryName == 'Simulated Reality Women') {
           continue;
         }
 
@@ -1308,8 +1121,7 @@ class ApiService {
           final groups = tourneysData['groups'] as List<dynamic>? ?? [];
 
           for (var group in groups) {
-            final uniqueTournaments =
-                group['uniqueTournaments'] as List<dynamic>? ?? [];
+            final uniqueTournaments = group['uniqueTournaments'] as List<dynamic>? ?? [];
             for (var t in uniqueTournaments) {
               int tId = t['id'];
               // 3. Jedes gefundene Turnier einzeln prüfen
@@ -1360,6 +1172,7 @@ class ApiService {
       bool hasPlayoffSeries = t['hasPlayoffSeries'] == true;
 
       if (hasRounds && !hasGroups && !hasPlayoffSeries) {
+
         // Aktuellste Season ID abrufen
         final seasonUrl = '$baseUrl/unique-tournament/$tournamentId/seasons';
         final seasonResp = await _throttledGet(seasonUrl);
@@ -1375,8 +1188,7 @@ class ApiService {
 
         // --- 3. FILTER: Der "Tabellen-Beweis" (Standings Check) ---
         // Hat dieses Turnier in dieser Saison wirklich eine echte Ligatabelle?
-        final standingsUrl =
-            '$baseUrl/unique-tournament/$tournamentId/season/$seasonId/standings/total';
+        final standingsUrl = '$baseUrl/unique-tournament/$tournamentId/season/$seasonId/standings/total';
         final standingsResp = await _throttledGet(standingsUrl);
 
         if (standingsResp.statusCode != 200) {
@@ -1387,8 +1199,7 @@ class ApiService {
 
         // --- 4. FILTER: Gibt es Spielerbewertungen (Ratings)? ---
         bool hasStats = false;
-        String eventsUrl =
-            '$baseUrl/unique-tournament/$tournamentId/season/$seasonId/events/last/0';
+        String eventsUrl = '$baseUrl/unique-tournament/$tournamentId/season/$seasonId/events/last/0';
         var eventsResp = await _throttledGet(eventsUrl);
 
         if (eventsResp.statusCode == 200) {
@@ -1396,8 +1207,7 @@ class ApiService {
           var eventsList = eventsData['events'] as List<dynamic>? ?? [];
 
           if (eventsList.isEmpty) {
-            eventsUrl =
-                '$baseUrl/unique-tournament/$tournamentId/season/$seasonId/events/next/0';
+            eventsUrl = '$baseUrl/unique-tournament/$tournamentId/season/$seasonId/events/next/0';
             eventsResp = await _throttledGet(eventsUrl);
             if (eventsResp.statusCode == 200) {
               eventsData = json.decode(eventsResp.body);
@@ -1406,11 +1216,8 @@ class ApiService {
           }
 
           if (eventsList.isNotEmpty) {
-            hasStats =
-                eventsList.first['hasEventPlayerStatistics'] == true ||
-                eventsList
-                        .first['tournament']?['uniqueTournament']?['hasEventPlayerStatistics'] ==
-                    true;
+            hasStats = eventsList.first['hasEventPlayerStatistics'] == true ||
+                eventsList.first['tournament']?['uniqueTournament']?['hasEventPlayerStatistics'] == true;
           }
         }
 
@@ -1422,12 +1229,10 @@ class ApiService {
         print('🌟 PERFEKTE LIGA GEFUNDEN: $name ($seasonYear). Lade Logo...');
 
         // --- BILD-DOWNLOAD ---
-        String? countryName =
-            t['category']?['country']?['name'] ?? t['category']?['name'];
+        String? countryName = t['category']?['country']?['name'] ?? t['category']?['name'];
         String? imageUrl;
         try {
-          final imageUrlString =
-              '$baseUrl/unique-tournament/$tournamentId/image';
+          final imageUrlString = '$baseUrl/unique-tournament/$tournamentId/image';
           final imageResponse = await _throttledGet(imageUrlString);
 
           if (imageResponse.statusCode == 200) {
@@ -1436,13 +1241,10 @@ class ApiService {
             await supabaseService.supabase.storage
                 .from('tournament_images')
                 .uploadBinary(
-                  imagePath,
-                  imageResponse.bodyBytes,
-                  fileOptions: const FileOptions(
-                    cacheControl: '3600',
-                    upsert: true,
-                  ),
-                );
+              imagePath,
+              imageResponse.bodyBytes,
+              fileOptions: const FileOptions(cacheControl: '3600', upsert: true),
+            );
 
             imageUrl = supabaseService.supabase.storage
                 .from('tournament_images')
@@ -1454,12 +1256,7 @@ class ApiService {
 
         // --- SPEICHERN ---
         await supabaseService.saveDiscoveredLeague(
-          tournamentId,
-          name,
-          countryName,
-          imageUrl,
-          seasonId,
-          seasonYear,
+            tournamentId, name, countryName, imageUrl, seasonId, seasonYear
         );
         print('✅ $name erfolgreich in DB gespeichert!');
       }
@@ -1491,11 +1288,7 @@ class ApiService {
           if (player == null) continue;
 
           // Wir legen die Aufgabe in den Pool, starten sie aber sofort im Hintergrund
-          tasks.add(
-            pool.withResource(
-              () => processSquadPlayer(player, teamId, seasonId),
-            ),
-          );
+          tasks.add(pool.withResource(() => processSquadPlayer(player, teamId, seasonId)));
         }
 
         // Wir warten erst ganz am Ende, bis ALLE Aufgaben aus dem Pool fertig sind
@@ -1510,11 +1303,7 @@ class ApiService {
     }
   }
 
-  Future<void> processSquadPlayer(
-    Map<String, dynamic> player,
-    int teamId,
-    int seasonId,
-  ) async {
+  Future<void> processSquadPlayer(Map<String, dynamic> player, int teamId, int seasonId) async {
     int playerId = player['id'];
     String playerName = player['name'] ?? 'Unbekannt';
 
@@ -1522,14 +1311,10 @@ class ApiService {
     // Wir wandeln diese als ersten Fallback um.
     String rawPosition = player['position'] ?? '';
     String initialPosition = 'N/V';
-    if (rawPosition == 'G')
-      initialPosition = 'TW';
-    else if (rawPosition == 'D')
-      initialPosition = 'IV';
-    else if (rawPosition == 'M')
-      initialPosition = 'ZM';
-    else if (rawPosition == 'F')
-      initialPosition = 'ST';
+    if (rawPosition == 'G') initialPosition = 'TW';
+    else if (rawPosition == 'D') initialPosition = 'IV';
+    else if (rawPosition == 'M') initialPosition = 'ZM';
+    else if (rawPosition == 'F') initialPosition = 'ST';
 
     try {
       // 1. Spieler in die Datenbank einfügen (damit die Zeile existiert und verknüpft werden kann)
@@ -1552,22 +1337,17 @@ class ApiService {
       // 4. Profilbild herunterladen und speichern (Logik aus fixIncompletePlayers)
       String? imageUrl;
       try {
-        final imageResponse = await _throttledGet(
-          'https://www.sofascore.com/api/v1/player/$playerId/image',
-        );
+        final imageResponse = await _throttledGet('https://api.sofascore.com/api/v1/player/$playerId/image');
         if (imageResponse.statusCode == 200) {
           final imagePath = 'spielerbilder/$playerId.jpg';
 
           await supabaseService.supabase.storage
               .from('spielerbilder')
               .uploadBinary(
-                imagePath,
-                imageResponse.bodyBytes,
-                fileOptions: const FileOptions(
-                  cacheControl: '3600',
-                  upsert: true,
-                ),
-              );
+            imagePath,
+            imageResponse.bodyBytes,
+            fileOptions: const FileOptions(cacheControl: '3600', upsert: true),
+          );
 
           imageUrl = supabaseService.supabase.storage
               .from('spielerbilder')
@@ -1586,11 +1366,10 @@ class ApiService {
       }
 
       print('   👤 Spieler $playerName ($playerId) komplett initialisiert.');
+
     } catch (e) {
       if (e.toString().contains('API_LIMIT_REACHED')) rethrow;
-      print(
-        '❌ Fehler bei der Verarbeitung von Kader-Spieler $playerName ($playerId): $e',
-      );
+      print('❌ Fehler bei der Verarbeitung von Kader-Spieler $playerName ($playerId): $e');
       rethrow;
     }
   }
@@ -1614,15 +1393,12 @@ class SupabaseService {
 
     try {
       // 2. DATENBANK UPDATE: Wir senden den neuen Zeitstempel
-      await supabase
-          .from('leagues')
-          .update({
-            'last_activity_at': now.toIso8601String(),
-            // SEHR WICHTIG: Wir setzen is_active immer auf true!
-            // Falls die Liga auf false war, wecken wir sie hiermit automatisch wieder auf.
-            'is_active': true,
-          })
-          .eq('id', leagueId);
+      await supabase.from('leagues').update({
+        'last_activity_at': now.toIso8601String(),
+        // SEHR WICHTIG: Wir setzen is_active immer auf true!
+        // Falls die Liga auf false war, wecken wir sie hiermit automatisch wieder auf.
+        'is_active': true,
+      }).eq('id', leagueId);
 
       // 3. SPERRE SETZEN: Aktuelle Uhrzeit für diese Liga merken
       _lastActivityPings[leagueId] = now;
@@ -1634,11 +1410,14 @@ class SupabaseService {
 
   Future<void> saveSpieltag(int round, String status, int seasonId) async {
     try {
-      await supabase.from('spieltag').upsert({
-        'round': round,
-        'status': status,
-        'season_id': seasonId,
-      }, onConflict: 'round, season_id');
+      await supabase.from('spieltag').upsert(
+          {
+            'round': round,
+            'status': status,
+            'season_id': seasonId,
+          },
+          onConflict: 'round, season_id'
+      );
     } catch (error) {
       print('Fehler beim Speichern des Spieltags: $error');
     }
@@ -1657,10 +1436,7 @@ class SupabaseService {
 
   Future<List<int>> fetchAllSpieltagIds(int seasonId) async {
     try {
-      final response = await supabase
-          .from('spieltag')
-          .select('round')
-          .eq('season_id', seasonId);
+      final response = await supabase.from('spieltag').select('round').eq('season_id', seasonId);
       return response.map<int>((row) => row['round'] as int).toList();
     } catch (error) {
       print('Fehler beim Abrufen der Spieltag-IDs: $error');
@@ -1691,18 +1467,10 @@ class SupabaseService {
     }
   }
 
-  Future<void> saveSpiel(
-    int id,
-    String datum,
-    int heimteamId,
-    int auswartsteamId,
-    String ergebnis,
-    String status,
-    int round,
-    int seasonId,
-  ) async {
+  Future<void> saveSpiel(int id, String datum, int heimteamId, int auswartsteamId, String ergebnis, String status, int round, int seasonId) async {
     try {
       await supabase.from('spiel').upsert({
+
         'id': id,
         'datum': datum,
         'heimteam_id': heimteamId,
@@ -1711,29 +1479,20 @@ class SupabaseService {
         'round': round,
         'status': 'nicht gestartet',
         'season_id': seasonId,
-      }, onConflict: 'id');
+      },
+          onConflict: 'id'
+      );
     } catch (error) {
       print('Fehler beim Speichern des Spiels: $error');
     }
   }
 
-  Future<DateTime> fetchSpieldatum(spielId) async {
-    final response =
-        await supabase.from('spiel').select('datum').eq('id', spielId).single();
-    return MatchTimeHelper.parseToUtc(response['datum']) ??
-        DateTime.now().toUtc();
+  Future <DateTime> fetchSpieldatum (spielId) async {
+    final response = await supabase.from('spiel').select('datum').eq('id', spielId).single();
+    return MatchTimeHelper.parseToUtc(response['datum']) ?? DateTime.now().toUtc();
   }
 
-  Future<void> updateSpiel(
-    int spielId,
-    String ergebnis,
-    String neuerStatus, {
-    List<dynamic>? incidents,
-    String? homeColorPrimary,
-    String? homeGkColorPrimary,
-    String? awayColorPrimary,
-    String? awayGkColorPrimary,
-  }) async {
+  Future<void> updateSpiel(int spielId, String ergebnis, String neuerStatus, {List<dynamic>? incidents, String? homeColorPrimary, String? homeGkColorPrimary, String? awayColorPrimary, String? awayGkColorPrimary,}) async {
     // Grunddaten für das Update
     final Map<String, dynamic> updateData = {
       'ergebnis': ergebnis,
@@ -1742,14 +1501,10 @@ class SupabaseService {
 
     // Optionale Daten hinzufügen, wenn sie vorhanden sind
     if (incidents != null) updateData['incidents'] = incidents;
-    if (homeColorPrimary != null)
-      updateData['home_color_primary'] = homeColorPrimary;
-    if (homeGkColorPrimary != null)
-      updateData['home_goalkeeper_color_primary'] = homeGkColorPrimary;
-    if (awayColorPrimary != null)
-      updateData['away_color_primary'] = awayColorPrimary;
-    if (awayGkColorPrimary != null)
-      updateData['away_goalkeeper_color_primary'] = awayGkColorPrimary;
+    if (homeColorPrimary != null) updateData['home_color_primary'] = homeColorPrimary;
+    if (homeGkColorPrimary != null) updateData['home_goalkeeper_color_primary'] = homeGkColorPrimary;
+    if (awayColorPrimary != null) updateData['away_color_primary'] = awayColorPrimary;
+    if (awayGkColorPrimary != null) updateData['away_goalkeeper_color_primary'] = awayGkColorPrimary;
 
     try {
       await supabase.from('spiel').update(updateData).eq('id', spielId);
@@ -1758,26 +1513,11 @@ class SupabaseService {
     }
   }
 
-  Future<void> updateSpieltagStatus(
-    int round,
-    String neuerStatus,
-    int seasonId,
-  ) async {
-    await supabase
-        .from('spieltag')
-        .update({'status': neuerStatus})
-        .eq('round', round)
-        .eq('season_id', seasonId);
+  Future<void> updateSpieltagStatus(int round, String neuerStatus, int seasonId) async {
+    await supabase.from('spieltag').update({'status': neuerStatus}).eq('round', round).eq('season_id', seasonId);
   }
 
-  Future<void> saveSpieler(
-    int id,
-    String name,
-    String position,
-    String? profilbildUrl,
-    int? marktwert,
-    int seasonId,
-  ) async {
+  Future<void> saveSpieler(int id, String name, String position, String? profilbildUrl, int? marktwert, int seasonId) async {
     try {
       // 1. Stammdaten in die 'spieler' Tabelle
       final updateData = {
@@ -1797,13 +1537,13 @@ class SupabaseService {
           'spieler_id': id,
           'season_id': seasonId,
           'marktwert': marktwert,
-          'calculated_marktwert':
-              marktwert, // Am Anfang sind beide Werte gleich
+          'calculated_marktwert': marktwert // Am Anfang sind beide Werte gleich
         }, onConflict: 'spieler_id,season_id');
       }
+
     } catch (error) {
       print('Fehler beim Speichern des Spielers: $error');
-      rethrow;
+      throw error;
     }
   }
 
@@ -1813,23 +1553,15 @@ class SupabaseService {
         'season_id': seasonId,
         'player_id': playerId,
         'team_id': teamId,
-      }, onConflict: 'season_id, player_id, team_id');
+      },
+          onConflict: 'season_id, player_id, team_id');
     } catch (error) {
       print('Fehler beim Speichern der Spieler-Saison-Beziehung: $error');
-      rethrow;
+      throw error;
     }
   }
 
-  Future<void> saveMatchrating(
-    int id,
-    int spielId,
-    int spielerId,
-    int rating,
-    statistics,
-    int newRating,
-    int formationIndex,
-    String matchPosition,
-  ) async {
+  Future<void> saveMatchrating(int id, int spielId, int spielerId, int rating, statistics, int newRating, int formationIndex, String matchPosition) async {
     try {
       await supabase.from('matchrating').upsert({
         'id': id,
@@ -1842,9 +1574,7 @@ class SupabaseService {
         'match_position': matchPosition,
       }, onConflict: 'id');
     } catch (error) {
-      print(
-        "!!! DATENBANK-FEHLER beim Speichern des Matchratings für Spieler $spielerId in Spiel $spielId: $error",
-      );
+      print("!!! DATENBANK-FEHLER beim Speichern des Matchratings für Spieler $spielerId in Spiel $spielId: $error");
     }
   }
 
@@ -1852,10 +1582,7 @@ class SupabaseService {
     final supabase = Supabase.instance.client;
 
     try {
-      final response = await supabase
-          .from('spiel')
-          .select('id')
-          .eq('round', round);
+      final response = await supabase.from('spiel').select('id').eq('round', round);
       return response.map<int>((spiel) => spiel['id'] as int).toList();
     } catch (error) {
       print('Fehler beim Abrufen der Spiel-IDs: $error');
@@ -1863,41 +1590,27 @@ class SupabaseService {
     }
   }
 
-  Future<int> getSpieleranzahl(
-    int spielId,
-    int heimTeamId,
-    int auswaertsTeamId,
-  ) async {
-    final spielData =
-        await Supabase.instance.client
-            .from('spiel')
-            .select('season_id')
-            .eq('id', spielId)
-            .single();
+  Future<int> getSpieleranzahl(int spielId, int heimTeamId, int auswaertsTeamId) async {
+    final spielData = await Supabase.instance.client
+        .from('spiel')
+        .select('season_id')
+        .eq('id', spielId)
+        .single();
     final int seasonId = (spielData['season_id'] as num).toInt();
 
     final data = await Supabase.instance.client
         .from('spieler')
-        // is_active aus dem inner join entfernt
-        .select(
-          '*, matchrating!inner(formationsindex, match_position), season_players!inner(team_id, season_id)',
-        )
+    // is_active aus dem inner join entfernt
+        .select('*, matchrating!inner(formationsindex, match_position), season_players!inner(team_id, season_id)')
         .eq('is_active', true)
         .eq('matchrating.spiel_id', spielId)
         .eq('season_players.season_id', seasonId)
-        // .eq('season_players.is_active', true) <--- DIESE ZEILE LÖSCHEN!
-        .filter(
-          'season_players.team_id',
-          'in',
-          '($heimTeamId, $auswaertsTeamId)',
-        );
+    // .eq('season_players.is_active', true) <--- DIESE ZEILE LÖSCHEN!
+        .filter('season_players.team_id', 'in', '($heimTeamId, $auswaertsTeamId)');
 
     return data.length;
   }
-
-  Future<Map<String, List<String>>> fetchFormationsFromDb({
-    SupabaseClient? client,
-  }) async {
+  Future<Map<String, List<String>>> fetchFormationsFromDb({SupabaseClient? client}) async {
     final supabase = client ?? Supabase.instance.client;
 
     try {
@@ -1914,8 +1627,7 @@ class SupabaseService {
       if (response is List) {
         for (final row in response) {
           if (row == null) continue;
-          final String? name =
-              (row['formation'] ?? row['formation_name'])?.toString();
+          final String? name = (row['formation'] ?? row['formation_name'])?.toString();
           final dynamic rawPositions = row['positionsliste'];
 
           if (name == null) continue;
@@ -1942,8 +1654,7 @@ class SupabaseService {
                 positions = decoded.split(',').map((s) => s.trim()).toList();
               } else {
                 // fallback
-                positions =
-                    rawPositions.split(',').map((s) => s.trim()).toList();
+                positions = rawPositions.split(',').map((s) => s.trim()).toList();
               }
             } catch (_) {
               // kein JSON -> als Komma-getrennte Liste parsen
@@ -1987,10 +1698,12 @@ class SupabaseService {
           .select('league_id')
           .eq('user_id', user.id);
 
-      final List<int> joinedLeagueIds =
-          userLeaguesResponse.map<int>((e) => e['league_id'] as int).toList();
+      final List<int> joinedLeagueIds = userLeaguesResponse.map<int>((e) => e['league_id'] as int).toList();
 
-      var query = supabase.from('leagues').select().eq('is_public', true);
+      var query = supabase
+          .from('leagues')
+          .select()
+          .eq('is_public', true);
 
       // Filtere die Ligen heraus, in denen der User schon ist
       if (joinedLeagueIds.isNotEmpty) {
@@ -1999,43 +1712,32 @@ class SupabaseService {
 
       final publicLeaguesResponse = await query;
       return List<Map<String, dynamic>>.from(publicLeaguesResponse);
+
     } catch (error) {
       print('Fehler beim Laden öffentlicher Ligen: $error');
       return [];
     }
   }
 
-  Future<int> createLeague({
-    required String name,
-    required double startingBudget,
-    required int seasonId,
-    required bool isPublic,
-    required int? squadLimit,
-    required int numStartingPlayers,
-    required double startingTeamValue,
-  }) async {
+  Future<int> createLeague({required String name, required double startingBudget, required int seasonId, required bool isPublic, required int? squadLimit, required int numStartingPlayers, required double startingTeamValue,}) async {
     try {
       // Wir erwarten jetzt einen Rückgabewert (die ID)
-      final response = await supabase.rpc(
-        'create_league_and_add_admin',
-        params: {
-          'league_name': name,
-          'start_budget': startingBudget,
-          's_id': seasonId,
-          'is_league_public': isPublic,
-          'squad_limit': squadLimit,
-          'num_starting_players': numStartingPlayers,
-          'starting_team_value': startingTeamValue,
-        },
-      );
+      final response = await supabase.rpc('create_league_and_add_admin', params: {
+        'league_name': name,
+        'start_budget': startingBudget,
+        's_id': seasonId,
+        'is_league_public': isPublic,
+        'squad_limit': squadLimit,
+        'num_starting_players': numStartingPlayers,
+        'starting_team_value': startingTeamValue,
+      });
       return response as int;
     } catch (error) {
       final errorText = error.toString();
-      if (errorText.contains('purchase_price') &&
-          errorText.contains('league_players')) {
+      if (errorText.contains('purchase_price') && errorText.contains('league_players')) {
         throw Exception(
           'Liga konnte nicht erstellt werden: In Supabase fehlt die Spalte "league_players.purchase_price". '
-          'Führe das SQL aus docs/sql/fix_league_players_purchase_price.sql aus und versuche es erneut.',
+              'Führe das SQL aus docs/sql/fix_league_players_purchase_price.sql aus und versuche es erneut.'
         );
       }
 
@@ -2092,19 +1794,17 @@ class SupabaseService {
         return {
           ...leagueData, // Fügt alle Daten der Liga hinzu (id, name, etc.)
           'position': entry['position'], // Fügt die Sortierposition hinzu
-          'league_member_id':
-              entry['id'], // Fügt die ID der Mitgliedschaft hinzu
+          'league_member_id': entry['id'], // Fügt die ID der Mitgliedschaft hinzu
         };
       }).toList();
+
     } catch (error) {
       print('Fehler beim Laden der Ligen: $error');
       return [];
     }
   }
 
-  Future<void> updateUserLeagueOrder(
-    List<Map<String, dynamic>> orderedLeagues,
-  ) async {
+  Future<void> updateUserLeagueOrder(List<Map<String, dynamic>> orderedLeagues) async {
     final user = supabase.auth.currentUser;
     if (user == null) return;
 
@@ -2116,29 +1816,19 @@ class SupabaseService {
         await supabase
             .from('league_members')
             .update({'position': i}) // Setze die neue Position
-            .match({
-              'user_id': user.id,
-              'league_id': league['id'],
-            }); // Finde die korrekte Zeile
+            .match({'user_id': user.id, 'league_id': league['id']}); // Finde die korrekte Zeile
       }
     } catch (error) {
       print('Fehler beim Speichern der Liga-Reihenfolge: $error');
     }
   }
 
-  Future<void> updateSpielFormation(
-    int spielId,
-    String homeFormation,
-    String awayFormation,
-  ) async {
+  Future<void> updateSpielFormation(int spielId, String homeFormation, String awayFormation) async {
     try {
-      await supabase
-          .from('spiel')
-          .update({
-            'hometeam_formation': homeFormation,
-            'awayteam_formation': awayFormation,
-          })
-          .eq('id', spielId);
+      await supabase.from('spiel').update({
+        'hometeam_formation': homeFormation,
+        'awayteam_formation': awayFormation,
+      }).eq('id', spielId);
     } catch (error) {
       print('Fehler beim Speichern der Formationen: $error');
       // Wir werfen den Fehler weiter, damit der Aufrufer ihn bemerkt
@@ -2146,11 +1836,7 @@ class SupabaseService {
     }
   }
 
-  Future<List<Map<String, dynamic>>> fetchPlayerGameHistoryForSeason({
-    required int playerId,
-    required int teamId,
-    required int seasonId,
-  }) async {
+  Future<List<Map<String, dynamic>>> fetchPlayerGameHistoryForSeason({required int playerId, required int teamId, required int seasonId,}) async {
     try {
       final response = await supabase
           .from('spiel')
@@ -2167,7 +1853,7 @@ class SupabaseService {
           ''')
           .eq('season_id', seasonId)
           .or('heimteam_id.eq.$teamId,auswärtsteam_id.eq.$teamId')
-          // Filtere die verschachtelte matchrating-Tabelle nach unserem Spieler
+      // Filtere die verschachtelte matchrating-Tabelle nach unserem Spieler
           .eq('matchrating.spieler_id', playerId)
           .order('round', ascending: true);
 
@@ -2187,7 +1873,7 @@ class SupabaseService {
       });
     } catch (e) {
       print("Fehler beim Bieten: $e");
-      rethrow; // Weiterwerfen für UI-Handling
+      throw e; // Weiterwerfen für UI-Handling
     }
   }
 
@@ -2204,21 +1890,14 @@ class SupabaseService {
 
   Future<void> buyPlayerNow(int transferId) async {
     try {
-      await supabase.rpc(
-        'buy_player_now',
-        params: {'p_transfer_id': transferId},
-      );
+      await supabase.rpc('buy_player_now', params: {'p_transfer_id': transferId});
     } catch (e) {
       print("Fehler beim Sofortkauf: $e");
-      rethrow;
+      throw e;
     }
   }
 
-  Future<void> listPlayerOnMarket(
-    int leagueId,
-    int playerId,
-    int buyNowPrice,
-  ) async {
+  Future<void> listPlayerOnMarket(int leagueId, int playerId, int buyNowPrice) async {
     final user = supabase.auth.currentUser;
     if (user == null) throw Exception("Nicht eingeloggt");
 
@@ -2226,26 +1905,19 @@ class SupabaseService {
     // 1. Den Marktwert ermittelt
     // 2. Den Spieler in den Transfermarkt einträgt
     // 3. Den Spieler SOFORT aus deinem Team löscht
-    await supabase.rpc(
-      'list_player_for_sale',
-      params: {
-        'p_league_id': leagueId,
-        'p_player_id': playerId,
-        'p_buy_now_price': buyNowPrice,
-      },
-    );
+    await supabase.rpc('list_player_for_sale', params: {
+      'p_league_id': leagueId,
+      'p_player_id': playerId,
+      'p_buy_now_price': buyNowPrice,
+    });
   }
 
-  Future<void> simulateSystemTransfers(int leagueId, int seasonId) async {
-    // <--- seasonId hinzugefügt
-    await supabase.rpc(
-      'generate_daily_transfers',
-      params: {
-        'p_league_id': leagueId,
-        'p_season_id': seasonId, // <--- Parameter übergeben
-        'p_amount': 5,
-      },
-    );
+  Future<void> simulateSystemTransfers(int leagueId, int seasonId) async { // <--- seasonId hinzugefügt
+    await supabase.rpc('generate_daily_transfers', params: {
+      'p_league_id': leagueId,
+      'p_season_id': seasonId, // <--- Parameter übergeben
+      'p_amount': 5
+    });
   }
 
   Future<int> fetchUserBudget(int leagueId) async {
@@ -2253,13 +1925,12 @@ class SupabaseService {
     if (user == null) return 0;
 
     try {
-      final res =
-          await supabase
-              .from('league_members')
-              .select('budget')
-              .eq('league_id', leagueId)
-              .eq('user_id', user.id)
-              .single();
+      final res = await supabase
+          .from('league_members')
+          .select('budget')
+          .eq('league_id', leagueId)
+          .eq('user_id', user.id)
+          .single();
       return (res['budget'] as num).toInt();
     } catch (e) {
       print("Fehler beim Budget laden: $e");
@@ -2272,12 +1943,11 @@ class SupabaseService {
       // Wenn du die Aufräum-Funktion noch drin hast:
       await supabase.rpc('process_expired_transfers');
 
-      final leagueResponse =
-          await supabase
-              .from('leagues')
-              .select('season_id')
-              .eq('id', leagueId)
-              .single();
+      final leagueResponse = await supabase
+          .from('leagues')
+          .select('season_id')
+          .eq('id', leagueId)
+          .single();
       final int seasonId = (leagueResponse['season_id'] as num).toInt();
 
       final response = await supabase
@@ -2298,39 +1968,33 @@ class SupabaseService {
           .eq('is_active', true)
           .order('expires_at', ascending: true);
 
-      return List<Map<String, dynamic>>.from(
-        response.map((entry) {
-          final mapped = Map<String, dynamic>.from(entry as Map);
-          final player = mapped['player'];
-          if (player is Map) {
-            final playerMap = Map<String, dynamic>.from(player);
+      return List<Map<String, dynamic>>.from(response.map((entry) {
+        final mapped = Map<String, dynamic>.from(entry as Map);
+        final player = mapped['player'];
+        if (player is Map) {
+          final playerMap = Map<String, dynamic>.from(player);
 
-            final analytics = playerMap['spieler_analytics'];
-            if (analytics is List) {
-              playerMap['spieler_analytics'] = analytics
-                  .cast<Map<String, dynamic>>()
-                  .firstWhere(
-                    (a) => a['season_id'] == seasonId,
-                    orElse: () => <String, dynamic>{},
-                  );
-            }
-
-            final seasonPlayers = playerMap['season_players'];
-            if (seasonPlayers is List) {
-              final seasonEntry = seasonPlayers
-                  .cast<Map<String, dynamic>>()
-                  .firstWhere(
-                    (sp) => sp['season_id'] == seasonId,
-                    orElse: () => <String, dynamic>{},
-                  );
-              playerMap['season_players'] = seasonEntry;
-            }
-
-            mapped['player'] = playerMap;
+          final analytics = playerMap['spieler_analytics'];
+          if (analytics is List) {
+            playerMap['spieler_analytics'] = analytics.cast<Map<String, dynamic>>().firstWhere(
+              (a) => a['season_id'] == seasonId,
+              orElse: () => <String, dynamic>{},
+            );
           }
-          return mapped;
-        }),
-      );
+
+          final seasonPlayers = playerMap['season_players'];
+          if (seasonPlayers is List) {
+            final seasonEntry = seasonPlayers.cast<Map<String, dynamic>>().firstWhere(
+              (sp) => sp['season_id'] == seasonId,
+              orElse: () => <String, dynamic>{},
+            );
+            playerMap['season_players'] = seasonEntry;
+          }
+
+          mapped['player'] = playerMap;
+        }
+        return mapped;
+      }));
     } catch (e) {
       print("Fehler beim Laden des Transfermarkts: $e");
       return [];
@@ -2344,20 +2008,18 @@ class SupabaseService {
         .eq('league_id', leagueId)
         .order('created_at', ascending: false)
         .limit(50) // Die letzten 50 Aktivitäten
-        .map(
-          (data) => data.map((json) => LeagueActivity.fromJson(json)).toList(),
-        );
+        .map((data) => data.map((json) => LeagueActivity.fromJson(json)).toList());
   }
 
   Future<void> sellPlayerToSystem(int leagueId, int playerId) async {
     try {
-      await supabase.rpc(
-        'quick_sell_player',
-        params: {'p_league_id': leagueId, 'p_player_id': playerId},
-      );
+      await supabase.rpc('quick_sell_player', params: {
+        'p_league_id': leagueId,
+        'p_player_id': playerId,
+      });
     } catch (e) {
       print("Fehler beim Schnellverkauf: $e");
-      rethrow; // Weiterwerfen für die UI
+      throw e; // Weiterwerfen für die UI
     }
   }
 
@@ -2374,20 +2036,13 @@ class SupabaseService {
     }
   }
 
-  Future<void> uploadMatchLineupRPC(
-    int spielId,
-    int seasonId,
-    Map<String, dynamic> rawJson,
-  ) async {
+  Future<void> uploadMatchLineupRPC(int spielId, int seasonId, Map<String, dynamic> rawJson) async {
     try {
-      await supabase.rpc(
-        'process_match_lineups',
-        params: {
-          'p_spiel_id': spielId,
-          'p_season_id': seasonId,
-          'p_raw_json': rawJson,
-        },
-      );
+      await supabase.rpc('process_match_lineups', params: {
+        'p_spiel_id': spielId,
+        'p_season_id': seasonId,
+        'p_raw_json': rawJson,
+      });
       print('RPC process_match_lineups erfolgreich für Spiel $spielId');
     } catch (error) {
       print('!!! FEHLER beim Ausführen des RPC für Spiel $spielId: $error');
@@ -2397,10 +2052,9 @@ class SupabaseService {
 
   Future<List<Map<String, dynamic>>> fetchOverallRanking(int leagueId) async {
     try {
-      final response = await supabase.rpc(
-        'get_ranking_overall',
-        params: {'p_league_id': leagueId},
-      );
+      final response = await supabase.rpc('get_ranking_overall', params: {
+        'p_league_id': leagueId,
+      });
       return List<Map<String, dynamic>>.from(response);
     } catch (e) {
       print('Fehler beim Laden des Gesamtrankings: $e');
@@ -2408,15 +2062,12 @@ class SupabaseService {
     }
   }
 
-  Future<List<Map<String, dynamic>>> fetchMatchdayRanking(
-    int leagueId,
-    int round,
-  ) async {
+  Future<List<Map<String, dynamic>>> fetchMatchdayRanking(int leagueId, int round) async {
     try {
-      final response = await supabase.rpc(
-        'get_ranking_matchday',
-        params: {'p_league_id': leagueId, 'p_round': round},
-      );
+      final response = await supabase.rpc('get_ranking_matchday', params: {
+        'p_league_id': leagueId,
+        'p_round': round,
+      });
       return List<Map<String, dynamic>>.from(response);
     } catch (e) {
       print('Fehler beim Laden des Spieltagsrankings: $e');
@@ -2428,25 +2079,17 @@ class SupabaseService {
     try {
       // Wir ziehen 3 Stunden von der aktuellen Zeit ab.
       // Dadurch bleibt ein laufendes Spiel bis ca. 1 Stunde nach Abpfiff der Fokus.
-      final targetTime =
-          DateTime.now()
-              .toUtc()
-              .subtract(const Duration(hours: 3))
-              .toIso8601String();
+      final targetTime = DateTime.now().toUtc().subtract(const Duration(hours: 3)).toIso8601String();
 
       // 1. Suche das erste Spiel, dessen (Anpfiff + 3h) in der Zukunft liegt
-      final nextGame =
-          await supabase
-              .from('spiel')
-              .select('round')
-              .eq('season_id', seasonId)
-              .gte('datum', targetTime)
-              .order(
-                'datum',
-                ascending: true,
-              ) // Das Datum, das am nächsten dran ist
-              .limit(1)
-              .maybeSingle();
+      final nextGame = await supabase
+          .from('spiel')
+          .select('round')
+          .eq('season_id', seasonId)
+          .gte('datum', targetTime)
+          .order('datum', ascending: true) // Das Datum, das am nächsten dran ist
+          .limit(1)
+          .maybeSingle();
 
       if (nextGame != null) {
         return nextGame['round'] as int;
@@ -2454,48 +2097,41 @@ class SupabaseService {
 
       // 2. Fallback für das Saisonende:
       // Wenn es gar keine zukünftigen Spiele mehr gibt, nimm die allerletzte Runde.
-      final lastGame =
-          await supabase
-              .from('spieltag')
-              .select('round')
-              .eq('season_id', seasonId)
-              .order('round', ascending: false) // Höchste Runde zuerst
-              .limit(1)
-              .maybeSingle();
+      final lastGame = await supabase
+          .from('spieltag')
+          .select('round')
+          .eq('season_id', seasonId)
+          .order('round', ascending: false) // Höchste Runde zuerst
+          .limit(1)
+          .maybeSingle();
 
       return lastGame != null ? lastGame['round'] as int : 1;
+
     } catch (e) {
       print('Fehler beim Abrufen des aktuellen Spieltags: $e');
       return 1; // Sicherer Fallback
     }
   }
 
-  Future<Map<String, dynamic>> fetchMatchdayState({
-    required String userId,
-    required int leagueId,
-    required int seasonId,
-    required int round,
-  }) async {
+  Future<Map<String, dynamic>> fetchMatchdayState({required String userId, required int leagueId, required int seasonId, required int round,}) async {
     try {
       // 1. Zeitfenster aus 'spieltag' holen
-      final spieltagResponse =
-          await supabase
-              .from('spieltag')
-              .select('matchday_start, matchday_end')
-              .eq('season_id', seasonId)
-              .eq('round', round)
-              .maybeSingle();
+      final spieltagResponse = await supabase
+          .from('spieltag')
+          .select('matchday_start, matchday_end')
+          .eq('season_id', seasonId)
+          .eq('round', round)
+          .maybeSingle();
 
-      final pointsResponse =
-          await supabase
-              .from('user_matchday_points')
-              .select('id')
-              .eq('user_id', userId)
-              .eq('league_id', leagueId)
-              .eq('season_id', seasonId)
-              .eq('round', round)
-              .eq('is_locked', true)
-              .maybeSingle();
+      final pointsResponse = await supabase
+          .from('user_matchday_points')
+          .select('id')
+          .eq('user_id', userId)
+          .eq('league_id', leagueId)
+          .eq('season_id', seasonId)
+          .eq('round', round)
+          .eq('is_locked', true)
+          .maybeSingle();
 
       bool isFormationLocked = pointsResponse != null;
       List<int> frozenPlayerIds = [];
@@ -2516,8 +2152,7 @@ class SupabaseService {
             .eq('is_locked', true);
 
         frozenPlayersData = List<Map<String, dynamic>>.from(playersResponse);
-        frozenPlayerIds =
-            frozenPlayersData.map((row) => row['player_id'] as int).toList();
+        frozenPlayerIds = frozenPlayersData.map((row) => row['player_id'] as int).toList();
       }
 
       return {
@@ -2525,8 +2160,7 @@ class SupabaseService {
         'matchday_end': spieltagResponse?['matchday_end'],
         'is_formation_locked': isFormationLocked,
         'frozen_player_ids': frozenPlayerIds,
-        'frozen_players_full':
-            frozenPlayersData, // NEU übergeben wir das ans UI
+        'frozen_players_full': frozenPlayersData, // NEU übergeben wir das ans UI
       };
     } catch (e) {
       print('Fehler beim Laden des Matchday-States: $e');
@@ -2539,34 +2173,25 @@ class SupabaseService {
     }
   }
 
-  Future<Map<String, dynamic>> fetchMatchdayData(
-    int leagueId,
-    int seasonId,
-    int round, {
-    String? userId,
-  }) async {
+  Future<Map<String, dynamic>> fetchMatchdayData(int leagueId, int seasonId, int round, {String? userId}) async {
     final targetUserId = userId ?? supabase.auth.currentUser!.id;
     try {
       // 1. Snapshot initialisieren (macht nichts, falls er schon existiert)
-      await supabase.rpc(
-        'initialize_matchday_snapshot',
-        params: {
-          'p_league_id': leagueId,
-          'p_user_id': targetUserId,
-          'p_season_id': seasonId,
-          'p_round': round,
-        },
-      );
+      await supabase.rpc('initialize_matchday_snapshot', params: {
+        'p_league_id': leagueId,
+        'p_user_id': targetUserId,
+        'p_season_id': seasonId,
+        'p_round': round,
+      });
 
       // 2. Die Meta-Daten des Spieltags holen (Formation, Punkte, is_locked)
-      final pointsData =
-          await supabase
-              .from('user_matchday_points')
-              .select()
-              .eq('league_id', leagueId)
-              .eq('user_id', targetUserId)
-              .eq('round', round)
-              .maybeSingle();
+      final pointsData = await supabase
+          .from('user_matchday_points')
+          .select()
+          .eq('league_id', leagueId)
+          .eq('user_id', targetUserId)
+          .eq('round', round)
+          .maybeSingle();
 
       if (pointsData == null) return {};
 
@@ -2588,47 +2213,43 @@ class SupabaseService {
           ''')
           .eq('matchday_point_id', matchdayPointId)
           .eq('spieler.is_active', true)
-          // Nur die Analytics der aktuellen Saison laden
+      // Nur die Analytics der aktuellen Saison laden
           .eq('spieler.spieler_analytics.season_id', seasonId)
           .eq('spieler.season_players.season_id', seasonId)
           .eq('spieler.season_players.is_active', true);
 
-      final normalizedPlayersData =
-          List<Map<String, dynamic>>.from(playersData).map((row) {
-            final mappedRow = Map<String, dynamic>.from(row);
-            final spieler = mappedRow['spieler'];
-            if (spieler is Map) {
-              final spielerMap = Map<String, dynamic>.from(spieler);
-              final seasonPlayers = spielerMap['season_players'];
-              if (seasonPlayers is List) {
-                final seasonEntry = seasonPlayers
-                    .cast<Map<String, dynamic>>()
-                    .firstWhere(
-                      (sp) => sp['season_id'] == seasonId,
-                      orElse: () => <String, dynamic>{},
-                    );
-                spielerMap['season_players'] = seasonEntry;
-                if (seasonEntry['team'] is Map) {
-                  spielerMap['team'] = seasonEntry['team'];
-                }
-              }
-              mappedRow['spieler'] = spielerMap;
+      final normalizedPlayersData = List<Map<String, dynamic>>.from(playersData).map((row) {
+        final mappedRow = Map<String, dynamic>.from(row);
+        final spieler = mappedRow['spieler'];
+        if (spieler is Map) {
+          final spielerMap = Map<String, dynamic>.from(spieler);
+          final seasonPlayers = spielerMap['season_players'];
+          if (seasonPlayers is List) {
+            final seasonEntry = seasonPlayers.cast<Map<String, dynamic>>().firstWhere(
+                  (sp) => sp['season_id'] == seasonId,
+              orElse: () => <String, dynamic>{},
+            );
+            spielerMap['season_players'] = seasonEntry;
+            if (seasonEntry['team'] is Map) {
+              spielerMap['team'] = seasonEntry['team'];
             }
-            return mappedRow;
-          }).toList();
+          }
+          mappedRow['spieler'] = spielerMap;
+        }
+        return mappedRow;
+      }).toList();
 
-      return {'points_data': pointsData, 'players': normalizedPlayersData};
+      return {
+        'points_data': pointsData,
+        'players': normalizedPlayersData,
+      };
     } catch (e) {
       print("Fehler beim Laden der Matchday-Daten: $e");
       return {};
     }
   }
 
-  Future<void> saveMatchdayLineup(
-    int matchdayPointId,
-    String formation,
-    List<Map<String, dynamic>> playerUpdates,
-  ) async {
+  Future<void> saveMatchdayLineup(int matchdayPointId, String formation, List<Map<String, dynamic>> playerUpdates) async {
     try {
       // 1. Formation in user_matchday_points updaten
       await supabase
@@ -2660,19 +2281,16 @@ class SupabaseService {
     return response;
   }
 
-  Future<List<Map<String, dynamic>>> fetchUserLeaguePlayers(
-    int leagueId,
-  ) async {
+  Future<List<Map<String, dynamic>>> fetchUserLeaguePlayers(int leagueId) async {
     final user = supabase.auth.currentUser;
     if (user == null) return [];
 
     try {
-      final leagueResponse =
-          await supabase
-              .from('leagues')
-              .select('season_id')
-              .eq('id', leagueId)
-              .single();
+      final leagueResponse = await supabase
+          .from('leagues')
+          .select('season_id')
+          .eq('id', leagueId)
+          .single();
       final int seasonId = (leagueResponse['season_id'] as num).toInt();
 
       final response = await supabase
@@ -2687,42 +2305,35 @@ class SupabaseService {
           .eq('league_id', leagueId)
           .eq('user_id', user.id);
 
-      final List<Map<String, dynamic>>
-      players = List<Map<String, dynamic>>.from(
-        response.map((e) {
-          final player = Map<String, dynamic>.from(e['player'] as Map);
+      final List<Map<String, dynamic>> players = List<Map<String, dynamic>>.from(response.map((e) {
+        final player = Map<String, dynamic>.from(e['player'] as Map);
 
-          final analytics = player['spieler_analytics'];
-          if (analytics is List) {
-            player['spieler_analytics'] = analytics
-                .cast<Map<String, dynamic>>()
-                .firstWhere(
-                  (a) => a['season_id'] == seasonId,
-                  orElse: () => <String, dynamic>{},
-                );
+        final analytics = player['spieler_analytics'];
+        if (analytics is List) {
+          player['spieler_analytics'] = analytics.cast<Map<String, dynamic>>().firstWhere(
+                (a) => a['season_id'] == seasonId,
+            orElse: () => <String, dynamic>{},
+          );
+        }
+
+        final seasonPlayers = player['season_players'];
+        if (seasonPlayers is List) {
+          final seasonEntry = seasonPlayers.cast<Map<String, dynamic>>().firstWhere(
+                (sp) => sp['season_id'] == seasonId,
+            orElse: () => <String, dynamic>{},
+          );
+          final team = seasonEntry['team'];
+          if (team is Map) {
+            player['team_name'] = team['name'];
+            player['team_image_url'] = team['image_url'];
           }
+          player['season_players'] = seasonEntry;
+        }
 
-          final seasonPlayers = player['season_players'];
-          if (seasonPlayers is List) {
-            final seasonEntry = seasonPlayers
-                .cast<Map<String, dynamic>>()
-                .firstWhere(
-                  (sp) => sp['season_id'] == seasonId,
-                  orElse: () => <String, dynamic>{},
-                );
-            final team = seasonEntry['team'];
-            if (team is Map) {
-              player['team_name'] = team['name'];
-              player['team_image_url'] = team['image_url'];
-            }
-            player['season_players'] = seasonEntry;
-          }
-
-          // Standardmäßig weisen wir allem Index 99 zu, das Zusammenfügen macht der TeamScreen
-          player['formation_index'] = 99;
-          return player;
-        }),
-      );
+        // Standardmäßig weisen wir allem Index 99 zu, das Zusammenfügen macht der TeamScreen
+        player['formation_index'] = 99;
+        return player;
+      }));
 
       return players;
     } catch (e) {
@@ -2731,24 +2342,19 @@ class SupabaseService {
     }
   }
 
-  Future<String?> fetchUserFormation(
-    int leagueId,
-    int seasonId,
-    int round,
-  ) async {
+  Future<String?> fetchUserFormation(int leagueId, int seasonId, int round) async {
     final user = supabase.auth.currentUser;
     if (user == null) return null;
 
     try {
-      final response =
-          await supabase
-              .from('user_matchday_points')
-              .select('formation')
-              .eq('league_id', leagueId)
-              .eq('user_id', user.id)
-              .eq('season_id', seasonId)
-              .eq('round', round)
-              .maybeSingle();
+      final response = await supabase
+          .from('user_matchday_points')
+          .select('formation')
+          .eq('league_id', leagueId)
+          .eq('user_id', user.id)
+          .eq('season_id', seasonId)
+          .eq('round', round)
+          .maybeSingle();
 
       return response?['formation'] as String?;
     } catch (e) {
@@ -2757,24 +2363,15 @@ class SupabaseService {
     }
   }
 
-  Future<void> saveTeamLineup(
-    int leagueId,
-    int seasonId,
-    int round,
-    String formation,
-    List<Map<String, dynamic>> lineupUpdates,
-  ) async {
+  Future<void> saveTeamLineup(int leagueId, int seasonId, int round, String formation, List<Map<String, dynamic>> lineupUpdates) async {
     try {
-      await supabase.rpc(
-        'save_lineup',
-        params: {
-          'p_league_id': leagueId,
-          'p_season_id': seasonId,
-          'p_round': round,
-          'p_formation': formation,
-          'p_updates': lineupUpdates,
-        },
-      );
+      await supabase.rpc('save_lineup', params: {
+        'p_league_id': leagueId,
+        'p_season_id': seasonId,
+        'p_round': round,
+        'p_formation': formation,
+        'p_updates': lineupUpdates,
+      });
     } catch (e) {
       print("Fehler beim Speichern der Aufstellung RPC: $e");
     }
@@ -2798,26 +2395,15 @@ class SupabaseService {
 
     // Mappen der User-Infos an die Gebote
     for (var bid in bidsRes) {
-      final profile = profilesRes.firstWhere(
-        (p) => p['user_id'] == bid['bidder_id'],
-        orElse: () => {},
-      );
+      final profile = profilesRes.firstWhere((p) => p['user_id'] == bid['bidder_id'], orElse: () => {});
       bid['username'] = profile['username'] ?? 'Unbekannt';
       bid['avatar_url'] = profile['avatar_url'];
     }
 
     return List<Map<String, dynamic>>.from(bidsRes);
   }
-
   /// Speichert eine neu entdeckte Liga (mit Bild) und ihre aktuellste Saison in der Datenbank
-  Future<void> saveDiscoveredLeague(
-    int tournamentId,
-    String name,
-    String? countryName,
-    String? imageUrl,
-    int seasonId,
-    String seasonYear,
-  ) async {
+  Future<void> saveDiscoveredLeague(int tournamentId, String name, String? countryName, String? imageUrl, int seasonId, String seasonYear) async {
     try {
       // 1. Das Turnier speichern
       await supabase.from('tournaments').upsert({
@@ -2826,14 +2412,15 @@ class SupabaseService {
         'country_name': countryName,
         'image_url': imageUrl,
       }, onConflict: 'id');
-      print('$seasonId, $seasonYear, $tournamentId');
+print ('$seasonId, $seasonYear, $tournamentId');
       // 2. Die aktuellste Saison dazu speichern
       await supabase.from('season').upsert({
         'id': seasonId,
         'name': seasonYear,
         'tournament_id': tournamentId,
-        'is_active': false,
+        'is_active': false
       }, onConflict: 'id');
+
     } catch (error) {
       print('❌ Fehler beim Speichern der Liga $name: $error');
     }
