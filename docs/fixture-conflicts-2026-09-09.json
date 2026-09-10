@@ -1,0 +1,1912 @@
+{
+  "fixtures": [
+    {
+      "id": 14159939,
+      "datum": "2025-08-09T14:00:00",
+      "round": 1,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 124,
+      "rating_count": 0,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 81
+    },
+    {
+      "id": 14159943,
+      "datum": "2025-08-16T14:00:00",
+      "round": 2,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 81,
+      "rating_count": 0,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 25935
+    },
+    {
+      "id": 14159944,
+      "datum": "2025-08-16T14:00:00",
+      "round": 2,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 87,
+      "rating_count": 0,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 238
+    },
+    {
+      "id": 14159951,
+      "datum": "2025-08-19T18:45:00",
+      "round": 3,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 85,
+      "rating_count": 0,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 81
+    },
+    {
+      "id": 14159998,
+      "datum": "2025-09-02T18:45:00",
+      "round": 7,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 6191,
+      "rating_count": 36,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 85
+    },
+    {
+      "id": 14160008,
+      "datum": "2025-09-02T18:45:00",
+      "round": 7,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 73,
+      "rating_count": 0,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 103
+    },
+    {
+      "id": 14297421,
+      "datum": "2025-08-16T14:00:00",
+      "round": 2,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 238,
+      "rating_count": 36,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 87
+    },
+    {
+      "id": 14297559,
+      "datum": "2025-12-21T16:00:00",
+      "round": 2,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 87,
+      "rating_count": 36,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 238
+    },
+    {
+      "id": 14376816,
+      "datum": "2025-09-20T16:30:00",
+      "round": 10,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 103,
+      "rating_count": 0,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 99
+    },
+    {
+      "id": 14391265,
+      "datum": "2025-11-04T19:45:00",
+      "round": 17,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 94,
+      "rating_count": 0,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 102
+    },
+    {
+      "id": 14391267,
+      "datum": "2025-11-04T19:45:00",
+      "round": 17,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 103,
+      "rating_count": 0,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 85
+    },
+    {
+      "id": 14391324,
+      "datum": "2025-12-06T15:00:00",
+      "round": 22,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 78,
+      "rating_count": 0,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 128
+    },
+    {
+      "id": 14391325,
+      "datum": "2025-12-06T15:00:00",
+      "round": 22,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 6191,
+      "rating_count": 0,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 25935
+    },
+    {
+      "id": 14391330,
+      "datum": "2025-12-06T15:00:00",
+      "round": 22,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 103,
+      "rating_count": 0,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 36467
+    },
+    {
+      "id": 14391332,
+      "datum": "2025-12-06T15:00:00",
+      "round": 22,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 99,
+      "rating_count": 0,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 157
+    },
+    {
+      "id": 14391333,
+      "datum": "2025-12-06T15:00:00",
+      "round": 22,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 6339,
+      "rating_count": 0,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 73
+    },
+    {
+      "id": 14391335,
+      "datum": "2025-11-19T19:45:00",
+      "round": 23,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 110,
+      "rating_count": 0,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 103
+    },
+    {
+      "id": 14391370,
+      "datum": "2026-01-03T15:00:00",
+      "round": 26,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 75,
+      "rating_count": 0,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 7942
+    },
+    {
+      "id": 14391371,
+      "datum": "2026-01-03T15:00:00",
+      "round": 26,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 110,
+      "rating_count": 0,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 81
+    },
+    {
+      "id": 14391372,
+      "datum": "2026-01-03T15:00:00",
+      "round": 26,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 36467,
+      "rating_count": 0,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 73
+    },
+    {
+      "id": 14391376,
+      "datum": "2026-01-03T15:00:00",
+      "round": 26,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 103,
+      "rating_count": 0,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 25935
+    },
+    {
+      "id": 14391377,
+      "datum": "2026-01-03T15:00:00",
+      "round": 26,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 85,
+      "rating_count": 0,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 6339
+    },
+    {
+      "id": 14391378,
+      "datum": "2026-01-03T15:00:00",
+      "round": 26,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 99,
+      "rating_count": 0,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 38001
+    },
+    {
+      "id": 14391380,
+      "datum": "2026-01-03T15:00:00",
+      "round": 26,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 128,
+      "rating_count": 0,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 101
+    },
+    {
+      "id": 14391397,
+      "datum": "2026-01-20T19:45:00",
+      "round": 28,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 6339,
+      "rating_count": 0,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 128
+    },
+    {
+      "id": 14391399,
+      "datum": "2026-01-20T19:45:00",
+      "round": 28,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 131,
+      "rating_count": 0,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 75
+    },
+    {
+      "id": 14391405,
+      "datum": "2026-01-21T19:45:00",
+      "round": 28,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 238,
+      "rating_count": 0,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 102
+    },
+    {
+      "id": 14391406,
+      "datum": "2026-01-24T15:00:00",
+      "round": 29,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 75,
+      "rating_count": 0,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 78
+    },
+    {
+      "id": 14391411,
+      "datum": "2026-01-24T15:00:00",
+      "round": 29,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 157,
+      "rating_count": 0,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 238
+    },
+    {
+      "id": 14391416,
+      "datum": "2026-01-24T15:00:00",
+      "round": 29,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 128,
+      "rating_count": 0,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 131
+    },
+    {
+      "id": 14391421,
+      "datum": "2026-01-31T15:00:00",
+      "round": 30,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 87,
+      "rating_count": 0,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 157
+    },
+    {
+      "id": 14391422,
+      "datum": "2026-01-31T15:00:00",
+      "round": 30,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 94,
+      "rating_count": 0,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 128
+    },
+    {
+      "id": 14391425,
+      "datum": "2026-01-31T17:30:00",
+      "round": 30,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 99,
+      "rating_count": 0,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 103
+    },
+    {
+      "id": 14391427,
+      "datum": "2026-01-31T15:00:00",
+      "round": 30,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 38001,
+      "rating_count": 0,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 85
+    },
+    {
+      "id": 14391428,
+      "datum": "2026-01-31T15:00:00",
+      "round": 30,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 238,
+      "rating_count": 0,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 81
+    },
+    {
+      "id": 14391429,
+      "datum": "2026-01-31T15:00:00",
+      "round": 30,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 131,
+      "rating_count": 0,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 102
+    },
+    {
+      "id": 14391433,
+      "datum": "2026-02-07T15:00:00",
+      "round": 31,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 25935,
+      "rating_count": 0,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 7942
+    },
+    {
+      "id": 14391435,
+      "datum": "2026-02-07T15:00:00",
+      "round": 31,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 157,
+      "rating_count": 0,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 182
+    },
+    {
+      "id": 14391440,
+      "datum": "2026-02-07T15:00:00",
+      "round": 31,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 128,
+      "rating_count": 0,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 36467
+    },
+    {
+      "id": 14391448,
+      "datum": "2026-02-11T19:45:00",
+      "round": 32,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 75,
+      "rating_count": 0,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 99
+    },
+    {
+      "id": 14391459,
+      "datum": "2026-02-14T15:00:00",
+      "round": 33,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 101,
+      "rating_count": 0,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 6339
+    },
+    {
+      "id": 14391464,
+      "datum": "2026-02-14T15:00:00",
+      "round": 33,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 128,
+      "rating_count": 0,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 110
+    },
+    {
+      "id": 14391488,
+      "datum": "2026-02-25T19:45:00",
+      "round": 35,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 128,
+      "rating_count": 0,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 7942
+    },
+    {
+      "id": 14391491,
+      "datum": "2026-02-28T15:00:00",
+      "round": 36,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 124,
+      "rating_count": 0,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 128
+    },
+    {
+      "id": 14391498,
+      "datum": "2026-02-28T15:00:00",
+      "round": 36,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 99,
+      "rating_count": 0,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 131
+    },
+    {
+      "id": 14391501,
+      "datum": "2026-02-17T19:45:00",
+      "round": 36,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 238,
+      "rating_count": 0,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 101
+    },
+    {
+      "id": 14391555,
+      "datum": "2026-03-28T15:00:00",
+      "round": 41,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 101,
+      "rating_count": 0,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 99
+    },
+    {
+      "id": 14391560,
+      "datum": "2026-03-28T15:00:00",
+      "round": 41,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 238,
+      "rating_count": 0,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 124
+    },
+    {
+      "id": 14586959,
+      "datum": "2025-11-11T19:45:00",
+      "round": 7,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 73,
+      "rating_count": 36,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 103
+    },
+    {
+      "id": 14722089,
+      "datum": "2025-10-07T18:45:00",
+      "round": 3,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 85,
+      "rating_count": 36,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 81
+    },
+    {
+      "id": 14722090,
+      "datum": "2025-10-21T18:45:00",
+      "round": 1,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 124,
+      "rating_count": 35,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 81
+    },
+    {
+      "id": 14722172,
+      "datum": "2025-11-18T19:45:00",
+      "round": 2,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 81,
+      "rating_count": 36,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 25935
+    },
+    {
+      "id": 14722966,
+      "datum": "2025-10-21T18:45:00",
+      "round": 7,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 6191,
+      "rating_count": 37,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 85
+    },
+    {
+      "id": 14903724,
+      "datum": "2025-11-18T19:45:00",
+      "round": 10,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 103,
+      "rating_count": 0,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 99
+    },
+    {
+      "id": 14936357,
+      "datum": "2025-11-11T19:45:00",
+      "round": 17,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 94,
+      "rating_count": 36,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 102
+    },
+    {
+      "id": 14947363,
+      "datum": "2025-12-19T19:45:00",
+      "round": 23,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 110,
+      "rating_count": 36,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 103
+    },
+    {
+      "id": 15014289,
+      "datum": "2025-12-06T15:00:00",
+      "round": 10,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 103,
+      "rating_count": 36,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 99
+    },
+    {
+      "id": 15080370,
+      "datum": "2026-01-10T15:00:00",
+      "round": 22,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 6339,
+      "rating_count": 36,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 73
+    },
+    {
+      "id": 15122214,
+      "datum": "2025-12-10T19:45:00",
+      "round": 22,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 78,
+      "rating_count": 34,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 128
+    },
+    {
+      "id": 15122229,
+      "datum": "2026-01-13T19:45:00",
+      "round": 22,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 6191,
+      "rating_count": 0,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 25935
+    },
+    {
+      "id": 15122241,
+      "datum": "2026-02-03T19:45:00",
+      "round": 22,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 103,
+      "rating_count": 35,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 36467
+    },
+    {
+      "id": 15141476,
+      "datum": "2026-01-13T19:45:00",
+      "round": 22,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 99,
+      "rating_count": 0,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 157
+    },
+    {
+      "id": 15174124,
+      "datum": "2026-02-17T19:45:00",
+      "round": 17,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 103,
+      "rating_count": 36,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 85
+    },
+    {
+      "id": 15310640,
+      "datum": "2026-01-10T15:00:00",
+      "round": 26,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 75,
+      "rating_count": 36,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 7942
+    },
+    {
+      "id": 15318152,
+      "datum": "2026-01-10T15:00:00",
+      "round": 26,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 128,
+      "rating_count": 35,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 101
+    },
+    {
+      "id": 15324086,
+      "datum": "2026-02-03T19:45:00",
+      "round": 26,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 110,
+      "rating_count": 36,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 81
+    },
+    {
+      "id": 15338278,
+      "datum": "2026-03-03T19:45:00",
+      "round": 26,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 36467,
+      "rating_count": 36,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 73
+    },
+    {
+      "id": 15379423,
+      "datum": "2026-03-03T19:45:00",
+      "round": 30,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 238,
+      "rating_count": 36,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 81
+    },
+    {
+      "id": 15380244,
+      "datum": "2026-01-27T19:45:00",
+      "round": 10,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 103,
+      "rating_count": 36,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 99
+    },
+    {
+      "id": 15381918,
+      "datum": "2026-02-17T19:45:00",
+      "round": 28,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 6339,
+      "rating_count": 36,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 128
+    },
+    {
+      "id": 15395650,
+      "datum": "2026-02-03T19:45:00",
+      "round": 30,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 94,
+      "rating_count": 36,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 128
+    },
+    {
+      "id": 15395661,
+      "datum": "2026-03-03T19:45:00",
+      "round": 26,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 103,
+      "rating_count": 35,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 25935
+    },
+    {
+      "id": 15410386,
+      "datum": "2026-03-10T19:45:00",
+      "round": 26,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 85,
+      "rating_count": 36,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 6339
+    },
+    {
+      "id": 15416664,
+      "datum": "2026-03-10T19:45:00",
+      "round": 22,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 6191,
+      "rating_count": 37,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 25935
+    },
+    {
+      "id": 15432851,
+      "datum": "2026-03-17T19:45:00",
+      "round": 30,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 99,
+      "rating_count": 36,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 103
+    },
+    {
+      "id": 15445404,
+      "datum": "2026-02-17T19:45:00",
+      "round": 30,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 87,
+      "rating_count": 36,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 157
+    },
+    {
+      "id": 15445405,
+      "datum": "2026-03-10T19:45:00",
+      "round": 28,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 238,
+      "rating_count": 36,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 102
+    },
+    {
+      "id": 15445406,
+      "datum": "2026-03-17T19:45:00",
+      "round": 29,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 128,
+      "rating_count": 36,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 131
+    },
+    {
+      "id": 15445407,
+      "datum": "2026-03-03T19:45:00",
+      "round": 30,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 131,
+      "rating_count": 36,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 102
+    },
+    {
+      "id": 15452604,
+      "datum": "2026-02-17T19:45:00",
+      "round": 28,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 131,
+      "rating_count": 36,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 75
+    },
+    {
+      "id": 15467073,
+      "datum": "2026-03-03T19:45:00",
+      "round": 26,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 99,
+      "rating_count": 36,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 38001
+    },
+    {
+      "id": 15473336,
+      "datum": "2026-03-10T19:45:00",
+      "round": 29,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 75,
+      "rating_count": 36,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 78
+    },
+    {
+      "id": 15489538,
+      "datum": "2026-03-03T19:45:00",
+      "round": 36,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 124,
+      "rating_count": 36,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 128
+    },
+    {
+      "id": 15489555,
+      "datum": "2026-03-10T19:45:00",
+      "round": 22,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 99,
+      "rating_count": 36,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 157
+    },
+    {
+      "id": 15519404,
+      "datum": "2026-03-10T19:45:00",
+      "round": 31,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 128,
+      "rating_count": 37,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 36467
+    },
+    {
+      "id": 15519405,
+      "datum": "2026-03-31T18:45:00",
+      "round": 36,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 99,
+      "rating_count": 35,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 131
+    },
+    {
+      "id": 15532516,
+      "datum": "2026-03-17T19:45:00",
+      "round": 31,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 25935,
+      "rating_count": 35,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 7942
+    },
+    {
+      "id": 15532765,
+      "datum": "2026-03-17T19:45:00",
+      "round": 29,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 157,
+      "rating_count": 36,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 238
+    },
+    {
+      "id": 15578580,
+      "datum": "2026-03-03T19:45:00",
+      "round": 33,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 101,
+      "rating_count": 36,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 6339
+    },
+    {
+      "id": 15579729,
+      "datum": "2026-03-31T18:45:00",
+      "round": 33,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 128,
+      "rating_count": 36,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 110
+    },
+    {
+      "id": 15582864,
+      "datum": "2026-03-04T19:45:00",
+      "round": 31,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 157,
+      "rating_count": 36,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 182
+    },
+    {
+      "id": 15603139,
+      "datum": "2026-03-17T19:45:00",
+      "round": 30,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 38001,
+      "rating_count": 35,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 85
+    },
+    {
+      "id": 15603233,
+      "datum": "2026-03-31T18:45:00",
+      "round": 36,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 238,
+      "rating_count": 36,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 101
+    },
+    {
+      "id": 15617401,
+      "datum": "2026-04-14T18:45:00",
+      "round": 32,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 75,
+      "rating_count": 36,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 99
+    },
+    {
+      "id": 15631300,
+      "datum": "2026-04-14T18:45:00",
+      "round": 35,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 128,
+      "rating_count": 36,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 7942
+    },
+    {
+      "id": 15651857,
+      "datum": "2026-04-14T18:45:00",
+      "round": 41,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 238,
+      "rating_count": 34,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 124
+    },
+    {
+      "id": 15659432,
+      "datum": "2026-04-21T18:45:00",
+      "round": 41,
+      "status": "final",
+      "season_id": 78229,
+      "heimteam_id": 101,
+      "rating_count": 36,
+      "snapshot_count": 0,
+      "auswärtsteam_id": 99
+    }
+  ],
+  "checked_at": "2026-09-09T13:00:48.895935+00:00",
+  "team_round_conflicts": [
+    {
+      "round": 1,
+      "team_id": 81,
+      "match_ids": [
+        14159939,
+        14722090
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 1,
+      "team_id": 124,
+      "match_ids": [
+        14159939,
+        14722090
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 2,
+      "team_id": 81,
+      "match_ids": [
+        14159943,
+        14722172
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 2,
+      "team_id": 87,
+      "match_ids": [
+        14159944,
+        14297421,
+        14297559
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 2,
+      "team_id": 238,
+      "match_ids": [
+        14159944,
+        14297421,
+        14297559
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 2,
+      "team_id": 25935,
+      "match_ids": [
+        14159943,
+        14722172
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 3,
+      "team_id": 81,
+      "match_ids": [
+        14159951,
+        14722089
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 3,
+      "team_id": 85,
+      "match_ids": [
+        14159951,
+        14722089
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 7,
+      "team_id": 73,
+      "match_ids": [
+        14160008,
+        14586959
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 7,
+      "team_id": 85,
+      "match_ids": [
+        14159998,
+        14722966
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 7,
+      "team_id": 103,
+      "match_ids": [
+        14160008,
+        14586959
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 7,
+      "team_id": 6191,
+      "match_ids": [
+        14159998,
+        14722966
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 10,
+      "team_id": 99,
+      "match_ids": [
+        14376816,
+        14903724,
+        15014289,
+        15380244
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 10,
+      "team_id": 103,
+      "match_ids": [
+        14376816,
+        14903724,
+        15014289,
+        15380244
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 17,
+      "team_id": 85,
+      "match_ids": [
+        14391267,
+        15174124
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 17,
+      "team_id": 94,
+      "match_ids": [
+        14391265,
+        14936357
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 17,
+      "team_id": 102,
+      "match_ids": [
+        14391265,
+        14936357
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 17,
+      "team_id": 103,
+      "match_ids": [
+        14391267,
+        15174124
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 22,
+      "team_id": 73,
+      "match_ids": [
+        14391333,
+        15080370
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 22,
+      "team_id": 78,
+      "match_ids": [
+        14391324,
+        15122214
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 22,
+      "team_id": 99,
+      "match_ids": [
+        14391332,
+        15141476,
+        15489555
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 22,
+      "team_id": 103,
+      "match_ids": [
+        14391330,
+        15122241
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 22,
+      "team_id": 128,
+      "match_ids": [
+        14391324,
+        15122214
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 22,
+      "team_id": 157,
+      "match_ids": [
+        14391332,
+        15141476,
+        15489555
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 22,
+      "team_id": 6191,
+      "match_ids": [
+        14391325,
+        15122229,
+        15416664
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 22,
+      "team_id": 6339,
+      "match_ids": [
+        14391333,
+        15080370
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 22,
+      "team_id": 25935,
+      "match_ids": [
+        14391325,
+        15122229,
+        15416664
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 22,
+      "team_id": 36467,
+      "match_ids": [
+        14391330,
+        15122241
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 23,
+      "team_id": 103,
+      "match_ids": [
+        14391335,
+        14947363
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 23,
+      "team_id": 110,
+      "match_ids": [
+        14391335,
+        14947363
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 26,
+      "team_id": 73,
+      "match_ids": [
+        14391372,
+        15338278
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 26,
+      "team_id": 75,
+      "match_ids": [
+        14391370,
+        15310640
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 26,
+      "team_id": 81,
+      "match_ids": [
+        14391371,
+        15324086
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 26,
+      "team_id": 85,
+      "match_ids": [
+        14391377,
+        15410386
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 26,
+      "team_id": 99,
+      "match_ids": [
+        14391378,
+        15467073
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 26,
+      "team_id": 101,
+      "match_ids": [
+        14391380,
+        15318152
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 26,
+      "team_id": 103,
+      "match_ids": [
+        14391376,
+        15395661
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 26,
+      "team_id": 110,
+      "match_ids": [
+        14391371,
+        15324086
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 26,
+      "team_id": 128,
+      "match_ids": [
+        14391380,
+        15318152
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 26,
+      "team_id": 6339,
+      "match_ids": [
+        14391377,
+        15410386
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 26,
+      "team_id": 7942,
+      "match_ids": [
+        14391370,
+        15310640
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 26,
+      "team_id": 25935,
+      "match_ids": [
+        14391376,
+        15395661
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 26,
+      "team_id": 36467,
+      "match_ids": [
+        14391372,
+        15338278
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 26,
+      "team_id": 38001,
+      "match_ids": [
+        14391378,
+        15467073
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 28,
+      "team_id": 75,
+      "match_ids": [
+        14391399,
+        15452604
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 28,
+      "team_id": 102,
+      "match_ids": [
+        14391405,
+        15445405
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 28,
+      "team_id": 128,
+      "match_ids": [
+        14391397,
+        15381918
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 28,
+      "team_id": 131,
+      "match_ids": [
+        14391399,
+        15452604
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 28,
+      "team_id": 238,
+      "match_ids": [
+        14391405,
+        15445405
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 28,
+      "team_id": 6339,
+      "match_ids": [
+        14391397,
+        15381918
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 29,
+      "team_id": 75,
+      "match_ids": [
+        14391406,
+        15473336
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 29,
+      "team_id": 78,
+      "match_ids": [
+        14391406,
+        15473336
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 29,
+      "team_id": 128,
+      "match_ids": [
+        14391416,
+        15445406
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 29,
+      "team_id": 131,
+      "match_ids": [
+        14391416,
+        15445406
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 29,
+      "team_id": 157,
+      "match_ids": [
+        14391411,
+        15532765
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 29,
+      "team_id": 238,
+      "match_ids": [
+        14391411,
+        15532765
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 30,
+      "team_id": 81,
+      "match_ids": [
+        14391428,
+        15379423
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 30,
+      "team_id": 85,
+      "match_ids": [
+        14391427,
+        15603139
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 30,
+      "team_id": 87,
+      "match_ids": [
+        14391421,
+        15445404
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 30,
+      "team_id": 94,
+      "match_ids": [
+        14391422,
+        15395650
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 30,
+      "team_id": 99,
+      "match_ids": [
+        14391425,
+        15432851
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 30,
+      "team_id": 102,
+      "match_ids": [
+        14391429,
+        15445407
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 30,
+      "team_id": 103,
+      "match_ids": [
+        14391425,
+        15432851
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 30,
+      "team_id": 128,
+      "match_ids": [
+        14391422,
+        15395650
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 30,
+      "team_id": 131,
+      "match_ids": [
+        14391429,
+        15445407
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 30,
+      "team_id": 157,
+      "match_ids": [
+        14391421,
+        15445404
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 30,
+      "team_id": 238,
+      "match_ids": [
+        14391428,
+        15379423
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 30,
+      "team_id": 38001,
+      "match_ids": [
+        14391427,
+        15603139
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 31,
+      "team_id": 128,
+      "match_ids": [
+        14391440,
+        15519404
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 31,
+      "team_id": 157,
+      "match_ids": [
+        14391435,
+        15582864
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 31,
+      "team_id": 182,
+      "match_ids": [
+        14391435,
+        15582864
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 31,
+      "team_id": 7942,
+      "match_ids": [
+        14391433,
+        15532516
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 31,
+      "team_id": 25935,
+      "match_ids": [
+        14391433,
+        15532516
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 31,
+      "team_id": 36467,
+      "match_ids": [
+        14391440,
+        15519404
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 32,
+      "team_id": 75,
+      "match_ids": [
+        14391448,
+        15617401
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 32,
+      "team_id": 99,
+      "match_ids": [
+        14391448,
+        15617401
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 33,
+      "team_id": 101,
+      "match_ids": [
+        14391459,
+        15578580
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 33,
+      "team_id": 110,
+      "match_ids": [
+        14391464,
+        15579729
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 33,
+      "team_id": 128,
+      "match_ids": [
+        14391464,
+        15579729
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 33,
+      "team_id": 6339,
+      "match_ids": [
+        14391459,
+        15578580
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 35,
+      "team_id": 128,
+      "match_ids": [
+        14391488,
+        15631300
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 35,
+      "team_id": 7942,
+      "match_ids": [
+        14391488,
+        15631300
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 36,
+      "team_id": 99,
+      "match_ids": [
+        14391498,
+        15519405
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 36,
+      "team_id": 101,
+      "match_ids": [
+        14391501,
+        15603233
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 36,
+      "team_id": 124,
+      "match_ids": [
+        14391491,
+        15489538
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 36,
+      "team_id": 128,
+      "match_ids": [
+        14391491,
+        15489538
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 36,
+      "team_id": 131,
+      "match_ids": [
+        14391498,
+        15519405
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 36,
+      "team_id": 238,
+      "match_ids": [
+        14391501,
+        15603233
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 41,
+      "team_id": 99,
+      "match_ids": [
+        14391555,
+        15659432
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 41,
+      "team_id": 101,
+      "match_ids": [
+        14391555,
+        15659432
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 41,
+      "team_id": 124,
+      "match_ids": [
+        14391560,
+        15651857
+      ],
+      "season_id": 78229
+    },
+    {
+      "round": 41,
+      "team_id": 238,
+      "match_ids": [
+        14391560,
+        15651857
+      ],
+      "season_id": 78229
+    }
+  ]
+}

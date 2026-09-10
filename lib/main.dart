@@ -13,8 +13,8 @@ import 'package:http/http.dart' as http;
 import 'package:premier_league/main.dart';
 import 'package:premier_league/viewmodels/tournament_viewmodel.dart';
 import 'http/http_factory.dart'
-if (dart.library.html) 'http/http_factory_web.dart'
-if (dart.library.io) 'http/http_factory_io.dart';
+    if (dart.library.html) 'http/http_factory_web.dart'
+    if (dart.library.io) 'http/http_factory_io.dart';
 
 void main() async {
   // 1. Die Motor-Vorbereitung (Läuft auf Web leer durch, auf Mobile startet Cronet)
@@ -22,21 +22,22 @@ void main() async {
 
   // 2. Wir starten sofort die "sichere Netzwerk-Zone"
   http.runWithClient(
-        () async {
+    () async {
       // 3. ALLES, was Flutter braucht, passiert JETZT innerhalb dieser Zone!
       WidgetsFlutterBinding.ensureInitialized();
 
       // 4. Supabase innerhalb der Zone starten
       await Supabase.initialize(
-          url: 'https://rcfetlzldccwjnuabfgj.supabase.co',
-          anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJjZmV0bHpsZGNjd2pudWFiZmdqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTM5OTkwNDQsImV4cCI6MjA2OTU3NTA0NH0.Fe4Aa3b7vxn9gnye1Cl0VvhxyT7UREJYDCRvICkGNsM'
+        url: 'https://rcfetlzldccwjnuabfgj.supabase.co',
+        anonKey:
+            'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJjZmV0bHpsZGNjd2pudWFiZmdqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTM5OTkwNDQsImV4cCI6MjA2OTU3NTA0NH0.Fe4Aa3b7vxn9gnye1Cl0VvhxyT7UREJYDCRvICkGNsM',
       );
 
       // 5. App starten
       runApp(const AppRoot());
     },
     // 6. Die Client-Fabrik (Holt automatisch den richtigen Client für Web, iOS oder Android)
-        () => getPlatformClient(),
+    () => getPlatformClient(),
   );
 }
 
@@ -50,9 +51,11 @@ class AppRoot extends StatelessWidget {
       providers: [
         ChangeNotifierProvider<AuthService>(create: (_) => AuthService()),
         // ✅ NEU: Unser zentraler Turnier-Manager
-        ChangeNotifierProvider<TournamentViewModel>(create: (_) => TournamentViewModel()),
+        ChangeNotifierProvider<TournamentViewModel>(
+          create: (_) => TournamentViewModel(),
+        ),
         // ✅ GEÄNDERT: DataManagement braucht keine IDs mehr
-        Provider<DataManagement>(create: (_) => DataManagement()),
+        ChangeNotifierProvider<DataManagement>(create: (_) => DataManagement()),
       ],
       child: MaterialApp(
         title: 'Managerspiel',
@@ -68,6 +71,7 @@ class AppRoot extends StatelessWidget {
     );
   }
 }
+
 // Dieses Widget entscheidet, welche Seite beim Start angezeigt wird
 class AuthGate extends StatelessWidget {
   const AuthGate({super.key});
