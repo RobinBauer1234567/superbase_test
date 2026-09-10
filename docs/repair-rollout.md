@@ -48,11 +48,13 @@ is intentionally still tied to a signed-in, running app.
 Validated in this PR:
 
 ```
-flutter test --no-pub test/client_sync_task_worker_test.dart test/match_import_test.dart
-python supabase/tests/run_native.py --port 55440 --database managerspiel_test_progress_01
-python supabase/tests/run_native.py --port 55440 --database managerspiel_test_progress_reimport_01 --fixture-reimport
+flutter test --no-pub
+python supabase/tests/run_native.py --port 55440 --database managerspiel_test_progress_02
+python supabase/tests/run_native.py --port 55440 --database managerspiel_test_progress_reimport_02 --fixture-reimport
+python supabase/tests/concurrency.py managerspiel_test_progress_02 55440
+flutter build web --no-pub
 flutter analyze --no-pub lib/services/client_sync_task_worker.dart lib/services/match_import.dart lib/viewmodels/data_viewmodel.dart test/client_sync_task_worker_test.dart test/match_import_test.dart
 ```
 
 The full project analysis still reports existing warnings outside the repair
-scope. A Web build should pass before merging and deploying.
+scope. The full Flutter test suite and Web build passed.
