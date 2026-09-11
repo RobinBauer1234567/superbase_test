@@ -1,5 +1,6 @@
 // lib/viewmodels/data_viewmodel.dart
-import 'package:premier_league/data_service.dart';
+import 'package:premier_league/data_service.dart' show SupabaseService;
+import 'package:premier_league/team_sync_api_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:math'; // <-- Wichtig für Random()
