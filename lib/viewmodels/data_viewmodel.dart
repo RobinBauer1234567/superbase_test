@@ -59,13 +59,16 @@ class DataManagement {
       String taskId = task['id'].toString();
       String taskType = task['task_type'];
       int tId = task['tournament_id'];
-      int sId = task['season_id'];
+      int sId = task['season_id'] ?? 0;
 
       print('👷 WORKER: Starte Aufgabe [$taskType] (Prio: ${task['priority']})');
 
       try {
         // 2. Den Auftrag ausführen
         switch (taskType) {
+          case 'CHECK_SEASONS':
+            await apiService.checkSeasons(tId);
+            break;
           case 'FETCH_TEAMS':
             await apiService.fetchAndStoreTeams(tId, sId);
             break;
@@ -129,8 +132,7 @@ class DataManagement {
             break;
 
           default:
-            print('⚠️ Unbekannter Task-Typ: $taskType');
-            break;
+            throw UnsupportedError('Unbekannter Task-Typ: $taskType');
         }
 
         // 3. Task erfolgreich abschließen

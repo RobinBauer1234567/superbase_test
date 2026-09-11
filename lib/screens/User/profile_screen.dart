@@ -9,7 +9,6 @@ import 'package:intl/intl.dart';
 import 'package:premier_league/auth_service.dart';
 import 'package:premier_league/utils/color_helper.dart';
 import 'package:premier_league/viewmodels/data_viewmodel.dart';
-import 'package:premier_league/viewmodels/tournament_viewmodel.dart';
 import 'package:premier_league/screens/screenelements/match_screen/formations.dart';
 import 'package:premier_league/screens/screenelements/matchday_team_shared.dart';
 import 'package:premier_league/screens/player_screen.dart';
@@ -172,7 +171,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
 
     try {
       final dataManagement = context.read<DataManagement>();
-      final seasonId = context.read<TournamentViewModel>().currentSeasonId;
+      final seasonId = await dataManagement.supabaseService.fetchLeagueSeasonId(_selectedLeagueId!);
       if (seasonId == null) return;
 
       final allMatchdaysRes = await supabase
@@ -799,7 +798,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                             hideUnlockedMatchdayRating: true,
                             onPlayerTap: (playerId, radius) {
                               if (playerId > 0) {
-                                Navigator.push(context, MaterialPageRoute(builder: (_) => PlayerScreen(playerId: playerId)));
+                                Navigator.push(context, MaterialPageRoute(builder: (_) => PlayerScreen(leagueId: _selectedLeagueId, playerId: playerId)));
                               }
                             },
                           ),
@@ -818,7 +817,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
       context,
       _currentMatchdayData!,
       onPlayerTap: (playerId) {
-        Navigator.push(context, MaterialPageRoute(builder: (_) => PlayerScreen(playerId: playerId)));
+        Navigator.push(context, MaterialPageRoute(builder: (_) => PlayerScreen(leagueId: _selectedLeagueId, playerId: playerId)));
       },
       startHeaderPadding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       benchHeaderPadding: const EdgeInsets.only(left: 12, right: 12, top: 16, bottom: 8),
@@ -857,7 +856,7 @@ class _ProfileScreenState extends State<ProfileScreen> with SingleTickerProvider
                             onPlayerTap: () {
                               final playerId = content['player_id'] ?? 0;
                               if (playerId != 0) {
-                                Navigator.push(context, MaterialPageRoute(builder: (_) => PlayerScreen(playerId: playerId)));
+                                Navigator.push(context, MaterialPageRoute(builder: (_) => PlayerScreen(leagueId: _selectedLeagueId, playerId: playerId)));
                               }
                             },
                           ),

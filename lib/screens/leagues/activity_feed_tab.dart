@@ -124,7 +124,7 @@ class ActivityFeedTab extends StatelessWidget {
           onPlayerTap: () {
             final playerId = activity.content['player_id'] ?? 0;
             if (playerId != 0) {
-              Navigator.push(context, MaterialPageRoute(builder: (_) => PlayerScreen(playerId: playerId)));
+              Navigator.push(context, MaterialPageRoute(builder: (_) => PlayerScreen(leagueId: leagueId, playerId: playerId)));
             }
           },
           onDetailsTap: () {
@@ -157,7 +157,7 @@ class ActivityFeedTab extends StatelessWidget {
           id: playerId,
           onTap: () {
             if (playerId != 0) {
-              Navigator.push(context, MaterialPageRoute(builder: (_) => PlayerScreen(playerId: playerId)));
+              Navigator.push(context, MaterialPageRoute(builder: (_) => PlayerScreen(leagueId: leagueId, playerId: playerId)));
             }
           },
         );

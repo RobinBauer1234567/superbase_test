@@ -5,7 +5,6 @@ import 'package:premier_league/screens/leagues/league_detail_screen.dart';
 import 'package:premier_league/screens/screenelements/player_list_item.dart';
 import 'package:provider/provider.dart';
 import 'package:premier_league/viewmodels/data_viewmodel.dart';
-import 'package:premier_league/viewmodels/tournament_viewmodel.dart';
 
 class StarterTeamRevealScreen extends StatefulWidget {
   final int leagueId;
@@ -27,6 +26,7 @@ class _StarterTeamRevealScreenState extends State<StarterTeamRevealScreen> {
   bool _isLoading = true;
   List<Map<String, dynamic>> _players = [];
   int _totalTeamValue = 0;
+  int? _seasonId;
 
   // State für den Reveal-Prozess
   int _currentPlayerIndex = 0;
@@ -81,6 +81,7 @@ class _StarterTeamRevealScreenState extends State<StarterTeamRevealScreen> {
 
   Future<void> _loadTeam() async {
     final dataManagement = Provider.of<DataManagement>(context, listen: false);
+    _seasonId = await dataManagement.supabaseService.fetchLeagueSeasonId(widget.leagueId);
 
     // Kurzes Delay, damit der Übergang nicht zu abrupt ist
     await Future.delayed(const Duration(milliseconds: 500));
@@ -278,7 +279,7 @@ class _StarterTeamRevealScreenState extends State<StarterTeamRevealScreen> {
 
   // --- ANSICHT 2: Gesamtkader Liste (Wie TeamScreen) ---
   Widget _buildSummaryView() {
-    final seasonId = context.read<TournamentViewModel>().currentSeasonId;
+    final seasonId = _seasonId;
     final seasonIdStr = (seasonId ?? '').toString();
 
     return Column(

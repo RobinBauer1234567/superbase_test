@@ -468,7 +468,7 @@ class TransferMarketScreenState extends State<TransferMarketScreen> {
                           goals: 0, assists: 0, ownGoals: 0,
                           teamColor: Colors.blueGrey,
                           onTap: () {
-                            Navigator.push(context, MaterialPageRoute(builder: (_) => PlayerScreen(playerId: player['id'])));
+                            Navigator.push(context, MaterialPageRoute(builder: (_) => PlayerScreen(leagueId: widget.leagueId, playerId: player['id'])));
                           },
                         ),
                         Padding(

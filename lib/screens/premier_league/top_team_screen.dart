@@ -51,10 +51,11 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
 
   Future<void> _initialize() async {
     await _fetchFilterData();
-    await _fetchData();
+    if (mounted) await _fetchData();
   }
 
   Future<void> _fetchData() async {
+    if (!mounted) return;
     setState(() => _isLoading = true);
     if (_showGesamt) {
       await _fetchGesamtStats();
@@ -63,10 +64,11 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
         await _fetchSpieltagStats();
       }
     }
+    if (!mounted) return;
     if (_showFormation) {
       await _calculateInitialBestFormation();
     }
-    setState(() => _isLoading = false);
+    if (mounted) setState(() => _isLoading = false);
   }
 
   Future<void> _fetchFilterData() async {
@@ -114,6 +116,7 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
   }
 
   Future<void> _fetchGesamtStats() async {
+    if (!mounted) return;
     setState(() => _isLoading = true);
     try {
       final dynamic rawSeasonId = context.read<TournamentViewModel>().currentSeasonId;
@@ -228,6 +231,7 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
   }
 
   Future<void> _fetchSpieltagStats() async {
+    if (!mounted) return;
     setState(() => _isLoading = true);
     try {
       final spieltag = _selectedSpieltag;
