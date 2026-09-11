@@ -17,25 +17,27 @@ if (dart.library.html) 'http/http_factory_web.dart'
 if (dart.library.io) 'http/http_factory_io.dart';
 
 void main() async {
+  // Cronet ist ein Flutter-Plugin und darf erst nach der Binding-Initialisierung
+  // aufgebaut werden. Andernfalls faellt Android auf den normalen Dart-HTTP-Client
+  // zurueck, dessen TLS-Fingerprint von SofaScore mit 403 blockiert werden kann.
+  WidgetsFlutterBinding.ensureInitialized();
+
   // 1. Die Motor-Vorbereitung (Läuft auf Web leer durch, auf Mobile startet Cronet)
   await initPlatformClient();
 
   // 2. Wir starten sofort die "sichere Netzwerk-Zone"
   http.runWithClient(
         () async {
-      // 3. ALLES, was Flutter braucht, passiert JETZT innerhalb dieser Zone!
-      WidgetsFlutterBinding.ensureInitialized();
-
-      // 4. Supabase innerhalb der Zone starten
+      // 3. Supabase innerhalb der Zone starten
       await Supabase.initialize(
           url: 'https://rcfetlzldccwjnuabfgj.supabase.co',
-          anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJjZmV0bHpsZGNjd2pudWFiZmdqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTM5OTkwNDQsImV4cCI6MjA2OTU3NTA0NH0.Fe4Aa3b7vxn9gnye1Cl0VvhxyT7UREJYDCRvICkGNsM'
+          anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZVwiLCJyZWYiOiJyY2ZldGx6bGRjY3dqbnVhYmZnaiIsInJvbGUiOiJhbm9uIiwiaWF0IjoxNzUzOTk5MDQ0LCJleHAiOjIwNjk1NzUwNDR9.Fe4Aa3b7vxn9gnye1Cl0VvhxyT7UREJYDCRvICkGNsM'
       );
 
-      // 5. App starten
+      // 4. App starten
       runApp(const AppRoot());
     },
-    // 6. Die Client-Fabrik (Holt automatisch den richtigen Client für Web, iOS oder Android)
+    // 5. Die Client-Fabrik (Holt automatisch den richtigen Client für Web, iOS oder Android)
         () => getPlatformClient(),
   );
 }
