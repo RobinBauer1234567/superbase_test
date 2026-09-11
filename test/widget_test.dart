@@ -19,8 +19,39 @@ void main() {
       anonKey: 'test-key',
       httpClient: MockClient((request) async {
         requests.add(request);
+        if (request.url.path.endsWith('/season')) {
+          if (request.method == 'GET')
+            return http.Response(
+              '{"is_active":false}',
+              200,
+              request: request,
+              headers: {'content-type': 'application/json'},
+            );
+        }
+        if (request.url.path.endsWith('/user_matchday_points')) {
+          return http.Response(
+            '{"id":5,"season_id":101}',
+            200,
+            request: request,
+            headers: {'content-type': 'application/json'},
+          );
+        }
+        if (request.url.path.endsWith('/user_matchday_players')) {
+          return http.Response(
+            '[{"spieler":{"id":501,"is_active":false,"season_players":[{"season_id":101,"is_active":false,"team":{"name":"Old Team"}}]}}]',
+            200,
+            request: request,
+            headers: {'content-type': 'application/json'},
+          );
+        }
+
         if (request.url.path.endsWith('/leagues')) {
-          return http.Response('{"season_id":101}',200,request:request,headers:{'content-type':'application/json'});
+          return http.Response(
+            '{"season_id":101}',
+            200,
+            request: request,
+            headers: {'content-type': 'application/json'},
+          );
         }
         return http.Response(
           '[]',
@@ -76,10 +107,49 @@ void main() {
     },
   );
 
-  test('Fantasy league resolves its stored season independently of tournament selection', () async {
-    expect(await SupabaseService().fetchLeagueSeasonId(42),101);
-    expect(requests.single.url.queryParameters['id'],'eq.42');
-  });
+  test(
+    'historical snapshots preserve inactive players and are read without initialization',
+    () async {
+      final data = await SupabaseService().fetchMatchdayData(
+        42,
+        101,
+        1,
+        userId: 'test-user',
+      );
+      expect((data['players'] as List).single['spieler']['id'], 501);
+      expect(
+        requests.any(
+          (r) => r.url.path.contains('initialize_matchday_snapshot'),
+        ),
+        false,
+      );
+      final players = requests.singleWhere(
+        (r) => r.url.path.endsWith('/user_matchday_players'),
+      );
+      expect(
+        players.url.queryParameters.containsKey('spieler.is_active'),
+        false,
+      );
+      expect(
+        players.url.queryParameters.containsKey(
+          'spieler.season_players.is_active',
+        ),
+        false,
+      );
+      final points = requests.singleWhere(
+        (r) => r.url.path.endsWith('/user_matchday_points'),
+      );
+      expect(points.url.queryParameters['season_id'], 'eq.101');
+    },
+  );
+
+  test(
+    'Fantasy league resolves its stored season independently of tournament selection',
+    () async {
+      expect(await SupabaseService().fetchLeagueSeasonId(42), 101);
+      expect(requests.single.url.queryParameters['id'], 'eq.42');
+    },
+  );
 
   test('Global Scout cannot overwrite an existing active season', () async {
     await SupabaseService().saveDiscoveredLeague(

@@ -2229,19 +2229,23 @@ class SupabaseService {
   Future<Map<String, dynamic>> fetchMatchdayData(int leagueId, int seasonId, int round, {String? userId}) async {
     final targetUserId = userId ?? supabase.auth.currentUser!.id;
     try {
-      // 1. Snapshot initialisieren (macht nichts, falls er schon existiert)
-      await supabase.rpc('initialize_matchday_snapshot', params: {
+      // Archived seasons are read-only; never create missing historical snapshots on view.
+      final season = await supabase.from('season').select('is_active').eq('id', seasonId).single();
+      if (season['is_active'] == true) {
+        await supabase.rpc('initialize_matchday_snapshot', params: {
         'p_league_id': leagueId,
         'p_user_id': targetUserId,
         'p_season_id': seasonId,
         'p_round': round,
-      });
+        });
+      }
 
       // 2. Die Meta-Daten des Spieltags holen (Formation, Punkte, is_locked)
       final pointsData = await supabase
           .from('user_matchday_points')
           .select()
           .eq('league_id', leagueId)
+          .eq('season_id', seasonId)
           .eq('user_id', targetUserId)
           .eq('round', round)
           .maybeSingle();
@@ -2265,11 +2269,9 @@ class SupabaseService {
             )
           ''')
           .eq('matchday_point_id', matchdayPointId)
-          .eq('spieler.is_active', true)
       // Nur die Analytics der aktuellen Saison laden
           .eq('spieler.spieler_analytics.season_id', seasonId)
-          .eq('spieler.season_players.season_id', seasonId)
-          .eq('spieler.season_players.is_active', true);
+          .eq('spieler.season_players.season_id', seasonId);
 
       final normalizedPlayersData = List<Map<String, dynamic>>.from(playersData).map((row) {
         final mappedRow = Map<String, dynamic>.from(row);

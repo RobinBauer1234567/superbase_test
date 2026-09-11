@@ -1,6 +1,6 @@
 # Season-Lifecycle – Implementierung und Betriebsnachweis
 
-Stand: 11.09.2026. Basis: `origin/main` bei `be62b28ef442881a15be81af30e0e234a1759fb4`, unmittelbar vor Abschluss erneut abgeglichen. Branch: `feat/season-lifecycle`. Das ursprüngliche lokale Checkout und dessen uncommittete Arbeiten wurden nicht verändert.
+Stand: 11.09.2026. Basis: `origin/main` bei `be62b28ef442881a15be81af30e0e234a1759fb4`, unmittelbar vor Abschluss erneut abgeglichen. Branch: `feat/season-lifecycle`. Pull Request: [#118](https://github.com/RobinBauer1234567/superbase_test/pull/118). Das ursprüngliche lokale Checkout und dessen uncommittete Arbeiten wurden nicht verändert.
 
 ## Verhalten
 
@@ -20,7 +20,7 @@ Die Überschrift zeigt zum Beispiel „Premier League – Saison 26/27“. Über
 
 Managerliga-Neugründungen verwenden die aktive **initialisierte** Saison des ausgewählten Tournaments, selbst wenn gerade eine historische Saison betrachtet wird. Diese Zuordnung wird im Dialog ausdrücklich angezeigt und serverseitig beim Insert nochmals geprüft. Ein Wechsel während eines offenen Dialogs wird deshalb sicher abgewiesen, statt eine neue Liga in einer inzwischen archivierten Saison anzulegen.
 
-Fantasy-Kader, Aufstellungsspeicherung, Ranking, Spieltags-Overlay, Profil-Ligaansicht und Starterteam verwenden die in `leagues.season_id` gespeicherte Saison. Spielerdetails aus Fantasy-Ansichten erhalten die Liga-ID und lösen darüber die Saison auf. Spielerdetails aus einem Spiel erhalten dessen eigene Saison-ID. Beim Betrachten historischer Spiele wird kein Ratings-Sync gestartet; ein globales Spieler-Aktivflag blendet historische Matchkader nicht mehr aus.
+Fantasy-Kader, Aufstellungsspeicherung, Ranking, Spieltags-Overlay, Profil-Ligaansicht und Starterteam verwenden die in `leagues.season_id` gespeicherte Saison. Spielerdetails aus Fantasy-Ansichten erhalten die Liga-ID und lösen darüber die Saison auf. Spielerdetails aus einem Spiel erhalten dessen eigene Saison-ID. Historische Fantasy-Snapshots behalten ausgeschiedene Spieler und werden ohne Initialisierungs-Schreibzugriff gelesen. Beim Betrachten historischer Spiele wird kein Ratings-Sync gestartet; ein globales Spieler-Aktivflag blendet historische Matchkader nicht mehr aus.
 
 Der ungenutzte `SeasonProvider` wurde entfernt; im aktuellen Repository gab es keine Aufrufstellen.
 
@@ -72,7 +72,7 @@ Produktiv bestätigt: beide neue Cronjobs aktiv, Routine-Cron unverändert aktiv
 
 ## Tests und Grenzen der Verifikation
 
-- **7 Flutter-Tests bestanden**: deterministische Sortierung; aktive Standardauswahl; explizite Historie; neue/verspätete Ladeantworten; Fantasy-Neugründung bleibt an der aktiven Saison; tatsächlicher HTTP-Schreibmodus mit `resolution=ignore-duplicates`; API-403 wird weitergereicht; Scout überschreibt nicht; Fantasy-Saison wird aus der Liga gelesen; Widget-Wechsel inklusive aller drei tatsächlich nach `season_id` gefilterten Turnierabfragen.
+- **8 Flutter-Tests bestanden**: deterministische Sortierung; aktive Standardauswahl; explizite Historie; neue/verspätete Ladeantworten; Fantasy-Neugründung bleibt an der aktiven Saison; tatsächlicher HTTP-Schreibmodus mit `resolution=ignore-duplicates`; API-403 wird weitergereicht; Scout überschreibt nicht; Fantasy-Saison wird aus der Liga gelesen; historische Snapshots bleiben ohne Aktivitätsfilter und ohne Neuinitialisierung sichtbar; Widget-Wechsel inklusive aller drei tatsächlich nach `season_id` gefilterten Turnierabfragen.
 - **PostgreSQL-17-Integrationstests bestanden**: Migration gegen isolierte, aus Produktion gelesene Tabellenformen, historische Daten erhalten, Ligaredundanz korrigiert, Berechtigungen und fremde Anforderungen abgewiesen, vollständige Initialisierungskette, idempotente Discovery/Aktivierung/Task-Replays, historische Neugründung abgewiesen und neue Liga korrekt gebunden.
 - **Echte Paralleltests mit separaten DB-Verbindungen bestanden**: vier gleichzeitige Aktivierungen erzeugen genau einen Initialisierungsstart; zwei gleichzeitige Kader-Abschlüsse geben die Runden frei.
 - **Release-Webbuild erfolgreich** (`flutter build web --release --no-pub`, einschließlich Wasm-Dry-Run). Bestehende Flutter-Web-Bootstrap-/Service-Worker-Deprecations bleiben bestehen.
