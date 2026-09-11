@@ -149,6 +149,9 @@ class DataManagement {
         if (e.toString().contains('API_LIMIT_REACHED')) {
           print('🛑 API-Limit erreicht. Aktiviere lokale Sperre.');
           await _setLocalApiBan(const Duration(minutes: 30));
+        } else if (e.toString().contains('API_ACCESS_DENIED')) {
+          print('⛔ SofaScore-Zugriff verweigert. Pausiere API-Aufrufe für 10 Minuten.');
+          await _setLocalApiBan(const Duration(minutes: 10));
         }
         return false;
       }
@@ -236,6 +239,8 @@ class DataManagement {
     } catch (e) {
       if (e.toString().contains('API_LIMIT_REACHED')) {
         await _setLocalApiBan(const Duration(minutes: 30));
+      } else if (e.toString().contains('API_ACCESS_DENIED')) {
+        await _setLocalApiBan(const Duration(minutes: 10));
       }
     }
   }
