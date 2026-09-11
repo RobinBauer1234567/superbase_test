@@ -27,49 +27,65 @@ class ApiService {
 
   Future<void> fetchAndStoreTeams(int tournamentId, int seasonId) async {
     final url = '$baseUrl/unique-tournament/$tournamentId/season/$seasonId/teams';
-    final response = await http.get(Uri.parse(url));
+    final response = await _throttledGet(url);
 
-    if (response.statusCode == 200) {
-      final parsedJson = json.decode(response.body);
-      List<dynamic> teamsJson = parsedJson['teams'] ?? [];
+    if (response.statusCode != 200) {
+      throw Exception('Fehler beim Abrufen der Teams: ${response.statusCode}');
+    }
 
-      for (var teamData in teamsJson) {
-        int teamId = teamData['id'];
-        String teamName = teamData['name'];
-        String? logoUrl;
+    final parsedJson = json.decode(response.body);
+    final List<dynamic> teamsJson = parsedJson['teams'] ?? [];
 
-        try {
-          final imageResponse = await http.get(Uri.parse('https://api.sofascore.com/api/v1/team/$teamId/image'));
-          if (imageResponse.statusCode == 200) {
-            final imageBytes = imageResponse.bodyBytes;
-            final imagePath = 'wappen/$teamId.jpg';
+    for (final teamData in teamsJson) {
+      final int teamId = teamData['id'];
+      final String teamName = teamData['name'];
+      String? logoUrl;
 
-            await supabaseService.supabase.storage
-                .from('wappen')
-                .uploadBinary(
-              imagePath,
-              imageBytes,
-              fileOptions: const FileOptions(
-                cacheControl: '3600',
-                upsert: true,
-              ),
-            );
+      try {
+        final imageResponse = await _throttledGet('$baseUrl/team/$teamId/image');
 
-            logoUrl = supabaseService.supabase.storage
-                .from('wappen')
-                .getPublicUrl(imagePath);
-          }
-        } catch (e) {
-          print('Fehler beim Verarbeiten des Logos für Team-ID $teamId: $e');
+        if (imageResponse.statusCode == 200) {
+          final imagePath = 'wappen/$teamId.jpg';
+
+          await supabaseService.supabase.storage
+              .from('wappen')
+              .uploadBinary(
+            imagePath,
+            imageResponse.bodyBytes,
+            fileOptions: const FileOptions(
+              cacheControl: '3600',
+              upsert: true,
+            ),
+          );
+
+          logoUrl = supabaseService.supabase.storage
+              .from('wappen')
+              .getPublicUrl(imagePath);
+        } else {
+          print(
+            '⚠️ Kein Wappen für Team $teamName ($teamId) geladen: '
+            'HTTP ${imageResponse.statusCode}. Bestehende image_url bleibt erhalten.',
+          );
+        }
+      } catch (e) {
+        if (e.toString().contains('API_LIMIT_REACHED') ||
+            e.toString().contains('API_ACCESS_DENIED')) {
+          rethrow;
         }
 
-        await supabaseService.saveTeam(teamId, teamName, logoUrl);
-        await supabaseService.saveSeasonTeam(seasonId, teamId);
+        print(
+          '⚠️ Fehler beim Verarbeiten des Logos für Team $teamName ($teamId): $e. '
+          'Bestehende image_url bleibt erhalten.',
+        );
       }
-      print('✅ Alle Teams (Turnier: $tournamentId, Saison: $seasonId) wurden gespeichert.');
-    } else {
-      throw Exception("Fehler beim Abrufen der Teams: ${response.statusCode}");
+
+      // saveTeam schreibt image_url nur, wenn logoUrl != null ist.
+      // Damit wird bei einem vorübergehenden Bildfehler kein vorhandenes Wappen gelöscht.
+      await supabaseService.saveTeam(teamId, teamName, logoUrl);
+      await supabaseService.saveSeasonTeam(seasonId, teamId);
     }
+
+    print('✅ Alle Teams (Turnier: $tournamentId, Saison: $seasonId) wurden gespeichert.');
   }
 
   Future<void> fetchAndStoreSpieltage(int tournamentId, int seasonId) async {
@@ -2019,7 +2035,7 @@ class SupabaseService {
       });
     } catch (e) {
       print("Fehler beim Schnellverkauf: $e");
-      throw e; // Weiterwerfen für die UI
+      throw e; // Weiterwerfen für UI-Handling
     }
   }
 
