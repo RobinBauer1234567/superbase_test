@@ -31,7 +31,7 @@ void main() async {
       // 3. Supabase innerhalb der Zone starten
       await Supabase.initialize(
           url: 'https://rcfetlzldccwjnuabfgj.supabase.co',
-          anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZVwiLCJyZWYiOiJyY2ZldGx6bGRjY3dqbnVhYmZnaiIsInJvbGUiOiJhbm9uIiwiaWF0IjoxNzUzOTk5MDQ0LCJleHAiOjIwNjk1NzUwNDR9.Fe4Aa3b7vxn9gnye1Cl0VvhxyT7UREJYDCRvICkGNsM'
+          anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJjZmV0bHpsZGNjd2pudWFiZmdqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTM5OTkwNDQsImV4cCI6MjA2OTU3NTA0NH0.Fe4Aa3b7vxn9gnye1Cl0VvhxyT7UREJYDCRvICkGNsM'
       );
 
       // 4. App starten
