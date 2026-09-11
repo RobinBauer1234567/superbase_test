@@ -217,7 +217,6 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
     if (mounted) setState(() => _isLoading = false);
   }
 
-  // --- BILD UPLOAD (Nur für Admin) ---
   Future<void> _pickNewLeagueImage() async {
     if (!_isAdmin || widget.isTournamentTab) return;
 
@@ -228,7 +227,6 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
     setState(() => _localImageBytes = bytes);
 
     try {
-      // Dateiname ist einfach die Liga-ID. Wird überschrieben, wenn schon vorhanden (upsert).
       final path = '${widget.leagueId!}.jpg';
 
       await supabase.storage.from('league_images').uploadBinary(
@@ -252,7 +250,6 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
     }
   }
 
-  // --- UPDATE FUNKTIONEN (Nur für Admin) ---
   Future<void> _updateLeagueName(String newName) async {
     if (!_isAdmin || widget.isTournamentTab || newName.trim().isEmpty) return;
     try {
@@ -285,7 +282,6 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
     }
   }
 
-  // --- DIALOGE FÜR EINGABEN ---
   void _showEditNameDialog() {
     final TextEditingController controller = TextEditingController(text: _leagueData['name']);
     showDialog(
@@ -346,7 +342,7 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
       context: context,
       builder: (context) => AlertDialog(
         title: const Text('Liga initialisieren?'),
-        content: const Text('Möchtest du die Liga initialisieren?'),
+        content: Text('Möchtest du die Saison ${season['name']} initialisieren?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.of(context).pop(),
@@ -372,8 +368,6 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
     final tournamentId = tournament['id'] as int?;
     if (seasonId == null || tournamentId == null) return;
 
-    // Wichtig: Erst Controller-Länge anpassen, dann Rebuild auslösen.
-    // Sonst kann kurzzeitig TabBar/TabBarView (2 Tabs) mit Controller-Länge 1 gerendert werden.
     _showInitializationTab = true;
     _updateTabController(targetIndex: 1);
     setState(() {
@@ -516,7 +510,6 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
                       child: Stack(
                         fit: StackFit.expand,
                         children: [
-                          // --- GROSSE ANSICHT ---
                           Positioned(
                             top: safeAreaTop + 16,
                             left: 0, right: 0,
@@ -566,7 +559,6 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
                               ),
                             ),
                           ),
-                          // --- KLEINE EINGEKLAPPTE ANSICHT ---
                           Positioned(
                             top: safeAreaTop,
                             left: Navigator.canPop(context) ? 64.0 : 16.0,
@@ -691,7 +683,6 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
     );
   }
 
-  // --- DER EINSTELLUNGS-TAB ---
   Widget _buildSettingsTab(Color primaryColor) {
     final fmt = NumberFormat.currency(locale: 'de_DE', symbol: '€', decimalDigits: 0);
 
@@ -705,7 +696,6 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
               padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
               sliver: SliverList(
                 delegate: SliverChildListDelegate([
-
                   const Padding(
                     padding: EdgeInsets.only(left: 8, bottom: 8),
                     child: Text('ALLGEMEIN', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey, fontSize: 12, letterSpacing: 1.2)),
@@ -735,7 +725,6 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
                     ),
                   ),
                   const SizedBox(height: 24),
-
                   const Padding(
                     padding: EdgeInsets.only(left: 8, bottom: 8),
                     child: Text('REGELN', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey, fontSize: 12, letterSpacing: 1.2)),
@@ -752,7 +741,6 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
                     ),
                   ),
                   const SizedBox(height: 24),
-
                   const Padding(
                     padding: EdgeInsets.only(left: 8, bottom: 8),
                     child: Text('STARTBEDINGUNGEN (Fix)', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey, fontSize: 12, letterSpacing: 1.2)),
@@ -792,7 +780,6 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
                     ),
                   ),
                   const SizedBox(height: 40),
-
                 ]),
               ),
             ),
@@ -823,7 +810,7 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
         final List<Map<String, dynamic>> visibleSections = [
           {'title': 'Aktiv & initialisiert', 'items': activeInitialized},
           {'title': 'Wird initialisiert', 'items': initializing},
-          {'title': 'Nicht initialisiert', 'items': inactiveOrUninitialized},
+          {'title': 'Weitere Turniere', 'items': inactiveOrUninitialized},
         ];
         final hasAnyItems = visibleSections.any(
           (section) => (section['items'] as List<Map<String, dynamic>>).isNotEmpty,
@@ -853,7 +840,7 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
                     tournamentVm: tournamentVm,
                   ),
                   _buildTournamentSection(
-                    title: 'Nicht initialisiert',
+                    title: 'Weitere Turniere',
                     tournaments: inactiveOrUninitialized,
                     selectedTournamentId: selectedTournamentId,
                     primaryColor: primaryColor,
@@ -899,67 +886,102 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
           ),
         ),
         ...tournaments.map((tournament) {
-          final season = _resolveSeason(tournament);
-          final bool isSelected = tournament['id'] == selectedTournamentId;
+          final seasons = List<Map<String, dynamic>>.from(tournament['season'] ?? const <Map<String, dynamic>>[]);
+          final bool isSelectedTournament = tournament['id'] == selectedTournamentId;
           final bool isInitializationFocus = tournament['id'] == _initializingTournamentId && _showInitializationTab;
-          final bool isEnabled = isSelected || _isActiveAndInitialized(tournament);
-          final bool isInitializing = _isTournamentInitializing(tournament);
-          final bool needsInitialization = !isEnabled && !isInitializing;
+          final selectedSeason = isSelectedTournament ? tournamentVm.selectedSeason : null;
+          final selectedSeasonName = selectedSeason?['name']?.toString();
 
-          final statusText = isInitializationFocus
-              ? (isSelected ? 'Ausgewählt & Initialisierungsansicht' : 'In Initialisierungsansicht geöffnet')
-              : (isSelected
-              ? 'Aktuell ausgewählt'
-              : (isEnabled
-              ? 'Aktiv & initialisiert'
-              : (isInitializing ? 'Wird gerade initialisiert' : 'Nicht aktiv oder nicht initialisiert')));
+          final String subtitle = seasons.isEmpty
+              ? 'Noch keine Saison entdeckt'
+              : isSelectedTournament && selectedSeasonName != null
+                  ? 'Saison $selectedSeasonName ausgewählt'
+                  : '${seasons.length} Saison${seasons.length == 1 ? '' : 's'} verfügbar';
 
-          return Opacity(
-            opacity: (isEnabled || isInitializing) ? 1 : 0.5,
-            child: Card(
-              margin: const EdgeInsets.only(bottom: 12),
-              elevation: 1,
-              shape: RoundedRectangleBorder(
-                borderRadius: BorderRadius.circular(16),
-                side: isSelected
-                    ? BorderSide(color: primaryColor, width: 2)
-                    : (isInitializationFocus
-                    ? BorderSide(color: Colors.orange.shade700, width: 2)
-                    : BorderSide.none),
+          return Card(
+            margin: const EdgeInsets.only(bottom: 12),
+            elevation: 1,
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+              side: isSelectedTournament
+                  ? BorderSide(color: primaryColor, width: 2)
+                  : (isInitializationFocus
+                      ? BorderSide(color: Colors.orange.shade700, width: 2)
+                      : BorderSide.none),
+            ),
+            clipBehavior: Clip.antiAlias,
+            child: ExpansionTile(
+              key: PageStorageKey<String>('tournament-${tournament['id']}'),
+              initiallyExpanded: isSelectedTournament || isInitializationFocus,
+              leading: LeagueLogo(imageUrl: tournament['image_url'] as String?, radius: 20),
+              title: Text(
+                tournament['name']?.toString() ?? 'Turnier',
+                style: const TextStyle(fontWeight: FontWeight.w600),
               ),
-              child: ListTile(
-                contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                leading: LeagueLogo(imageUrl: tournament['image_url'] as String?, radius: 20),
-                title: Text(
-                  tournament['name']?.toString() ?? 'Turnier',
-                  style: const TextStyle(fontWeight: FontWeight.w600),
-                ),
-                subtitle: Text(statusText),
-                trailing: isSelected
-                    ? Icon(Icons.check_circle, color: primaryColor)
-                    : (isInitializationFocus
-                    ? Icon(Icons.hourglass_top, color: Colors.orange.shade700)
-                    : const Icon(Icons.chevron_right)),
-                onTap: season == null || isSelected
-                    ? null
-                    : () async {
-                  if (needsInitialization) {
-                    _showInitializeDialog(tournament, season);
-                    return;
-                  }
+              subtitle: Text(subtitle),
+              childrenPadding: const EdgeInsets.only(bottom: 8),
+              children: seasons.isEmpty
+                  ? const [
+                      ListTile(
+                        leading: Icon(Icons.info_outline),
+                        title: Text('Noch keine Saison entdeckt'),
+                      ),
+                    ]
+                  : seasons.map((season) {
+                      final seasonId = season['id'] as int?;
+                      final bool isSelectedSeason = isSelectedTournament && seasonId == tournamentVm.currentSeasonId;
+                      final bool isInitializationFocusSeason =
+                          tournament['id'] == _initializingTournamentId && seasonId == _initializingSeasonId;
+                      final bool isInitialized = season['is_initialized'] == true;
+                      final bool isInitializing = season['is_active'] == true && !isInitialized;
 
-                  if (isInitializing) {
-                    _openInitializationTab(tournament: tournament, season: season);
-                    return;
-                  }
+                      IconData trailingIcon;
+                      Color? trailingColor;
+                      if (isSelectedSeason) {
+                        trailingIcon = Icons.check_circle;
+                        trailingColor = primaryColor;
+                      } else if (isInitializationFocusSeason || isInitializing) {
+                        trailingIcon = Icons.hourglass_top;
+                        trailingColor = Colors.orange.shade700;
+                      } else if (isInitialized) {
+                        trailingIcon = Icons.chevron_right;
+                      } else {
+                        trailingIcon = Icons.download_for_offline_outlined;
+                      }
 
-                  await _selectActiveTournamentAndReturn(
-                    tournamentVm: tournamentVm,
-                    tournament: tournament,
-                    season: season,
-                  );
-                },
-              ),
+                      return ListTile(
+                        key: ValueKey<String>('season-${season['id']}'),
+                        contentPadding: const EdgeInsets.only(left: 28, right: 16),
+                        leading: Icon(
+                          isInitialized ? Icons.calendar_month : Icons.calendar_today_outlined,
+                          color: isSelectedSeason ? primaryColor : null,
+                        ),
+                        title: Text('Saison ${season['name']}'),
+                        subtitle: Text(TournamentViewModel.seasonStatus(season)),
+                        selected: isSelectedSeason,
+                        selectedColor: primaryColor,
+                        trailing: Icon(trailingIcon, color: trailingColor),
+                        onTap: seasonId == null || isSelectedSeason
+                            ? null
+                            : () async {
+                                if (isInitializing) {
+                                  _openInitializationTab(tournament: tournament, season: season);
+                                  return;
+                                }
+
+                                if (!isInitialized) {
+                                  await _showInitializeDialog(tournament, season);
+                                  return;
+                                }
+
+                                await _selectActiveTournamentAndReturn(
+                                  tournamentVm: tournamentVm,
+                                  tournament: tournament,
+                                  season: season,
+                                );
+                              },
+                      );
+                    }).toList(),
             ),
           );
         }),

@@ -1,6 +1,5 @@
 import 'package:provider/provider.dart';
 import 'package:premier_league/viewmodels/tournament_viewmodel.dart';
-import 'season_picker.dart';
 // lib/screens/premier_league/premier_league_screen.dart
 import 'package:flutter/material.dart';
 import 'package:premier_league/screens/premier_league/matches_screen.dart';
@@ -14,21 +13,20 @@ class PremierLeagueScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // --- ANPASSUNG HIER ---
-    // 1. Bildschirmbreite ermitteln
+    // Der Premier-League-/Turnier-Screen zeigt nur noch die aktuell gewählte
+    // Competition. Auswahl und Initialisierung von Seasons passieren zentral
+    // im Tournament-View-Tab.
     final vm = context.watch<TournamentViewModel>();
     final screenWidth = MediaQuery.of(context).size.width;
 
-    // 2. Eine passende Schriftgröße berechnen (Formel für 3 Tabs angepasst)
     final double tabFontSize = max(5.0, min(screenWidth / 45, 15));
-    // --- ENDE DER ANPASSUNG ---
 
     return DefaultTabController(
       length: 3,
       child: Scaffold(
         appBar: AppBar(
           toolbarHeight: 64,
-          title: const SeasonPicker(),
+          title: Text(vm.currentTournamentName),
           bottom: TabBar(
             isScrollable: false,
             tabs: const [
@@ -36,7 +34,6 @@ class PremierLeagueScreen extends StatelessWidget {
               Tab(text: 'TABELLE'),
               Tab(text: 'TOP-TEAM'),
             ],
-            // 3. Die dynamische Schriftgröße anwenden
             labelStyle: TextStyle(fontWeight: FontWeight.bold, fontSize: tabFontSize),
             unselectedLabelStyle: TextStyle(fontWeight: FontWeight.normal, fontSize: tabFontSize),
           ),
