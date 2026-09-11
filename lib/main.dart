@@ -16,24 +16,26 @@ import 'http/http_factory.dart'
 if (dart.library.html) 'http/http_factory_web.dart'
 if (dart.library.io) 'http/http_factory_io.dart';
 
-void main() {
-  // Die komplette Flutter-App laeuft in derselben HTTP-Zone. Dadurch verwenden
-  // spaetere http.get-Aufrufe ebenfalls unseren Plattform-Client.
+void main() async {
+  // 1. Die Motor-Vorbereitung (Läuft auf Web leer durch, auf Mobile startet Cronet)
+  await initPlatformClient();
+
+  // 2. Wir starten sofort die "sichere Netzwerk-Zone"
   http.runWithClient(
         () async {
-      // Cronet ist ein Flutter-Plugin: zuerst Bindings initialisieren, dann
-      // den nativen Android-Netzwerkstack aufbauen.
+      // 3. ALLES, was Flutter braucht, passiert JETZT innerhalb dieser Zone!
       WidgetsFlutterBinding.ensureInitialized();
-      await initPlatformClient();
 
-      // Supabase ebenfalls innerhalb derselben Zone starten.
+      // 4. Supabase innerhalb der Zone starten
       await Supabase.initialize(
           url: 'https://rcfetlzldccwjnuabfgj.supabase.co',
           anonKey: 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJpc3MiOiJzdXBhYmFzZSIsInJlZiI6InJjZmV0bHpsZGNjd2pudWFiZmdqIiwicm9sZSI6ImFub24iLCJpYXQiOjE3NTM5OTkwNDQsImV4cCI6MjA2OTU3NTA0NH0.Fe4Aa3b7vxn9gnye1Cl0VvhxyT7UREJYDCRvICkGNsM'
       );
 
+      // 5. App starten
       runApp(const AppRoot());
     },
+    // 6. Die Client-Fabrik (Holt automatisch den richtigen Client für Web, iOS oder Android)
         () => getPlatformClient(),
   );
 }
