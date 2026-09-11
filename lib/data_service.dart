@@ -1,5 +1,6 @@
 //match_service.dart
 import 'dart:convert';
+import 'package:premier_league/utils/season_order.dart';
 import 'package:http/http.dart' as http;
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'dart:math';
@@ -24,6 +25,24 @@ class ApiService {
     'Sec-Fetch-Mode': 'cors',
     'Sec-Fetch-Site': 'same-origin',
   };
+
+  /// A daily queued check; no global crawl and no destructive season updates.
+  Future<void> checkSeasons(int tournamentId) async {
+    final response = await _throttledGet('$baseUrl/unique-tournament/$tournamentId/seasons');
+    if (response.statusCode != 200) {
+      throw Exception('Season-Check fehlgeschlagen: HTTP ${response.statusCode}');
+    }
+    final body = json.decode(response.body);
+    final raw = body['seasons'];
+    if (raw is! List || raw.isEmpty) {
+      throw const FormatException('Keine gültige Saisonliste erhalten');
+    }
+    // Validate the entire response before writing. Existing rows are never overwritten.
+    final rows = raw.map((s) => discoveredSeason(tournamentId,
+        Map<String, dynamic>.from(s as Map))).toList();
+    await supabaseService.supabase.from('season').upsert(rows,
+        onConflict: 'id', ignoreDuplicates: true);
+  }
 
   Future<void> fetchAndStoreTeams(int tournamentId, int seasonId) async {
     final url = '$baseUrl/unique-tournament/$tournamentId/season/$seasonId/teams';
@@ -1292,6 +1311,7 @@ class ApiService {
       if (squadResp.statusCode == 200) {
         final parsedJson = json.decode(squadResp.body);
         final playersList = parsedJson['players'] as List<dynamic>? ?? [];
+        if (playersList.isEmpty) throw const FormatException('Leerer Kader');
 
         // --- DIE MAGIE: WIR NUTZEN EINEN POOL FÜR PARALLELE VERARBEITUNG ---
         // 5 Spieler werden gleichzeitig verarbeitet.
@@ -1311,6 +1331,8 @@ class ApiService {
         await Future.wait(tasks);
 
         print('✅ Kader für Team $teamId komplett.');
+      } else {
+        throw Exception('Kader konnte nicht geladen werden: HTTP ${squadResp.statusCode}');
       }
     } catch (e) {
       if (e.toString().contains('API_LIMIT_REACHED')) rethrow;
@@ -1395,6 +1417,17 @@ class SupabaseService {
   final SupabaseClient supabase = Supabase.instance.client;
   final Map<int, DateTime> _lastActivityPings = {};
 
+  /// Fantasy views always use their league's immutable season, never the global picker.
+  Future<int?> fetchLeagueSeasonId(int leagueId) async {
+    try {
+      final row = await supabase.from('leagues').select('season_id').eq('id', leagueId).maybeSingle();
+      return (row?['season_id'] as num?)?.toInt();
+    } catch (e) {
+      print('Saison der Managerliga konnte nicht geladen werden: $e');
+      return null;
+    }
+  }
+
   Future<void> updateLeagueActivity(int leagueId) async {
     final now = DateTime.now();
 
@@ -1436,6 +1469,7 @@ class SupabaseService {
       );
     } catch (error) {
       print('Fehler beim Speichern des Spieltags: $error');
+      rethrow;
     }
   }
 
@@ -1456,7 +1490,7 @@ class SupabaseService {
       return response.map<int>((row) => row['round'] as int).toList();
     } catch (error) {
       print('Fehler beim Abrufen der Spieltag-IDs: $error');
-      return [];
+      rethrow;
     }
   }
 
@@ -1469,6 +1503,7 @@ class SupabaseService {
       await supabase.from('team').upsert(teamData, onConflict: 'id');
     } catch (error) {
       print('Fehler beim Speichern des Teams: $error');
+      rethrow;
     }
   }
 
@@ -1480,6 +1515,7 @@ class SupabaseService {
       }, onConflict: 'season_id, team_id');
     } catch (error) {
       print('Fehler beim Speichern der Team-Saison-Beziehung: $error');
+      rethrow;
     }
   }
 
@@ -1500,6 +1536,7 @@ class SupabaseService {
       );
     } catch (error) {
       print('Fehler beim Speichern des Spiels: $error');
+      rethrow;
     }
   }
 
@@ -2192,19 +2229,23 @@ class SupabaseService {
   Future<Map<String, dynamic>> fetchMatchdayData(int leagueId, int seasonId, int round, {String? userId}) async {
     final targetUserId = userId ?? supabase.auth.currentUser!.id;
     try {
-      // 1. Snapshot initialisieren (macht nichts, falls er schon existiert)
-      await supabase.rpc('initialize_matchday_snapshot', params: {
+      // Archived seasons are read-only; never create missing historical snapshots on view.
+      final season = await supabase.from('season').select('is_active').eq('id', seasonId).single();
+      if (season['is_active'] == true) {
+        await supabase.rpc('initialize_matchday_snapshot', params: {
         'p_league_id': leagueId,
         'p_user_id': targetUserId,
         'p_season_id': seasonId,
         'p_round': round,
-      });
+        });
+      }
 
       // 2. Die Meta-Daten des Spieltags holen (Formation, Punkte, is_locked)
       final pointsData = await supabase
           .from('user_matchday_points')
           .select()
           .eq('league_id', leagueId)
+          .eq('season_id', seasonId)
           .eq('user_id', targetUserId)
           .eq('round', round)
           .maybeSingle();
@@ -2228,11 +2269,9 @@ class SupabaseService {
             )
           ''')
           .eq('matchday_point_id', matchdayPointId)
-          .eq('spieler.is_active', true)
       // Nur die Analytics der aktuellen Saison laden
           .eq('spieler.spieler_analytics.season_id', seasonId)
-          .eq('spieler.season_players.season_id', seasonId)
-          .eq('spieler.season_players.is_active', true);
+          .eq('spieler.season_players.season_id', seasonId);
 
       final normalizedPlayersData = List<Map<String, dynamic>>.from(playersData).map((row) {
         final mappedRow = Map<String, dynamic>.from(row);
@@ -2429,13 +2468,13 @@ class SupabaseService {
         'image_url': imageUrl,
       }, onConflict: 'id');
 print ('$seasonId, $seasonYear, $tournamentId');
-      // 2. Die aktuellste Saison dazu speichern
+      // INSERT ON CONFLICT DO NOTHING: never deactivate an existing season.
       await supabase.from('season').upsert({
         'id': seasonId,
         'name': seasonYear,
         'tournament_id': tournamentId,
         'is_active': false
-      }, onConflict: 'id');
+      }, onConflict: 'id', ignoreDuplicates: true);
 
     } catch (error) {
       print('❌ Fehler beim Speichern der Liga $name: $error');

@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:premier_league/viewmodels/data_viewmodel.dart';
-import 'package:premier_league/viewmodels/tournament_viewmodel.dart';
 import 'package:premier_league/screens/screenelements/match_screen/formations.dart';
 import 'package:premier_league/screens/screenelements/matchday_team_shared.dart';
 import 'package:premier_league/screens/player_screen.dart';
@@ -47,7 +46,7 @@ class _MatchdayTeamOverlayState extends State<MatchdayTeamOverlay> {
   Future<void> _loadTeamData() async {
     try {
       final dataManagement = context.read<DataManagement>();
-      final seasonId = context.read<TournamentViewModel>().currentSeasonId;
+      final seasonId = await context.read<DataManagement>().supabaseService.fetchLeagueSeasonId(widget.leagueId);
       if (seasonId == null) return;
 
       _allFormations = await dataManagement.supabaseService.fetchFormationsFromDb();
@@ -187,7 +186,7 @@ class _MatchdayTeamOverlayState extends State<MatchdayTeamOverlay> {
                 hideUnlockedMatchdayRating: true,
                 onPlayerTap: (playerId, radius) {
                   if (playerId > 0) {
-                    Navigator.push(context, MaterialPageRoute(builder: (_) => PlayerScreen(playerId: playerId)));
+                    Navigator.push(context, MaterialPageRoute(builder: (_) => PlayerScreen(leagueId: widget.leagueId, playerId: playerId)));
                   }
                 },
               ),
@@ -203,7 +202,7 @@ class _MatchdayTeamOverlayState extends State<MatchdayTeamOverlay> {
       context,
       _currentMatchdayData!,
       onPlayerTap: (playerId) {
-        Navigator.push(context, MaterialPageRoute(builder: (_) => PlayerScreen(playerId: playerId)));
+        Navigator.push(context, MaterialPageRoute(builder: (_) => PlayerScreen(leagueId: widget.leagueId, playerId: playerId)));
       },
     );
   }

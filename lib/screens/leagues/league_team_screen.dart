@@ -3,7 +3,6 @@ import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:provider/provider.dart';
 import 'package:premier_league/viewmodels/data_viewmodel.dart';
-import 'package:premier_league/viewmodels/tournament_viewmodel.dart';
 import 'package:premier_league/screens/screenelements/match_screen/formations.dart';
 import 'package:premier_league/screens/screenelements/matchday_team_shared.dart';
 import 'package:premier_league/screens/player_screen.dart';
@@ -66,7 +65,7 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
   Future<void> _initMatchdayData() async {
     setState(() => _isLoading = true);
     final dataManagement = Provider.of<DataManagement>(context, listen: false);
-    final seasonId = context.read<TournamentViewModel>().currentSeasonId;
+    final seasonId = await context.read<DataManagement>().supabaseService.fetchLeagueSeasonId(widget.leagueId);
     if (seasonId == null) {
       if (mounted) setState(() => _isLoading = false);
       return;
@@ -124,7 +123,7 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
     setState(() => _isLoading = true);
     final dataManagement = Provider.of<DataManagement>(context, listen: false);
     final service = dataManagement.supabaseService;
-    final seasonId = context.read<TournamentViewModel>().currentSeasonId;
+    final seasonId = await context.read<DataManagement>().supabaseService.fetchLeagueSeasonId(widget.leagueId);
     if (seasonId == null) {
       if (mounted) setState(() => _isLoading = false);
       return;
@@ -226,7 +225,7 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
   Future<void> _saveLineupToDb() async {
     final dataManagement = Provider.of<DataManagement>(context, listen: false);
     final service = dataManagement.supabaseService;
-    final seasonId = context.read<TournamentViewModel>().currentSeasonId;
+    final seasonId = await context.read<DataManagement>().supabaseService.fetchLeagueSeasonId(widget.leagueId);
     if (seasonId == null) {
       if (mounted) setState(() => _isLoading = false);
       return;
@@ -353,7 +352,7 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
       Navigator.push(
         context,
         MaterialPageRoute(
-          builder: (context) => PlayerScreen(playerId: playerId),
+          builder: (context) => PlayerScreen(leagueId: widget.leagueId, playerId: playerId),
         ),
       );
     }
@@ -1165,7 +1164,7 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
               () => Navigator.push(
                 context,
                 MaterialPageRoute(
-                  builder: (_) => PlayerScreen(playerId: player.id),
+                  builder: (_) => PlayerScreen(leagueId: widget.leagueId, playerId: player.id),
                 ),
               ),
         );

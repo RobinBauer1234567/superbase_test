@@ -385,12 +385,14 @@ class _LeagueSettingsScreenState extends State<LeagueSettingsScreen> with Ticker
     });
 
     try {
-      await supabase.from('season').update({'is_active': true}).eq('id', seasonId);
+      await supabase.from('season_activation_requests').insert({
+        'season_id': seasonId, 'requested_by': supabase.auth.currentUser!.id,
+      });
 
       if (!mounted) return;
       setState(() {
         _initializationProgress = 0.45;
-        _initializationStatus = 'Saison ist aktiv. Initialisierung wird geprüft...';
+        _initializationStatus = 'Aktivierung angefordert. Der Saison-Dienst übernimmt innerhalb einer Minute.';
       });
 
       final tournamentVm = context.read<TournamentViewModel>();

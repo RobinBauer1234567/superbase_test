@@ -1,89 +1,141 @@
-// lib/viewmodels/tournament_viewmodel.dart
 import 'package:flutter/material.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:premier_league/utils/season_order.dart';
 
 class TournamentViewModel extends ChangeNotifier {
-  final _supabase = Supabase.instance.client;
-
-  // Hier speichern wir alle Ligen, die der Global Scout in der DB gefunden hat
+  final Future<List<Map<String, dynamic>>> Function() _load;
   List<Map<String, dynamic>> allTournaments = [];
-
-  // Das aktuell ausgewählte Turnier und die dazugehörige Saison
   Map<String, dynamic>? selectedTournament;
   Map<String, dynamic>? selectedSeason;
-
+  final Map<int, int> _explicitSelections = {};
   bool isLoading = true;
+  String? error;
+  int _request = 0;
+  bool _disposed = false;
 
-  TournamentViewModel() {
-    // Sobald die Klasse aufgerufen wird, laden wir die Daten aus Supabase
-    fetchTournaments();
+  TournamentViewModel({
+    Future<List<Map<String, dynamic>>> Function()? load,
+    bool autoLoad = true,
+  }) : _load = load ?? _loadFromDatabase {
+    if (autoLoad) fetchTournaments();
   }
 
-  /// Lädt alle Turniere und deren Saisons aus der Datenbank
+  static Future<List<Map<String, dynamic>>> _loadFromDatabase() async =>
+      List<Map<String, dynamic>>.from(
+        await Supabase.instance.client
+            .from('tournaments')
+            .select('*, season(*)')
+            .order('name')
+            .order('id'),
+      );
+
   Future<void> fetchTournaments() async {
+    final request = ++_request;
     isLoading = true;
+    error = null;
     notifyListeners();
-
     try {
-      // Genialer Supabase-Trick: Wir laden das Turnier UND die verknüpfte Saison auf einmal!
-      final response = await _supabase
-          .from('tournaments')
-          .select('*, season(*)');
-
-      allTournaments = List<Map<String, dynamic>>.from(response);
-
-      // Wenn wir Ligen gefunden haben und noch keine ausgewählt ist,
-      // setzen wir einen klugen Standardwert.
-      if (allTournaments.isNotEmpty && selectedTournament == null) {
-        // Wir suchen zuerst nach einer Liga, die bereits aktiv ist
-        final activeTournaments = allTournaments.where((t) {
-          final seasons = List<Map<String, dynamic>>.from(t['season'] ?? []);
-          return seasons.any((s) => s['is_active'] == true);
-        }).toList();
-
-        if (activeTournaments.isNotEmpty) {
-          _selectDefault(activeTournaments.first);
-        } else {
-          _selectDefault(allTournaments.first); // Fallback auf die allererste gefundene Liga
-        }
+      final rows = await _load();
+      if (_disposed || request != _request) return;
+      final previousId = currentTournamentId;
+      allTournaments =
+          rows.map((t) => {...t, 'season': sortedSeasons(t['season'])}).toList()
+            ..sort((a, b) {
+              final byName = (a['name'] as String).compareTo(
+                b['name'] as String,
+              );
+              return byName != 0
+                  ? byName
+                  : (a['id'] as int).compareTo(b['id'] as int);
+            });
+      selectedTournament = null;
+      selectedSeason = null;
+      if (allTournaments.isNotEmpty) {
+        final tournament = allTournaments.firstWhere(
+          (t) => t['id'] == previousId,
+          orElse:
+              () => allTournaments.firstWhere(
+                (t) => sortedSeasons(
+                  t['season'],
+                ).any((s) => s['is_active'] == true),
+                orElse: () => allTournaments.first,
+              ),
+        );
+        _select(tournament);
       }
     } catch (e) {
-      print('❌ Fehler beim Laden der Turniere: $e');
+      if (_disposed || request != _request) return;
+      error = 'Turniere konnten nicht geladen werden: $e';
     }
-
+    if (_disposed || request != _request) return;
     isLoading = false;
-    notifyListeners(); // Sagt dem Frontend: "Die Ligen sind da, bitte UI aktualisieren!"
-  }
-
-  /// Hilfsfunktion, um das Standard-Turnier zu setzen
-  void _selectDefault(Map<String, dynamic> tournament) {
-    selectedTournament = tournament;
-    final seasons = List<Map<String, dynamic>>.from(tournament['season'] ?? []);
-    if (seasons.isNotEmpty) {
-      // Wir bevorzugen die aktive Saison, sonst nehmen wir einfach die erste
-      selectedSeason = seasons.firstWhere(
-              (s) => s['is_active'] == true,
-          orElse: () => seasons.first
-      );
-    }
-  }
-
-  /// Diese Methode rufen wir später auf, wenn der User im Bottom Sheet eine andere Liga antippt
-  void selectTournament(int tournamentId, int seasonId) {
-    selectedTournament = allTournaments.firstWhere((t) => t['id'] == tournamentId);
-    final seasons = List<Map<String, dynamic>>.from(selectedTournament?['season'] ?? []);
-    selectedSeason = seasons.firstWhere((s) => s['id'] == seasonId);
-
-    // UI benachrichtigen, dass eine neue Liga gewählt wurde!
     notifyListeners();
   }
 
-  /// Hilfreiche Getter, damit unser UI den Code schön lesbar hält
+  void _select(Map<String, dynamic> tournament) {
+    selectedTournament = tournament;
+    final seasons = sortedSeasons(tournament['season']);
+    selectedSeason =
+        seasons.isEmpty
+            ? null
+            : seasons.firstWhere(
+              (s) => s['id'] == _explicitSelections[tournament['id']],
+              orElse:
+                  () => seasons.firstWhere(
+                    (s) => s['is_active'] == true,
+                    orElse: () => seasons.first,
+                  ),
+            );
+  }
+
+  void selectTournament(int tournamentId, int seasonId) {
+    final tournament = allTournaments.firstWhere(
+      (t) => t['id'] == tournamentId,
+    );
+    if (!sortedSeasons(tournament['season']).any((s) => s['id'] == seasonId)) {
+      throw ArgumentError('Saison gehört nicht zu diesem Turnier');
+    }
+    _explicitSelections[tournamentId] = seasonId;
+    _select(tournament);
+    notifyListeners();
+  }
+
+  List<Map<String, dynamic>> get seasons =>
+      sortedSeasons(selectedTournament?['season']);
+  Map<String, dynamic>? get activeSeason {
+    for (final season in seasons) {
+      if (season['is_active'] == true) return season;
+    }
+    return null;
+  }
+
+  int? get leagueCreationSeasonId =>
+      activeSeason?['is_initialized'] == true
+          ? activeSeason!['id'] as int
+          : null;
   int? get currentTournamentId => selectedTournament?['id'];
   int? get currentSeasonId => selectedSeason?['id'];
-  String get currentTournamentName => selectedTournament?['name'] ?? 'Lade Turniere...';
+  String get currentTournamentName => selectedTournament?['name'] ?? 'Turniere';
+  String get currentSeasonName => selectedSeason?['name'] ?? 'Keine Saison';
+  String get currentSeasonLabel =>
+      '$currentTournamentName – Saison $currentSeasonName';
   String? get currentTournamentLogo => selectedTournament?['image_url'];
-
   bool get isCurrentActive => selectedSeason?['is_active'] == true;
   bool get isCurrentInitialized => selectedSeason?['is_initialized'] == true;
+
+  static String seasonStatus(Map<String, dynamic> season) => [
+    if (season['is_active'] == true)
+      'aktuell · aktiv'
+    else if (season['archived_at'] != null)
+      'archiviert'
+    else
+      'inaktiv',
+    season['is_initialized'] == true ? 'initialisiert' : 'nicht initialisiert',
+  ].join(' · ');
+
+  @override
+  void dispose() {
+    _disposed = true;
+    super.dispose();
+  }
 }

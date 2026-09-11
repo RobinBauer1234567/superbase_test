@@ -1,3 +1,4 @@
+import 'package:premier_league/data_service.dart';
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:premier_league/screens/screenelements/radial_chart.dart';
@@ -15,8 +16,10 @@ import 'package:fl_chart/fl_chart.dart';
 import 'package:premier_league/screens/screenelements/position_pitch.dart';
 class PlayerScreen extends StatefulWidget {
   final int playerId;
+  final int? seasonId;
+  final int? leagueId;
 
-  const PlayerScreen({super.key, required this.playerId});
+  const PlayerScreen({super.key, required this.playerId, this.seasonId, this.leagueId});
 
   @override
   _PlayerScreenState createState() => _PlayerScreenState();
@@ -142,7 +145,9 @@ class _PlayerScreenState extends State<PlayerScreen>
       _errorMessage = '';
     });
 
-    final seasonId = context.read<TournamentViewModel>().currentSeasonId;
+    final seasonId = widget.leagueId != null
+        ? await SupabaseService().fetchLeagueSeasonId(widget.leagueId!)
+        : widget.seasonId ?? context.read<TournamentViewModel>().currentSeasonId;
     if (seasonId == null) {
       if (mounted) {
         setState(() {

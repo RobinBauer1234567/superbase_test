@@ -16,6 +16,14 @@ class LeagueHubScreen extends StatefulWidget {
 class _LeagueHubScreenState extends State<LeagueHubScreen> {
 
   void _showCreateLeagueDialog() {
+    final tournament = context.read<TournamentViewModel>();
+    final creationSeasonId = tournament.leagueCreationSeasonId;
+    if (creationSeasonId == null) {
+      ScaffoldMessenger.of(context).showSnackBar(const SnackBar(
+        content: Text('Für dieses Turnier ist noch keine aktive Saison vollständig initialisiert.')));
+      return;
+    }
+    final creationLabel = '${tournament.currentTournamentName} – Saison ${tournament.activeSeason!['name']}';
     final formKey = GlobalKey<FormState>();
 
     // Form State Variables
@@ -79,6 +87,8 @@ class _LeagueHubScreenState extends State<LeagueHubScreen> {
                           child: Column(
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
+                              Text(creationLabel),
+                              const Text('Neugründung in der aktuellen aktiven Saison.'),
                               _buildSectionHeader("Allgemeines", Icons.info_outline),
                               const SizedBox(height: 16),
                               TextFormField(
@@ -249,13 +259,7 @@ class _LeagueHubScreenState extends State<LeagueHubScreen> {
                               if (formKey.currentState!.validate()) {
                                 formKey.currentState!.save();
                                 final dataManagement = Provider.of<DataManagement>(this.context, listen: false);
-                                final seasonId = context.read<TournamentViewModel>().currentSeasonId;
-                                if (seasonId == null) {
-                                  if (mounted) {
-                                    ScaffoldMessenger.of(this.context).showSnackBar(const SnackBar(content: Text('Keine Saison ausgewählt.')));
-                                  }
-                                  return;
-                                }
+                                final seasonId = creationSeasonId;
                                 try {
                                   // 1. Liga erstellen
                                   final newLeagueId = await dataManagement.supabaseService.createLeague(

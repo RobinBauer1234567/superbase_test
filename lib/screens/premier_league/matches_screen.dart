@@ -13,7 +13,8 @@ import 'package:premier_league/utils/match_time_helper.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 
 class MatchesScreen extends StatefulWidget {
-  const MatchesScreen({super.key});
+  final bool enableRealtime;
+  const MatchesScreen({super.key, this.enableRealtime = true});
 
   @override
   State<MatchesScreen> createState() => _MatchesScreenState();
@@ -39,7 +40,7 @@ class _MatchesScreenState extends State<MatchesScreen> {
 
   Future<void> _initialize() async {
     await _fetchSpiele();
-    _subscribeToChanges();
+    if (mounted && widget.enableRealtime) _subscribeToChanges();
   }
 
   Future<void> _fetchSpiele() async {
@@ -133,8 +134,9 @@ class _MatchesScreenState extends State<MatchesScreen> {
     final seasonId = context.read<TournamentViewModel>().currentSeasonId;
     if (seasonId == null) return;
 
+    if (_spieleChannel != null) Supabase.instance.client.removeChannel(_spieleChannel!);
     _spieleChannel = Supabase.instance.client
-        .channel('public:spiel')
+        .channel('public:spiel:$seasonId')
         .onPostgresChanges(
       event: PostgresChangeEvent.all,
       schema: 'public',

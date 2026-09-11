@@ -7,7 +7,6 @@ import 'package:premier_league/screens/player_screen.dart';
 import 'package:premier_league/screens/screenelements/match_screen/matchrating_screen.dart';
 import 'package:premier_league/utils/color_helper.dart';
 import 'package:premier_league/utils/match_time_helper.dart';
-import 'package:premier_league/viewmodels/tournament_viewmodel.dart';
 import 'package:intl/intl.dart';
 import 'dart:math' as math;
 
@@ -73,8 +72,12 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
           context, listen: false);
       final spielId = currentSpielData['id'];
       final status = currentSpielData['status'];
-      final seasonId = context.watch<TournamentViewModel>().currentSeasonId ?? 0;
-      await dataManagement.updateRatingsForSingleGame(spielId, status, seasonId);
+      final seasonId = currentSpielData['season_id'] as int;
+      final season = await Supabase.instance.client.from('season')
+          .select('is_active').eq('id', seasonId).single();
+      if (season['is_active'] == true) {
+        await dataManagement.updateRatingsForSingleGame(spielId, status, seasonId);
+      }
 
       final updatedSpiel = await Supabase.instance.client
           .from('spiel')
@@ -122,7 +125,6 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
             .from('matchrating')
             .select('*, spieler!inner(*, is_active, season_players!inner(team_id, season_id))')
             .eq('spiel_id', spielId)
-            .eq('spieler.is_active', true)
             .eq('spieler.season_players.season_id', seasonId)
             .filter('spieler.season_players.team_id', 'in', '($heimTeamId, $auswaertsTeamId)');
 
@@ -251,7 +253,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                 Navigator.push(
               context,
               MaterialPageRoute(
-                  builder: (context) => PlayerScreen(playerId: player.id)),
+                  builder: (context) => PlayerScreen(seasonId: currentSpielData['season_id'] as int, playerId: player.id)),
             ),
           );
         },
@@ -683,7 +685,7 @@ class _GameScreenState extends State<GameScreen> with SingleTickerProviderStateM
                                                     context,
                                                     MaterialPageRoute(
                                                       builder: (context) =>
-                                                          PlayerScreen(playerId: playerId),
+                                                          PlayerScreen(seasonId: currentSpielData['season_id'] as int, playerId: playerId),
                                                     ),
                                                   );
                                                 },
