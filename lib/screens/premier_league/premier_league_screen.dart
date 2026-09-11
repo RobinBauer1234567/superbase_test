@@ -13,9 +13,6 @@ class PremierLeagueScreen extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    // Der Premier-League-/Turnier-Screen zeigt nur noch die aktuell gewählte
-    // Competition. Auswahl und Initialisierung von Seasons passieren zentral
-    // im Tournament-View-Tab.
     final vm = context.watch<TournamentViewModel>();
     final screenWidth = MediaQuery.of(context).size.width;
 
@@ -25,8 +22,7 @@ class PremierLeagueScreen extends StatelessWidget {
       length: 3,
       child: Scaffold(
         appBar: AppBar(
-          toolbarHeight: 64,
-          title: Text(vm.currentTournamentName),
+          toolbarHeight: 0,
           bottom: TabBar(
             isScrollable: false,
             tabs: const [
