@@ -8,11 +8,15 @@ Map<String, dynamic> season(
   String name, {
   bool active = false,
   bool initialized = true,
+  bool finished = false,
+  bool archived = false,
 }) => {
   'id': id,
   'name': name,
   'is_active': active,
   'is_initialized': initialized,
+  'finished_at': finished ? '2026-05-31T18:00:00Z' : null,
+  'archived_at': archived ? '2026-06-01T08:00:00Z' : null,
 };
 
 void main() {
@@ -82,6 +86,19 @@ void main() {
       expect(vm.currentSeasonId, 101);
       expect(vm.leagueCreationSeasonId, 102);
       expect(() => vm.selectTournament(17, 999), throwsArgumentError);
+
+      rows = [
+        {
+          'id': 17,
+          'name': 'League',
+          'season': [season(102, '26/27', active: true, finished: true)],
+        },
+      ];
+      await vm.fetchTournaments();
+      expect(vm.isCurrentFinished, true);
+      expect(vm.leagueCreationSeasonId, isNull);
+      expect(TournamentViewModel.seasonStatus(vm.latestSeason!), contains('beendet'));
+
       rows = [
         {'id': 17, 'name': 'League', 'season': <Map<String, dynamic>>[]},
       ];
@@ -91,6 +108,14 @@ void main() {
       vm.dispose();
     },
   );
+
+  test('archived finished season is labelled as archive and finished', () {
+    final status = TournamentViewModel.seasonStatus(
+      season(101, '25/26', active: false, finished: true, archived: true),
+    );
+    expect(status, contains('archiviert'));
+    expect(status, contains('beendet'));
+  });
 
   test(
     'late fetch cannot overwrite newer results and empty tournament clears selection',
