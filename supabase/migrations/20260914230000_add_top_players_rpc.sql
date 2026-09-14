@@ -12,7 +12,7 @@ returns table (
   id bigint,
   name text,
   profilbild_url text,
-  position text,
+  "position" text,
   team_image_url text,
   marktwert bigint,
   total_punkte bigint
