@@ -1,5 +1,6 @@
 // lib/viewmodels/data_viewmodel.dart
 import 'package:premier_league/data_service.dart';
+import 'package:premier_league/services/latest_season_discovery_service.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'dart:math'; // <-- Wichtig für Random()
@@ -7,6 +8,8 @@ import 'dart:math'; // <-- Wichtig für Random()
 class DataManagement {
   final SupabaseClient _supabase = Supabase.instance.client;
   final ApiService apiService = ApiService();
+  final LatestSeasonDiscoveryService seasonDiscoveryService =
+      LatestSeasonDiscoveryService();
   final SupabaseService supabaseService = SupabaseService();
 
 
@@ -67,7 +70,7 @@ class DataManagement {
         // 2. Den Auftrag ausführen
         switch (taskType) {
           case 'CHECK_SEASONS':
-            await apiService.checkSeasons(tId);
+            await seasonDiscoveryService.checkLatestSeason(tId);
             break;
           case 'FETCH_TEAMS':
             await apiService.fetchAndStoreTeams(tId, sId);

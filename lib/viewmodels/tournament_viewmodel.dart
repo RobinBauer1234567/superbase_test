@@ -39,7 +39,7 @@ class TournamentViewModel extends ChangeNotifier {
       if (_disposed || request != _request) return;
       final previousId = currentTournamentId;
       allTournaments =
-          rows.map((t) => {...t, 'season': sortedSeasons(t['season'])}).toList()
+          rows.map((t) => {...t, 'season': managerSeasons(t['season'])}).toList()
             ..sort((a, b) {
               final byName = (a['name'] as String).compareTo(
                 b['name'] as String,
@@ -55,7 +55,7 @@ class TournamentViewModel extends ChangeNotifier {
           (t) => t['id'] == previousId,
           orElse:
               () => allTournaments.firstWhere(
-                (t) => sortedSeasons(
+                (t) => managerSeasons(
                   t['season'],
                 ).any((s) => s['is_active'] == true),
                 orElse: () => allTournaments.first,
@@ -74,17 +74,15 @@ class TournamentViewModel extends ChangeNotifier {
 
   void _select(Map<String, dynamic> tournament) {
     selectedTournament = tournament;
-    final seasons = sortedSeasons(tournament['season']);
+    final seasons = managerSeasons(tournament['season']);
     selectedSeason =
         seasons.isEmpty
             ? null
             : seasons.firstWhere(
               (s) => s['id'] == _explicitSelections[tournament['id']],
-              orElse:
-                  () => seasons.firstWhere(
-                    (s) => s['is_active'] == true,
-                    orElse: () => seasons.first,
-                  ),
+              // Ohne explizite Auswahl ist immer die neueste Saison der Fokus.
+              // Initialisierte ältere Saisons bleiben nur als Archiv auswählbar.
+              orElse: () => seasons.first,
             );
   }
 
@@ -92,7 +90,7 @@ class TournamentViewModel extends ChangeNotifier {
     final tournament = allTournaments.firstWhere(
       (t) => t['id'] == tournamentId,
     );
-    if (!sortedSeasons(tournament['season']).any((s) => s['id'] == seasonId)) {
+    if (!managerSeasons(tournament['season']).any((s) => s['id'] == seasonId)) {
       throw ArgumentError('Saison gehört nicht zu diesem Turnier');
     }
     _explicitSelections[tournamentId] = seasonId;
@@ -101,7 +99,9 @@ class TournamentViewModel extends ChangeNotifier {
   }
 
   List<Map<String, dynamic>> get seasons =>
-      sortedSeasons(selectedTournament?['season']);
+      managerSeasons(selectedTournament?['season']);
+  Map<String, dynamic>? get latestSeason =>
+      seasons.isEmpty ? null : seasons.first;
   Map<String, dynamic>? get activeSeason {
     for (final season in seasons) {
       if (season['is_active'] == true) return season;
@@ -109,10 +109,17 @@ class TournamentViewModel extends ChangeNotifier {
     return null;
   }
 
-  int? get leagueCreationSeasonId =>
-      activeSeason?['is_initialized'] == true
-          ? activeSeason!['id'] as int
-          : null;
+  /// New manager leagues may only be created for the newest season.
+  /// Historical initialized seasons remain readable, but cannot become the
+  /// target of newly created fantasy leagues.
+  int? get leagueCreationSeasonId {
+    final latest = latestSeason;
+    if (latest == null) return null;
+    return latest['is_active'] == true && latest['is_initialized'] == true
+        ? latest['id'] as int
+        : null;
+  }
+
   int? get currentTournamentId => selectedTournament?['id'];
   int? get currentSeasonId => selectedSeason?['id'];
   String get currentTournamentName => selectedTournament?['name'] ?? 'Turniere';
