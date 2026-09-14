@@ -1,5 +1,5 @@
-// lib/screens/premier_league/matches_screen.dart
 import 'dart:async';
+
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
 import 'package:premier_league/screens/spiel_screen.dart';
@@ -8,8 +8,7 @@ import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:premier_league/screens/team_screen.dart';
 import 'package:premier_league/viewmodels/tournament_viewmodel.dart';
 import 'package:premier_league/utils/match_time_helper.dart';
-
-// neu: scrollable_positioned_list
+import 'package:premier_league/services/app_data_repository.dart';
 import 'package:scrollable_positioned_list/scrollable_positioned_list.dart';
 
 class MatchesScreen extends StatefulWidget {
@@ -21,136 +20,158 @@ class MatchesScreen extends StatefulWidget {
 }
 
 class _MatchesScreenState extends State<MatchesScreen> {
+  final AppDataRepository _repository = AppDataRepository.instance;
+
   bool _isLoading = true;
   Map<int, List<dynamic>> _spieleProSpieltag = {};
   RealtimeChannel? _spieleChannel;
 
-  // ScrollablePositionedList controller / listener
   final ItemScrollController _itemScrollController = ItemScrollController();
-  final ItemPositionsListener _itemPositionsListener = ItemPositionsListener.create();
+  final ItemPositionsListener _itemPositionsListener =
+      ItemPositionsListener.create();
 
   int? _aktuellerSpieltag;
+  int? _loadedSeasonId;
   bool _hasInitialAutoScroll = false;
 
   @override
   void didChangeDependencies() {
     super.didChangeDependencies();
-    _initialize();
+    final seasonId = context.read<TournamentViewModel>().currentSeasonId;
+    if (seasonId == null || seasonId == _loadedSeasonId) return;
+
+    _loadedSeasonId = seasonId;
+    _hasInitialAutoScroll = false;
+    _initialize(seasonId);
   }
 
-  Future<void> _initialize() async {
-    await _fetchSpiele();
-    if (mounted && widget.enableRealtime) _subscribeToChanges();
+  Future<void> _initialize(int seasonId) async {
+    await _fetchSpiele(seasonId: seasonId);
+    if (!mounted || _loadedSeasonId != seasonId) return;
+    if (widget.enableRealtime) _subscribeToChanges(seasonId);
   }
 
-  Future<void> _fetchSpiele() async {
+  Future<void> _fetchSpiele({
+    int? seasonId,
+    bool forceRefresh = false,
+  }) async {
     if (!mounted) return;
+    final targetSeasonId =
+        seasonId ?? context.read<TournamentViewModel>().currentSeasonId;
+    if (targetSeasonId == null) {
+      setState(() => _isLoading = false);
+      return;
+    }
+
     if (_spieleProSpieltag.isEmpty) {
       setState(() => _isLoading = true);
     }
 
-    final seasonId = context.read<TournamentViewModel>().currentSeasonId;
-    if (seasonId == null) {
-      if (mounted) setState(() => _isLoading = false);
-      return;
-    }
-    final supabase = Supabase.instance.client;
-
     try {
-      final data = await supabase
-          .from('spiel')
-          .select(
-        '*, heimteam:team!spiel_heimteam_id_fkey(id, name, image_url), auswaertsteam:team!spiel_auswärtsteam_id_fkey(id, name, image_url)',
-      )
-          .eq('season_id', seasonId)
-          .order('datum', ascending: true);
+      final data = await _repository.getMatches(
+        targetSeasonId,
+        forceRefresh: forceRefresh,
+      );
+      if (!mounted || _loadedSeasonId != targetSeasonId) return;
 
-      _updateStateWithData(List<Map<String, dynamic>>.from(data));
+      _updateStateWithData(data);
 
       if (!_hasInitialAutoScroll) {
-        // Nur beim initialen Laden einmalig auf den aktuellen Spieltag scrollen.
         WidgetsBinding.instance.addPostFrameCallback((_) {
-          _scrollToAktuellenSpieltag();
+          if (mounted && _loadedSeasonId == targetSeasonId) {
+            _scrollToAktuellenSpieltag();
+          }
         });
         _hasInitialAutoScroll = true;
       }
     } catch (e) {
-      print("Fehler beim Laden der Spiele: $e");
+      debugPrint('Fehler beim Laden der Spiele: $e');
     } finally {
-      if (mounted) setState(() => _isLoading = false);
+      if (mounted && _loadedSeasonId == targetSeasonId) {
+        setState(() => _isLoading = false);
+      }
     }
   }
 
   void _updateStateWithData(List<Map<String, dynamic>> data) {
     final Map<int, List<dynamic>> groupedSpiele = {};
-    DateTime now = DateTime.now().toUtc();
+    final now = DateTime.now().toUtc();
     int? currentRound;
 
-    for (var spiel in data) {
-      final round = spiel['round'] as int;
+    for (final spiel in data) {
+      final round = spiel['round'];
+      if (round is! int) continue;
       groupedSpiele.putIfAbsent(round, () => []).add(spiel);
 
-      try {
-        final matchDate = MatchTimeHelper.parseToUtc(spiel['datum']);
-        if (matchDate != null && matchDate.isAfter(now) && currentRound == null) {
-          currentRound = round;
-        }
-      } catch (_) {
-        // ignore parse error
+      final matchDate = MatchTimeHelper.parseToUtc(spiel['datum']);
+      if (matchDate != null && matchDate.isAfter(now) && currentRound == null) {
+        currentRound = round;
       }
     }
 
-    _aktuellerSpieltag = currentRound ?? (groupedSpiele.keys.isNotEmpty ? groupedSpiele.keys.last : null);
+    final sortedRounds = groupedSpiele.keys.toList()..sort();
+    _aktuellerSpieltag =
+        currentRound ?? (sortedRounds.isNotEmpty ? sortedRounds.last : null);
 
     if (mounted) {
-      setState(() {
-        _spieleProSpieltag = groupedSpiele;
-      });
+      setState(() => _spieleProSpieltag = groupedSpiele);
     }
   }
 
   Future<void> _scrollToAktuellenSpieltag() async {
-    if (_aktuellerSpieltag == null) return;
-    if (_spieleProSpieltag.isEmpty) return;
+    if (_aktuellerSpieltag == null || _spieleProSpieltag.isEmpty) return;
 
     final spieltage = _spieleProSpieltag.keys.toList()..sort();
     final index = spieltage.indexOf(_aktuellerSpieltag!);
     if (index == -1) return;
 
-    // scrollable_positioned_list kann direkt zu einem Index scrollen — zuverlässig auch bei lazy-build
     try {
       _itemScrollController.scrollTo(
         index: index,
         duration: const Duration(milliseconds: 500),
         curve: Curves.easeOutCubic,
       );
-      print("✅ Scroll attempt to index $index (Spieltag $_aktuellerSpieltag)");
     } catch (e) {
-      print("⚠️ Fehler beim scrollTo: $e");
+      debugPrint('Fehler beim scrollTo: $e');
     }
   }
 
-  void _subscribeToChanges() {
-    final seasonId = context.read<TournamentViewModel>().currentSeasonId;
-    if (seasonId == null) return;
+  void _subscribeToChanges(int seasonId) {
+    if (_spieleChannel != null) {
+      Supabase.instance.client.removeChannel(_spieleChannel!);
+    }
 
-    if (_spieleChannel != null) Supabase.instance.client.removeChannel(_spieleChannel!);
     _spieleChannel = Supabase.instance.client
         .channel('public:spiel:$seasonId')
         .onPostgresChanges(
-      event: PostgresChangeEvent.all,
-      schema: 'public',
-      table: 'spiel',
-      filter: PostgresChangeFilter(
-        type: PostgresChangeFilterType.eq,
-        column: 'season_id',
-        value: seasonId,
-      ),
-      callback: (payload) {
-        print("🔁 Echtzeit-Update erhalten → Spiele neu laden...");
-        _fetchSpiele();
-      },
-    )
+          event: PostgresChangeEvent.all,
+          schema: 'public',
+          table: 'spiel',
+          filter: PostgresChangeFilter(
+            type: PostgresChangeFilterType.eq,
+            column: 'season_id',
+            value: seasonId,
+          ),
+          callback: (payload) {
+            if (!mounted || _loadedSeasonId != seasonId) return;
+
+            if (payload.eventType == PostgresChangeEvent.delete) {
+              // Deletes are rare and the delete payload does not contain the joined
+              // team data. A forced refresh is still cheaper than reloading on every
+              // normal score/status update.
+              _fetchSpiele(seasonId: seasonId, forceRefresh: true);
+              return;
+            }
+
+            final record = Map<String, dynamic>.from(payload.newRecord);
+            final updated = _repository.applyMatchChange(seasonId, record);
+            if (updated != null) {
+              _updateStateWithData(updated);
+            } else {
+              _fetchSpiele(seasonId: seasonId, forceRefresh: true);
+            }
+          },
+        )
         .subscribe();
   }
 
@@ -159,48 +180,54 @@ class _MatchesScreenState extends State<MatchesScreen> {
     if (_spieleChannel != null) {
       Supabase.instance.client.removeChannel(_spieleChannel!);
     }
-    // itemPositionsListener braucht kein dispose
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
+    if (_isLoading && _spieleProSpieltag.isEmpty) {
       return const Center(child: CircularProgressIndicator());
     }
 
     final spieltage = _spieleProSpieltag.keys.toList()..sort();
 
-    return ScrollablePositionedList.builder(
-      itemScrollController: _itemScrollController,
-      itemPositionsListener: _itemPositionsListener,
-      itemCount: spieltage.length,
-      itemBuilder: (context, index) {
-        final spieltagNummer = spieltage[index];
-        final spieleDesSpieltags = _spieleProSpieltag[spieltagNummer]!;
-        return Column(
-
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            Padding(
-              padding:
-              const EdgeInsets.symmetric(horizontal: 16.0, vertical: 12.0),
-              child: Text(
-                'SPIELTAG $spieltagNummer',
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                  color: Colors.black54,
+    return RefreshIndicator(
+      onRefresh: () => _fetchSpiele(forceRefresh: true),
+      child: ScrollablePositionedList.builder(
+        itemScrollController: _itemScrollController,
+        itemPositionsListener: _itemPositionsListener,
+        itemCount: spieltage.length,
+        itemBuilder: (context, index) {
+          final spieltagNummer = spieltage[index];
+          final spieleDesSpieltags = _spieleProSpieltag[spieltagNummer]!;
+          return Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              Padding(
+                padding: const EdgeInsets.symmetric(
+                  horizontal: 16.0,
+                  vertical: 12.0,
+                ),
+                child: Text(
+                  'SPIELTAG $spieltagNummer',
+                  style: const TextStyle(
+                    fontSize: 18,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.black54,
+                  ),
                 ),
               ),
-            ),
-            ...spieleDesSpieltags
-                .map((spiel) => MatchCard(spiel: spiel, onRefresh: _fetchSpiele,))
-                .toList(),
-            const Divider(height: 20, thickness: 1),
-          ],
-        );
-      },
+              ...spieleDesSpieltags.map(
+                (spiel) => MatchCard(
+                  spiel: spiel,
+                  onRefresh: () => _fetchSpiele(forceRefresh: true),
+                ),
+              ),
+              const Divider(height: 20, thickness: 1),
+            ],
+          );
+        },
+      ),
     );
   }
 }
@@ -212,13 +239,13 @@ class MatchCard extends StatelessWidget {
 
   Widget _buildTeamColumn(BuildContext context, dynamic teamData) {
     if (teamData == null || teamData['id'] == null) {
-      return Expanded(
+      return const Expanded(
         child: Column(
           mainAxisSize: MainAxisSize.min,
-          children: const [
+          children: [
             Icon(Icons.shield, color: Colors.grey, size: 40),
             SizedBox(height: 6),
-            Text("...", style: TextStyle(fontSize: 12)),
+            Text('...', style: TextStyle(fontSize: 12)),
           ],
         ),
       );
@@ -226,7 +253,7 @@ class MatchCard extends StatelessWidget {
 
     return Expanded(
       child: InkWell(
-        onTap: ()  {
+        onTap: () {
           Navigator.push(
             context,
             MaterialPageRoute(
@@ -237,20 +264,22 @@ class MatchCard extends StatelessWidget {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Logo bleibt 40x40
             Image.network(
               teamData['image_url'] ?? '',
               width: 40,
               height: 40,
-              errorBuilder: (c, e, s) => const Icon(Icons.shield, size: 40),
+              errorBuilder: (c, e, s) =>
+                  const Icon(Icons.shield, size: 40),
               fit: BoxFit.contain,
             ),
             const SizedBox(height: 6),
-            // kleinere Schrift, damit Karte kompakt bleibt
             Text(
               teamData['name'] ?? 'Unbekannt',
               textAlign: TextAlign.center,
-              style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+              style: const TextStyle(
+                fontSize: 12,
+                fontWeight: FontWeight.w600,
+              ),
               maxLines: 1,
               overflow: TextOverflow.ellipsis,
             ),
@@ -267,46 +296,41 @@ class MatchCard extends StatelessWidget {
     final ergebnis = spiel['ergebnis'] ?? '- : -';
     final status = (spiel['status'] ?? 'unbekannt') as String;
 
-    final isFinished = status.toLowerCase() == 'finished' ||
-        status.toLowerCase() == 'beendet' ||
-        status.toLowerCase() == 'final';
-    final isNotStarted = status.toLowerCase() == 'not started' ||
-        status.toLowerCase() == 'nicht gestartet' ||
-        status.toLowerCase() == 'postponed';
+    final normalizedStatus = status.toLowerCase();
+    final isFinished = normalizedStatus == 'finished' ||
+        normalizedStatus == 'beendet' ||
+        normalizedStatus == 'final';
+    final isNotStarted = normalizedStatus == 'not started' ||
+        normalizedStatus == 'nicht gestartet' ||
+        normalizedStatus == 'postponed';
 
-    DateTime datum;
-    try {
-      datum = MatchTimeHelper.parseToLocal(spiel['datum']) ?? DateTime.now();
-    } catch (_) {
-      datum = DateTime.now();
-    }
+    final datum = MatchTimeHelper.parseToLocal(spiel['datum']) ?? DateTime.now();
     final uhrzeit = DateFormat('HH:mm').format(datum);
     final datumsString = DateFormat('dd.MM.yyyy').format(datum);
 
     return Card(
-      margin: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 4.0), // weniger vertical margin
+      margin: const EdgeInsets.symmetric(horizontal: 12.0, vertical: 4.0),
       elevation: 1.5,
       child: Padding(
-        padding: const EdgeInsets.symmetric(horizontal: 10.0, vertical: 8.0), // weniger padding
+        padding: const EdgeInsets.symmetric(horizontal: 10.0, vertical: 8.0),
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            // Datum klein oben links, platzsparend
-            Container(
+            SizedBox(
               width: double.infinity,
-              padding: const EdgeInsets.only(bottom: 6.0),
-              child: Text(
-                datumsString,
-                textAlign: TextAlign.left,
-                style: const TextStyle(fontSize: 11, color: Colors.grey),
+              child: Padding(
+                padding: const EdgeInsets.only(bottom: 6.0),
+                child: Text(
+                  datumsString,
+                  textAlign: TextAlign.left,
+                  style: const TextStyle(fontSize: 11, color: Colors.grey),
+                ),
               ),
             ),
-            // Hauptinhalt in einer einzigen Reihe — kompakter
             Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
                 _buildTeamColumn(context, heimTeam),
-                // Score-Block: schmaler und kleinere Schrift als vorher
                 InkWell(
                   onTap: () {
                     Navigator.push(
@@ -323,12 +347,20 @@ class MatchCard extends StatelessWidget {
                       children: [
                         Text(
                           isNotStarted ? '- : -' : ergebnis,
-                          style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+                          style: const TextStyle(
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                          ),
                         ),
                         const SizedBox(height: 4),
                         Text(
-                          isFinished ? 'Endstand' : (isNotStarted ? uhrzeit : status),
-                          style: const TextStyle(fontSize: 12, color: Colors.grey),
+                          isFinished
+                              ? 'Endstand'
+                              : (isNotStarted ? uhrzeit : status),
+                          style: const TextStyle(
+                            fontSize: 12,
+                            color: Colors.grey,
+                          ),
                         ),
                       ],
                     ),
