@@ -74,8 +74,11 @@ double getAggregateRatingFactor(
 /// Converts a cumulative score into the equivalent single-match rating used by
 /// the shared color scale.
 ///
-/// Formula:
-///   equivalent = (totalPoints / games) * decayBase ^ ln(games)
+/// The aggregate comparison scale is:
+///   games * 250 * decayBase ^ ln(games)
+///
+/// Therefore the equivalent value on the normal 0..250 color scale is:
+///   equivalent = (totalPoints / games) / decayBase ^ ln(games)
 ///
 /// For one game the factor is exactly 1, so the color is identical to the
 /// single-match color for the same score.
@@ -86,13 +89,12 @@ double getAggregateEquivalentRating(
 ) {
   final safeGameCount = math.max(1, gameCount);
   final factor = getAggregateRatingFactor(safeGameCount, decayBase);
-  return (totalPoints.toDouble() / safeGameCount) * factor;
+  return (totalPoints.toDouble() / safeGameCount) / factor;
 }
 
-/// Keeps displaying the cumulative score while producing the same color as
-/// getAggregateEquivalentRating(..., 250). This lets existing widgets keep
-/// using getColorForRating(rawTotal, maxValue) without changing the number
-/// shown to the user.
+/// Keeps displaying the cumulative score while applying exactly the same color
+/// function as a single match. The former fixed Top-Team factors are replaced
+/// with decayBase ^ ln(games).
 int getAggregateRatingMaxValue(
   int gameCount,
   double decayBase, {
@@ -100,6 +102,6 @@ int getAggregateRatingMaxValue(
 }) {
   final safeGameCount = math.max(1, gameCount);
   final factor = getAggregateRatingFactor(safeGameCount, decayBase);
-  final maxValue = (safeGameCount * singleMatchMax) / factor;
+  final maxValue = safeGameCount * singleMatchMax * factor;
   return math.max(1, maxValue.round());
 }
