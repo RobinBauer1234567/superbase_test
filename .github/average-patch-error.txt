@@ -1,1 +1,0 @@
-bench avatar average setting: expected 1 occurrence(s), found 2

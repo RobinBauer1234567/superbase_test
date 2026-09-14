@@ -51,7 +51,6 @@ void main() {
     });
   });
 
-
   test('season-wide round count is independent of player appearances', () {
     const roundCount = 4;
     const playerAppearances = 1;
@@ -59,5 +58,40 @@ void main() {
     final appearanceMax = getAggregateRatingMaxValue(playerAppearances, 0.8);
     expect(seasonMax, isNot(appearanceMax));
     expect(seasonMax, greaterThan(appearanceMax));
+  });
+
+  group('average rating color scaling', () {
+    test(
+      'average points use total points divided by analytics appearances',
+      () {
+        expect(getAveragePoints(500, 4), closeTo(125.0, 1e-12));
+        expect(getAveragePoints(500, 0), 0);
+      },
+    );
+
+    test('one appearance keeps the normal 250 maximum', () {
+      expect(getAverageRatingFactor(1, 0.85), closeTo(1.0, 1e-12));
+      expect(getAverageRatingMaxValue(1, 0.85), singleMatchRatingMax);
+    });
+
+    test('average color maximum decays with more appearances', () {
+      final max1 = getAverageRatingMaxValue(1, 0.85);
+      final max4 = getAverageRatingMaxValue(4, 0.85);
+      final max10 = getAverageRatingMaxValue(10, 0.85);
+
+      expect(max4, lessThan(max1));
+      expect(max10, lessThan(max4));
+      expect(
+        max4,
+        (singleMatchRatingMax * getAverageRatingFactor(4, 0.85)).round(),
+      );
+    });
+
+    test('invalid average decay base falls back to 0.85', () {
+      expect(
+        getAverageRatingFactor(5, 2.0),
+        closeTo(getAverageRatingFactor(5, 0.85), 1e-12),
+      );
+    });
   });
 }
