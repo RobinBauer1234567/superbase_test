@@ -500,6 +500,21 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
     return sum;
   }
 
+  double _getStartingElevenEquivalentRating() {
+    final players = _fieldPlayers.where((p) => p.id > 0).toList();
+    if (players.isEmpty) return 0;
+
+    final equivalentTotal = players.fold<double>(0, (sum, player) {
+      return sum +
+          getAggregateEquivalentRating(
+            player.totalSeasonPoints,
+            _ratedRoundCount,
+            _ratingColorDecayBase,
+          );
+    });
+    return equivalentTotal / players.length;
+  }
+
   int _getStartingElevenMarketValue() {
     int sum = 0;
     for (var p in _fieldPlayers) {
@@ -793,10 +808,17 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
     final bool showOverallPoints = phase == MatchdayPhase.before;
     final int displayedPoints =
         showOverallPoints ? _overallTeamPoints : _matchdayPoints;
-    final Color pointsColor =
-        showOverallPoints
-            ? Theme.of(context).primaryColor
-            : getColorForRating(displayedPoints, 2500);
+    final Color pointsColor;
+    if (!showOverallPoints) {
+      pointsColor = getColorForRating(displayedPoints, 2500);
+    } else if (_selectedDisplayMode == AvatarDisplayMode.seasonTotal) {
+      pointsColor = getColorForRating(
+        _getStartingElevenEquivalentRating(),
+        singleMatchRatingMax,
+      );
+    } else {
+      pointsColor = Theme.of(context).primaryColor;
+    }
     final String phaseLabel = switch (phase) {
       MatchdayPhase.before => 'nicht gestartet',
       MatchdayPhase.inProgress => 'läuft',

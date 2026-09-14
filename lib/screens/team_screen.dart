@@ -241,7 +241,12 @@ class _TeamScreenState extends State<TeamScreen> with SingleTickerProviderStateM
       );
 
   Widget _buildCollapsedTeamBar() {
-    final maxTotalScore = getAggregateRatingMaxValue(_ratedRoundCount, _ratingColorDecayBase);
+    final playerAggregateMax = getAggregateRatingMaxValue(
+      _ratedRoundCount,
+      _ratingColorDecayBase,
+    );
+    final squadPlayerCount = _topPlayers.isEmpty ? 1 : _topPlayers.length;
+    final maxTotalScore = playerAggregateMax * squadPlayerCount;
     final teamScore = _totalSquadRating;
     return SizedBox(
       height: kToolbarHeight,
