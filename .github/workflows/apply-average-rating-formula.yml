@@ -1,0 +1,489 @@
+name: Apply average rating formula
+
+on:
+  push:
+    branches:
+      - fix/unify-rating-colors
+    paths:
+      - .github/trigger-average-rating-patch
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/unify-rating-colors
+          fetch-depth: 0
+
+      - name: Apply average points formula
+        shell: bash
+        run: |
+          python3 - <<'PY'
+          from pathlib import Path
+
+          def replace(text, old, new, *, count=None, label='replacement'):
+              actual = text.count(old)
+              if count is not None and actual != count:
+                  raise SystemExit(f'{label}: expected {count} occurrence(s), found {actual}')
+              if actual == 0:
+                  raise SystemExit(f'{label}: target not found')
+              return text.replace(old, new)
+
+          # --- color_helper.dart ---
+          p = Path('lib/utils/color_helper.dart')
+          text = p.read_text()
+          text = replace(
+              text,
+              'const double defaultRatingColorDecayBase = 0.8;\n',
+              'const double defaultRatingColorDecayBase = 0.8;\nconst double defaultAverageRatingColorDecayBase = 0.85;\n',
+              count=1,
+              label='average default constant',
+          )
+          marker = 'Future<int> fetchRatedSeasonRoundCount(\n'
+          average_fetch = '''Future<double> fetchAverageRatingColorDecayBase(SupabaseClient client) async {
+            try {
+              final settings = await client
+                  .from('game_settings')
+                  .select('average_rating_color_decay_base')
+                  .eq('id', 1)
+                  .maybeSingle();
+              final rawValue = settings?['average_rating_color_decay_base'];
+              final value = rawValue is num
+                  ? rawValue.toDouble()
+                  : double.tryParse(rawValue?.toString() ?? '');
+              if (value != null && value > 0 && value <= 1) return value;
+            } catch (_) {
+              // Use the safe default below.
+            }
+            return defaultAverageRatingColorDecayBase;
+          }
+
+          '''
+          text = replace(text, marker, average_fetch + marker, count=1, label='average setting loader')
+          text += '''
+
+          double getAveragePoints(num totalPoints, int appearanceCount) {
+            if (appearanceCount <= 0) return 0;
+            return totalPoints.toDouble() / appearanceCount;
+          }
+
+          double getAverageRatingFactor(
+            int appearanceCount,
+            double decayBase,
+          ) {
+            final safeAppearanceCount = math.max(1, appearanceCount);
+            final safeDecayBase =
+                decayBase > 0 && decayBase <= 1
+                    ? decayBase
+                    : defaultAverageRatingColorDecayBase;
+
+            return math
+                .pow(safeDecayBase, math.log(safeAppearanceCount.toDouble()))
+                .toDouble();
+          }
+
+          /// Maximum of the color scale for displayed season-average points.
+          ///
+          /// average = total season points / spieler_analytics.anzahl_spiele
+          /// max = singleMatchMax * decayBase ^ ln(anzahl_spiele)
+          int getAverageRatingMaxValue(
+            int appearanceCount,
+            double decayBase, {
+            int singleMatchMax = singleMatchRatingMax,
+          }) {
+            final factor = getAverageRatingFactor(appearanceCount, decayBase);
+            return math.max(1, (singleMatchMax * factor).round());
+          }
+          '''
+          p.write_text(text)
+
+          # --- formations.dart / PlayerAvatar ---
+          p = Path('lib/screens/screenelements/match_screen/formations.dart')
+          text = p.read_text()
+          text = replace(
+              text,
+              '  final double ratingColorDecayBase;\n',
+              '  final double ratingColorDecayBase;\n  final double averageRatingColorDecayBase;\n',
+              count=2,
+              label='average decay fields',
+          )
+          text = replace(
+              text,
+              '    this.ratingColorDecayBase = defaultRatingColorDecayBase,\n',
+              '    this.ratingColorDecayBase = defaultRatingColorDecayBase,\n    this.averageRatingColorDecayBase = defaultAverageRatingColorDecayBase,\n',
+              count=2,
+              label='average decay constructor defaults',
+          )
+          text = replace(
+              text,
+              '''      case AvatarDisplayMode.seasonAverage:
+        int avg = player.matchCount > 0 ? (player.totalSeasonPoints / player.matchCount).round() : 0;
+        return avg.toString();''',
+              '''      case AvatarDisplayMode.seasonAverage:
+        return getAveragePoints(
+          player.totalSeasonPoints,
+          player.matchCount,
+        ).round().toString();''',
+              count=1,
+              label='average display value',
+          )
+          text = replace(
+              text,
+              '      case AvatarDisplayMode.seasonAverage: return player.matchCount > 0 ? (player.totalSeasonPoints / player.matchCount).round() : 0;',
+              '''      case AvatarDisplayMode.seasonAverage:
+        return getAveragePoints(
+          player.totalSeasonPoints,
+          player.matchCount,
+        ).round();''',
+              count=1,
+              label='average color value',
+          )
+          text = replace(
+              text,
+              '''      case AvatarDisplayMode.matchday:
+      case AvatarDisplayMode.seasonAverage:
+        return singleMatchRatingMax;''',
+              '''      case AvatarDisplayMode.matchday:
+        return singleMatchRatingMax;
+      case AvatarDisplayMode.seasonAverage:
+        return getAverageRatingMaxValue(
+          player.matchCount,
+          averageRatingColorDecayBase,
+        );''',
+              count=1,
+              label='average color max',
+          )
+          text = replace(
+              text,
+              '                                  ratingColorDecayBase: widget.ratingColorDecayBase,\n',
+              '                                  ratingColorDecayBase: widget.ratingColorDecayBase,\n                                  averageRatingColorDecayBase: widget.averageRatingColorDecayBase,\n',
+              count=1,
+              label='bench avatar average setting',
+          )
+          text = replace(
+              text,
+              '                                          ratingColorDecayBase: widget.ratingColorDecayBase,\n',
+              '                                          ratingColorDecayBase: widget.ratingColorDecayBase,\n                                          averageRatingColorDecayBase: widget.averageRatingColorDecayBase,\n',
+              count=1,
+              label='drag feedback average setting',
+          )
+          text = replace(
+              text,
+              '                  ratingColorDecayBase: widget.ratingColorDecayBase,\n',
+              '                  ratingColorDecayBase: widget.ratingColorDecayBase,\n                  averageRatingColorDecayBase: widget.averageRatingColorDecayBase,\n',
+              count=1,
+              label='field avatar average setting',
+          )
+          text = replace(
+              text,
+              '                      ratingColorDecayBase: widget.ratingColorDecayBase,\n',
+              '                      ratingColorDecayBase: widget.ratingColorDecayBase,\n                      averageRatingColorDecayBase: widget.averageRatingColorDecayBase,\n',
+              count=1,
+              label='drag target average setting',
+          )
+          text = replace(
+              text,
+              '                              ratingColorDecayBase: widget.ratingColorDecayBase,\n',
+              '                              ratingColorDecayBase: widget.ratingColorDecayBase,\n                              averageRatingColorDecayBase: widget.averageRatingColorDecayBase,\n',
+              count=1,
+              label='second drag feedback average setting',
+          )
+          p.write_text(text)
+
+          # --- league_team_screen.dart ---
+          p = Path('lib/screens/leagues/league_team_screen.dart')
+          text = p.read_text()
+          text = replace(
+              text,
+              '  double _ratingColorDecayBase = defaultRatingColorDecayBase;\n  int _ratedRoundCount = 1;\n',
+              '  double _ratingColorDecayBase = defaultRatingColorDecayBase;\n  double _averageRatingColorDecayBase = defaultAverageRatingColorDecayBase;\n  int _ratedRoundCount = 1;\n',
+              count=1,
+              label='league team average state',
+          )
+          text = replace(
+              text,
+              '''    _ratingColorDecayBase = await fetchRatingColorDecayBase(
+      dataManagement.supabaseService.supabase,
+    );
+    _ratedRoundCount = await fetchRatedSeasonRoundCount(''',
+              '''    _ratingColorDecayBase = await fetchRatingColorDecayBase(
+      dataManagement.supabaseService.supabase,
+    );
+    _averageRatingColorDecayBase = await fetchAverageRatingColorDecayBase(
+      dataManagement.supabaseService.supabase,
+    );
+    _ratedRoundCount = await fetchRatedSeasonRoundCount(''',
+              count=1,
+              label='league team average setting load',
+          )
+          text = replace(
+              text,
+              '''  int _getStartingElevenAveragePoints() {
+    int sum = 0;
+    for (var p in _fieldPlayers) {
+      if (p.id > 0 && p.matchCount > 0) {
+        sum += (p.totalSeasonPoints / p.matchCount).round();
+      }
+    }
+    return sum;
+  }
+''',
+              '''  int _getStartingElevenAveragePoints() {
+    int sum = 0;
+    for (var p in _fieldPlayers) {
+      if (p.id > 0) {
+        sum += getAveragePoints(p.totalSeasonPoints, p.matchCount).round();
+      }
+    }
+    return sum;
+  }
+
+  int _getStartingElevenAverageMaxPoints() {
+    int sum = 0;
+    for (var p in _fieldPlayers) {
+      if (p.id > 0) {
+        sum += getAverageRatingMaxValue(
+          p.matchCount,
+          _averageRatingColorDecayBase,
+        );
+      }
+    }
+    return sum > 0 ? sum : 1;
+  }
+''',
+              count=1,
+              label='starting eleven average helpers',
+          )
+          text = replace(
+              text,
+              '''    } else if (_selectedDisplayMode == AvatarDisplayMode.seasonTotal) {
+      pointsColor = getColorForRating(
+        _getStartingElevenEquivalentRating(),
+        singleMatchRatingMax,
+      );
+    } else {
+      pointsColor = Theme.of(context).primaryColor;
+    }''',
+              '''    } else if (_selectedDisplayMode == AvatarDisplayMode.seasonTotal) {
+      pointsColor = getColorForRating(
+        _getStartingElevenEquivalentRating(),
+        singleMatchRatingMax,
+      );
+    } else if (_selectedDisplayMode == AvatarDisplayMode.seasonAverage) {
+      pointsColor = getColorForRating(
+        _getStartingElevenAveragePoints(),
+        _getStartingElevenAverageMaxPoints(),
+      );
+    } else {
+      pointsColor = Theme.of(context).primaryColor;
+    }''',
+              count=1,
+              label='starting eleven average color',
+          )
+          text = replace(
+              text,
+              '                  ratingColorDecayBase: _ratingColorDecayBase,\n',
+              '                  ratingColorDecayBase: _ratingColorDecayBase,\n                  averageRatingColorDecayBase: _averageRatingColorDecayBase,\n',
+              count=1,
+              label='dialog avatar average setting',
+          )
+          text = replace(
+              text,
+              '                  ratingColorDecayBase: _ratingColorDecayBase,\n                    displayMode:',
+              '                  ratingColorDecayBase: _ratingColorDecayBase,\n                    averageRatingColorDecayBase: _averageRatingColorDecayBase,\n                    displayMode:',
+              count=1,
+              label='formation average setting',
+          )
+          p.write_text(text)
+
+          # --- player_screen.dart ---
+          p = Path('lib/screens/player_screen.dart')
+          text = p.read_text()
+          text = replace(
+              text,
+              '  double _ratingColorDecayBase = defaultRatingColorDecayBase;\n  int _ratedRoundCount = 1;\n',
+              '  double _ratingColorDecayBase = defaultRatingColorDecayBase;\n  double _averageRatingColorDecayBase = defaultAverageRatingColorDecayBase;\n  int _ratedRoundCount = 1;\n',
+              count=1,
+              label='player screen average state',
+          )
+          text = replace(
+              text,
+              '''      final ratingColorDecayBase = await fetchRatingColorDecayBase(supabase);
+      final ratedRoundCount = await fetchRatedSeasonRoundCount(supabase, seasonId);''',
+              '''      final ratingColorDecayBase = await fetchRatingColorDecayBase(supabase);
+      final averageRatingColorDecayBase =
+          await fetchAverageRatingColorDecayBase(supabase);
+      final ratedRoundCount = await fetchRatedSeasonRoundCount(supabase, seasonId);''',
+              count=1,
+              label='player screen average setting load',
+          )
+          text = replace(
+              text,
+              "      int dbTotalPoints = (dbStats['punkte'] as num?)?.toInt() ?? (dbStats['total_points'] as num?)?.toInt() ?? 0;",
+              "      final bool hasDbTotalPoints = dbStats.containsKey('gesamtpunkte') ||\n          dbStats.containsKey('punkte') ||\n          dbStats.containsKey('total_points');\n      int dbTotalPoints = (dbStats['gesamtpunkte'] as num?)?.toInt() ??\n          (dbStats['punkte'] as num?)?.toInt() ??\n          (dbStats['total_points'] as num?)?.toInt() ??\n          0;",
+              count=1,
+              label='player screen total points key',
+          )
+          text = replace(
+              text,
+              '      int tempAppearances = actualRatings.length;\n',
+              '',
+              count=1,
+              label='remove rating-count fallback',
+          )
+          text = replace(
+              text,
+              '''      int finalTotalPoints = dbTotalPoints > 0 ? dbTotalPoints : aggregatedPoints;
+      int finalAppearances = anzahlSpiele > 0 ? anzahlSpiele : tempAppearances;''',
+              '''      int finalTotalPoints = hasDbTotalPoints ? dbTotalPoints : aggregatedPoints;
+      int finalAppearances = anzahlSpiele;''',
+              count=1,
+              label='strict analytics appearance source',
+          )
+          text = replace(
+              text,
+              '        _ratingColorDecayBase = ratingColorDecayBase;\n        _ratedRoundCount = ratedRoundCount;\n',
+              '        _ratingColorDecayBase = ratingColorDecayBase;\n        _averageRatingColorDecayBase = averageRatingColorDecayBase;\n        _ratedRoundCount = ratedRoundCount;\n',
+              count=1,
+              label='store player average setting',
+          )
+          text = replace(
+              text,
+              '''                    // 2. Durchschnitt (Punkte pro einzelnem Spiel, ca. 250 als theoretisches Maximum)
+                    final Color colorAvg = getColorForRating(averagePlayerRating.round(), 250);''',
+              '''                    // 2. Durchschnitt: Gesamtpunkte / spieler_analytics.anzahl_spiele.
+                    final int averageColorMax = getAverageRatingMaxValue(
+                      totalAppearances,
+                      _averageRatingColorDecayBase,
+                    );
+                    final Color colorAvg = getColorForRating(
+                      averagePlayerRating.round(),
+                      averageColorMax,
+                    );''',
+              count=1,
+              label='player average color',
+          )
+          p.write_text(text)
+
+          # --- migration history: align previous live version and add new live version ---
+          old = Path('supabase/migrations/20260914213000_rating_color_decay_setting.sql')
+          aligned = Path('supabase/migrations/20260914193519_rating_color_decay_setting.sql')
+          if old.exists() and not aligned.exists():
+              old.rename(aligned)
+          elif old.exists() and aligned.exists():
+              old.unlink()
+
+          new_migration = Path('supabase/migrations/20260914203359_add_average_rating_color_decay_setting.sql')
+          new_migration.write_text('''ALTER TABLE public.game_settings
+          ADD COLUMN IF NOT EXISTS average_rating_color_decay_base numeric NOT NULL DEFAULT 0.85;
+
+          UPDATE public.game_settings
+          SET average_rating_color_decay_base = 0.85
+          WHERE id = 1
+            AND average_rating_color_decay_base IS NULL;
+
+          DO $$
+          BEGIN
+            IF NOT EXISTS (
+              SELECT 1
+              FROM pg_constraint
+              WHERE conname = 'game_settings_average_rating_color_decay_base_check'
+                AND conrelid = 'public.game_settings'::regclass
+            ) THEN
+              ALTER TABLE public.game_settings
+              ADD CONSTRAINT game_settings_average_rating_color_decay_base_check
+              CHECK (
+                average_rating_color_decay_base > 0
+                AND average_rating_color_decay_base <= 1
+              );
+            END IF;
+          END
+          $$;
+          ''')
+
+          # --- tests ---
+          p = Path('test/color_helper_test.dart')
+          text = p.read_text()
+          test_block = '''
+
+            group('average rating color scaling', () {
+              test('average points use total points divided by analytics appearances', () {
+                expect(getAveragePoints(500, 4), closeTo(125.0, 1e-12));
+                expect(getAveragePoints(500, 0), 0);
+              });
+
+              test('one appearance keeps the normal 250 maximum', () {
+                expect(getAverageRatingFactor(1, 0.85), closeTo(1.0, 1e-12));
+                expect(
+                  getAverageRatingMaxValue(1, 0.85),
+                  singleMatchRatingMax,
+                );
+              });
+
+              test('average color maximum decays with more appearances', () {
+                final max1 = getAverageRatingMaxValue(1, 0.85);
+                final max4 = getAverageRatingMaxValue(4, 0.85);
+                final max10 = getAverageRatingMaxValue(10, 0.85);
+
+                expect(max4, lessThan(max1));
+                expect(max10, lessThan(max4));
+                expect(
+                  max4,
+                  (singleMatchRatingMax * getAverageRatingFactor(4, 0.85)).round(),
+                );
+              });
+
+              test('invalid average decay base falls back to 0.85', () {
+                expect(
+                  getAverageRatingFactor(5, 2.0),
+                  closeTo(getAverageRatingFactor(5, 0.85), 1e-12),
+                );
+              });
+            });
+          '''
+          if "group('average rating color scaling'" not in text:
+              idx = text.rfind('\n}')
+              if idx == -1:
+                  raise SystemExit('test file closing brace not found')
+              text = text[:idx] + test_block + text[idx:]
+          p.write_text(text)
+
+          # Remove temporary repository-wide scan helpers from the final diff.
+          for helper in [
+              Path('.github/workflows/scan-average-point-usages.yml'),
+              Path('.github/trigger-average-scan'),
+              Path('.github/average-point-usages.txt'),
+          ]:
+              if helper.exists():
+                  helper.unlink()
+          PY
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Format changed Dart files
+        run: dart format lib/utils/color_helper.dart lib/screens/screenelements/match_screen/formations.dart lib/screens/leagues/league_team_screen.dart lib/screens/player_screen.dart test/color_helper_test.dart
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Run color helper tests
+        run: flutter test test/color_helper_test.dart
+
+      - name: Commit patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m 'feat: apply appearance-based average point colors'
+          git push origin HEAD:fix/unify-rating-colors
