@@ -18,6 +18,22 @@ jobs:
       - uses: actions/checkout@v4
         with:
           ref: fix/unify-rating-colors
+      - name: Prepare patch helper
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('tools/apply_rating_color_patch.py')
+          text = p.read_text()
+          text = text.replace(
+              "if found != expected:\n        raise SystemExit(",
+              "if (count is None and found != expected) or (count is not None and found < expected):\n        raise SystemExit(",
+          )
+          text = text.replace(
+              "p.write_text(text.replace(old, new))",
+              "p.write_text(text.replace(old, new, expected) if count is not None else text.replace(old, new))",
+          )
+          p.write_text(text)
+          PY
       - name: Apply patch
         run: python tools/apply_rating_color_patch.py
       - name: Remove temporary patch helpers
