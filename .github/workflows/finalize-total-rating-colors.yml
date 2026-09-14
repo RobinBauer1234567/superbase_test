@@ -1,0 +1,34 @@
+name: Finalize aggregate rating colors
+
+on:
+  push:
+    branches:
+      - fix/unify-rating-colors
+    paths:
+      - .github/trigger-finalize-total-rating-colors
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: ${{ github.actor != 'github-actions[bot]' }}
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/unify-rating-colors
+      - name: Apply final fixes
+        run: python tools/finalize_total_rating_colors.py
+      - name: Remove temporary helpers
+        run: |
+          rm -f tools/finalize_total_rating_colors.py
+          rm -f .github/trigger-finalize-total-rating-colors
+          rm -f .github/workflows/finalize-total-rating-colors.yml
+      - name: Commit final fixes
+        run: |
+          git config user.name github-actions[bot]
+          git config user.email 41898282+github-actions[bot]@users.noreply.github.com
+          git add -A
+          git commit -m "fix: align remaining total point colors"
+          git push origin HEAD:fix/unify-rating-colors
