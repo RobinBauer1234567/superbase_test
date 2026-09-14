@@ -26,6 +26,7 @@ class _StarterTeamRevealScreenState extends State<StarterTeamRevealScreen> {
   bool _isLoading = true;
   List<Map<String, dynamic>> _players = [];
   int _totalTeamValue = 0;
+  double _currentBudget = 0;
   int? _seasonId;
 
   // State für den Reveal-Prozess
@@ -35,6 +36,7 @@ class _StarterTeamRevealScreenState extends State<StarterTeamRevealScreen> {
   @override
   void initState() {
     super.initState();
+    _currentBudget = widget.startingBudget;
     _loadTeam();
   }
 
@@ -81,22 +83,49 @@ class _StarterTeamRevealScreenState extends State<StarterTeamRevealScreen> {
 
   Future<void> _loadTeam() async {
     final dataManagement = Provider.of<DataManagement>(context, listen: false);
-    _seasonId = await dataManagement.supabaseService.fetchLeagueSeasonId(widget.leagueId);
+    final service = dataManagement.supabaseService;
+    _seasonId = await service.fetchLeagueSeasonId(widget.leagueId);
 
     // Kurzes Delay, damit der Übergang nicht zu abrupt ist
     await Future.delayed(const Duration(milliseconds: 500));
 
-    final players = await dataManagement.supabaseService.fetchUserLeaguePlayers(widget.leagueId);
+    final players = await service.fetchUserLeaguePlayers(widget.leagueId);
 
     int totalVal = 0;
-    for(var p in players) {
+    for (var p in players) {
       totalVal += _getMarktwert(p); // Nutzt nun die sichere Hilfsfunktion
+    }
+
+    // Das beim Öffnen übergebene Startbudget dient nur noch als Fallback.
+    // Nach der Startspieler-Zulosung kann das tatsächliche Budget durch die
+    // Verrechnung der Teamwert-Abweichung bereits höher oder niedriger sein.
+    double currentBudget = widget.startingBudget;
+    final userId = service.supabase.auth.currentUser?.id;
+    if (userId != null) {
+      try {
+        final membership = await service.supabase
+            .from('league_members')
+            .select('budget')
+            .eq('league_id', widget.leagueId)
+            .eq('user_id', userId)
+            .maybeSingle();
+        final budget = membership?['budget'];
+        if (budget is num) {
+          currentBudget = budget.toDouble();
+        } else if (budget != null) {
+          currentBudget = double.tryParse(budget.toString()) ?? currentBudget;
+        }
+      } catch (e) {
+        // Fallback auf den übergebenen Wert, falls der Budget-Read fehlschlägt.
+        debugPrint('Budget konnte für den Starter-Reveal nicht geladen werden: $e');
+      }
     }
 
     if (mounted) {
       setState(() {
         _players = players;
         _totalTeamValue = totalVal;
+        _currentBudget = currentBudget;
         _isLoading = false;
         // Falls keine Spieler da sind (z.B. Startspieler = 0), direkt zur Zusammenfassung
         if (_players.isEmpty) {
@@ -291,7 +320,7 @@ class _StarterTeamRevealScreenState extends State<StarterTeamRevealScreen> {
           child: Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              _buildSummaryStat("Budget", _formatMoney(widget.startingBudget)),
+              _buildSummaryStat("Budget", _formatMoney(_currentBudget)),
               _buildSummaryStat("Teamwert", _formatMoney(_totalTeamValue)),
             ],
           ),
