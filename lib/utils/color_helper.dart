@@ -7,6 +7,7 @@ const int singleMatchRatingMax = 250;
 const double defaultRatingColorDecayBase = 0.8;
 const double defaultAverageRatingColorDecayBase = 0.85;
 
+
 Future<double> fetchRatingColorDecayBase(SupabaseClient client) async {
   try {
     final settings = await client
@@ -111,13 +112,19 @@ Color getColorForRating(num rating, int maxValue) {
   return colorSequence.transform(t)!;
 }
 
-double getAggregateRatingFactor(int gameCount, double decayBase) {
+double getAggregateRatingFactor(
+  int gameCount,
+  double decayBase,
+) {
   final safeGameCount = math.max(1, gameCount);
-  final safeDecayBase = decayBase > 0 && decayBase <= 1
-      ? decayBase
-      : defaultRatingColorDecayBase;
+  final safeDecayBase =
+      decayBase > 0 && decayBase <= 1
+          ? decayBase
+          : defaultRatingColorDecayBase;
 
-  return math.pow(safeDecayBase, math.log(safeGameCount.toDouble())).toDouble();
+  return math
+      .pow(safeDecayBase, math.log(safeGameCount.toDouble()))
+      .toDouble();
 }
 
 /// Converts a cumulative score into the equivalent single-match rating used by
@@ -155,16 +162,21 @@ int getAggregateRatingMaxValue(
   return math.max(1, maxValue.round());
 }
 
+
 double getAveragePoints(num totalPoints, int appearanceCount) {
   if (appearanceCount <= 0) return 0;
   return totalPoints.toDouble() / appearanceCount;
 }
 
-double getAverageRatingFactor(int appearanceCount, double decayBase) {
+double getAverageRatingFactor(
+  int appearanceCount,
+  double decayBase,
+) {
   final safeAppearanceCount = math.max(1, appearanceCount);
-  final safeDecayBase = decayBase > 0 && decayBase <= 1
-      ? decayBase
-      : defaultAverageRatingColorDecayBase;
+  final safeDecayBase =
+      decayBase > 0 && decayBase <= 1
+          ? decayBase
+          : defaultAverageRatingColorDecayBase;
 
   return math
       .pow(safeDecayBase, math.log(safeAppearanceCount.toDouble()))

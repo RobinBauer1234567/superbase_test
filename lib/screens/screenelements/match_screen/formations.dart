@@ -1,12 +1,15 @@
 // lib/screens/screenelements/match_screen/formations.dart
 import 'package:flutter/material.dart';
 import 'package:premier_league/utils/color_helper.dart';
-
 import 'dart:ui' as ui;
 import 'dart:math';
-
 // Füge dieses Enum GANZ OBEN unter den Imports ein:
-enum AvatarDisplayMode { matchday, seasonTotal, seasonAverage, marketValue }
+enum AvatarDisplayMode {
+  matchday,
+  seasonTotal,
+  seasonAverage,
+  marketValue
+}
 
 // 1. UPDATE: PlayerInfo bekommt totalSeasonPoints
 class PlayerInfo {
@@ -58,7 +61,7 @@ class PlayerAvatar extends StatelessWidget {
   final bool isLocked;
   final bool hideUnlockedMatchdayRating;
   final AvatarDisplayMode displayMode; // <--- NEU
-  final int currentRound; // <--- NEU
+  final int currentRound;              // <--- NEU
   final double ratingColorDecayBase;
   final double averageRatingColorDecayBase;
 
@@ -106,17 +109,14 @@ class PlayerAvatar extends StatelessWidget {
 
   int _getColorRatingValue() {
     switch (displayMode) {
-      case AvatarDisplayMode.matchday:
-        return player.rating;
-      case AvatarDisplayMode.seasonTotal:
-        return player.totalSeasonPoints;
+      case AvatarDisplayMode.matchday: return player.rating;
+      case AvatarDisplayMode.seasonTotal: return player.totalSeasonPoints;
       case AvatarDisplayMode.seasonAverage:
         return getAveragePoints(
           player.totalSeasonPoints,
           player.matchCount,
         ).round();
-      case AvatarDisplayMode.marketValue:
-        return player.marketValue ?? 0;
+      case AvatarDisplayMode.marketValue: return player.marketValue ?? 0;
     }
   }
 
@@ -130,7 +130,10 @@ class PlayerAvatar extends StatelessWidget {
           averageRatingColorDecayBase,
         );
       case AvatarDisplayMode.seasonTotal:
-        return getAggregateRatingMaxValue(currentRound, ratingColorDecayBase);
+        return getAggregateRatingMaxValue(
+          currentRound,
+          ratingColorDecayBase,
+        );
       case AvatarDisplayMode.marketValue:
         return 50000000; // Ab 25 Mio gibt es die beste Farbe
     }
@@ -141,27 +144,14 @@ class PlayerAvatar extends StatelessWidget {
     return Container(
       margin: const EdgeInsets.only(bottom: 2),
       padding: EdgeInsets.all(size * 0.1),
-      decoration: BoxDecoration(
-        color: Colors.white,
-        shape: BoxShape.circle,
-        border: Border.all(color: Colors.grey.shade300, width: 0.5),
-        boxShadow: [
-          BoxShadow(
-            color: Colors.black.withOpacity(0.15),
-            blurRadius: 2,
-            offset: const Offset(0, 1),
-          ),
-        ],
-      ),
+      decoration: BoxDecoration(color: Colors.white, shape: BoxShape.circle, border: Border.all(color: Colors.grey.shade300, width: 0.5), boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.15), blurRadius: 2, offset: const Offset(0, 1))]),
       child: Icon(icon, color: color, size: size * 0.9),
     );
   }
 
   @override
   Widget build(BuildContext context) {
-    final bool isGoalkeeper =
-        player.position.toUpperCase().contains('TW') ||
-        player.position.toUpperCase().contains('GK');
+    final bool isGoalkeeper = player.position.toUpperCase().contains('TW') || player.position.toUpperCase().contains('GK');
     final bool isPlaceholder = player.id < 0;
 
     final double imageRadius = radius;
@@ -174,17 +164,11 @@ class PlayerAvatar extends StatelessWidget {
     final double nameFontSize = radius * 0.42;
     final double eventIconSize = radius * 0.45;
 
-    Color outerColor = isGoalkeeper
-        ? (goalkeeperColor ?? Colors.orange.shade700)
-        : teamColor;
+    Color outerColor = isGoalkeeper ? (goalkeeperColor ?? Colors.orange.shade700) : teamColor;
     if (isPlaceholder) outerColor = Colors.grey.shade400;
     double scale = 1.0;
-    if (showHoverEffect) {
-      scale = 1.2;
-      outerColor = Colors.green.shade600;
-    } else if (showValidTargetEffect) {
-      outerColor = Colors.yellow.shade700;
-    }
+    if (showHoverEffect) { scale = 1.2; outerColor = Colors.green.shade600; }
+    else if (showValidTargetEffect) { outerColor = Colors.yellow.shade700; }
 
     // --- NEU: Helligkeit prüfen ---
     // computeLuminance() gibt einen Wert von 0.0 (Schwarz) bis 1.0 (Weiß) zurück.
@@ -194,33 +178,16 @@ class PlayerAvatar extends StatelessWidget {
     // Dynamische Farben für das Positions-Badge
     final Color posTextColor = isTeamLight ? Colors.black : Colors.white;
     final Color posBorderColor = isTeamLight ? Colors.black38 : Colors.white;
-    if (showHoverEffect) {
-      scale = 1.2;
-      outerColor = Colors.green.shade600;
-    } else if (showValidTargetEffect) {
-      outerColor = Colors.yellow.shade700;
-    }
+    if (showHoverEffect) { scale = 1.2; outerColor = Colors.green.shade600; }
+    else if (showValidTargetEffect) { outerColor = Colors.yellow.shade700; }
 
-    List<String> positions = player.position
-        .split(',')
-        .map((e) => e.trim())
-        .toList();
-    if (positions.isEmpty || (positions.length == 1 && positions.first.isEmpty))
-      positions = [];
+    List<String> positions = player.position.split(',').map((e) => e.trim()).toList();
+    if (positions.isEmpty || (positions.length == 1 && positions.first.isEmpty)) positions = [];
 
     Widget profileImageWidget = CircleAvatar(
-      radius: imageRadius,
-      backgroundColor: Colors.grey.shade200,
-      backgroundImage: (player.profileImageUrl != null && !isPlaceholder)
-          ? NetworkImage(player.profileImageUrl!)
-          : null,
-      child: (player.profileImageUrl == null || isPlaceholder)
-          ? Icon(
-              isPlaceholder ? Icons.add_rounded : Icons.person,
-              color: Colors.grey.shade400,
-              size: imageRadius * 1.2,
-            )
-          : null,
+      radius: imageRadius, backgroundColor: Colors.grey.shade200,
+      backgroundImage: (player.profileImageUrl != null && !isPlaceholder) ? NetworkImage(player.profileImageUrl!) : null,
+      child: (player.profileImageUrl == null || isPlaceholder) ? Icon(isPlaceholder ? Icons.add_rounded : Icons.person, color: Colors.grey.shade400, size: imageRadius * 1.2) : null,
     );
     final String displayValue = _getDisplayValue();
     final int colorRatingValue = _getColorRatingValue();
@@ -230,9 +197,8 @@ class PlayerAvatar extends StatelessWidget {
         !hideUnlockedMatchdayRating ||
         displayMode != AvatarDisplayMode.matchday ||
         isLocked;
-    final String finalDisplayValue = showLockedMatchdayRating
-        ? displayValue
-        : '-';
+    final String finalDisplayValue =
+        showLockedMatchdayRating ? displayValue : '-';
     final Color pillColor = showLockedMatchdayRating
         ? getColorForRating(colorRatingValue, calculatedMaxScore)
         : Colors.grey;
@@ -241,12 +207,9 @@ class PlayerAvatar extends StatelessWidget {
     IconData? modeIcon;
     String? modePrefix;
     if (!isPlaceholder) {
-      if (displayMode == AvatarDisplayMode.seasonTotal)
-        modeIcon = Icons.circle;
-      else if (displayMode == AvatarDisplayMode.seasonAverage)
-        modePrefix = "Ø";
-      else if (displayMode == AvatarDisplayMode.marketValue)
-        modeIcon = Icons.payments;
+      if (displayMode == AvatarDisplayMode.seasonTotal) modeIcon = Icons.circle;
+      else if (displayMode == AvatarDisplayMode.seasonAverage) modePrefix = "Ø";
+      else if (displayMode == AvatarDisplayMode.marketValue) modeIcon = Icons.payments;
     }
 
     return Transform.scale(
@@ -257,23 +220,9 @@ class PlayerAvatar extends StatelessWidget {
           mainAxisSize: MainAxisSize.min,
           children: [
             Stack(
-              clipBehavior: Clip.none,
-              alignment: Alignment.center,
+              clipBehavior: Clip.none, alignment: Alignment.center,
               children: [
-                Container(
-                  width: totalRadius * 2,
-                  height: totalRadius * 2,
-                  decoration: BoxDecoration(
-                    shape: BoxShape.circle,
-                    boxShadow: [
-                      BoxShadow(
-                        color: Colors.black.withOpacity(0.3),
-                        blurRadius: 4,
-                        offset: const Offset(0, 2),
-                      ),
-                    ],
-                  ),
-                ),
+                Container(width: totalRadius * 2, height: totalRadius * 2, decoration: BoxDecoration(shape: BoxShape.circle, boxShadow: [BoxShadow(color: Colors.black.withOpacity(0.3), blurRadius: 4, offset: const Offset(0, 2))])),
                 // Äußerer Farb-Ring (mit optionalem dunklen Rand bei hellen Farben)
                 Container(
                   width: totalRadius * 2,
@@ -281,16 +230,11 @@ class PlayerAvatar extends StatelessWidget {
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     color: outerColor,
-                    border: isOuterLight
-                        ? Border.all(color: Colors.black26, width: 0.5)
-                        : null,
+                    border: isOuterLight ? Border.all(color: Colors.black26, width: 0.5) : null,
                   ),
                 ),
                 // Innerer weißer Ring
-                CircleAvatar(
-                  radius: imageRadius + whiteRingWidth,
-                  backgroundColor: Colors.white,
-                ),
+                CircleAvatar(radius: imageRadius + whiteRingWidth, backgroundColor: Colors.white),
                 profileImageWidget,
 
                 if (!isPlaceholder && positions.isNotEmpty && showPositions)
@@ -301,71 +245,39 @@ class PlayerAvatar extends StatelessWidget {
                     final double dist = totalRadius;
                     final double badgeSize = radius * 0.75;
                     return Positioned(
-                      left: totalRadius + (dist * cos(angle)) - (badgeSize / 2),
-                      top:
-                          totalRadius +
-                          (dist * sin(angle) * -1 * -1) -
-                          (badgeSize / 2),
+                      left: totalRadius + (dist * cos(angle)) - (badgeSize / 2), top: totalRadius + (dist * sin(angle) * -1 * -1) - (badgeSize / 2),
                       child: Container(
-                        width: badgeSize,
-                        height: badgeSize,
-                        alignment: Alignment.center,
-                        decoration: BoxDecoration(
-                          color: teamColor,
-                          shape: BoxShape.circle,
-                          border: Border.all(
-                            color: posBorderColor,
-                            width: 1.0,
-                          ), // <-- HIER ANGEPASST
-                          boxShadow: const [
-                            BoxShadow(
-                              color: Colors.black38,
-                              blurRadius: 1,
-                              offset: Offset(1, 1),
-                            ),
-                          ],
-                        ),
-                        child: FittedBox(
-                          child: Padding(
-                            padding: const EdgeInsets.all(1.0),
-                            child: Text(
-                              positions[index],
-                              style: TextStyle(
-                                color: posTextColor, // <-- HIER ANGEPASST
-                                fontSize: posFontSize,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
+                          width: badgeSize, height: badgeSize, alignment: Alignment.center,
+                          decoration: BoxDecoration(
+                              color: teamColor,
+                              shape: BoxShape.circle,
+                              border: Border.all(color: posBorderColor, width: 1.0), // <-- HIER ANGEPASST
+                              boxShadow: const [BoxShadow(color: Colors.black38, blurRadius: 1, offset: Offset(1, 1))]
                           ),
-                        ),
+                          child: FittedBox(
+                              child: Padding(
+                                  padding: const EdgeInsets.all(1.0),
+                                  child: Text(
+                                      positions[index],
+                                      style: TextStyle(
+                                          color: posTextColor, // <-- HIER ANGEPASST
+                                          fontSize: posFontSize,
+                                          fontWeight: FontWeight.bold
+                                      )
+                                  )
+                              )
+                          )
                       ),
-                    );
-                  }),
+                    );                  }),
 
                 if (!isPlaceholder && showDetails)
                   Positioned(
-                    top: 0,
-                    right: -radius * 0.5,
+                    top: 0, right: -radius * 0.5,
                     child: Column(
                       children: [
-                        _buildEventIcon(
-                          Icons.sports_soccer,
-                          const Color(0xFF2E7D32),
-                          player.goals,
-                          eventIconSize,
-                        ),
-                        _buildEventIcon(
-                          Icons.auto_fix_high,
-                          Colors.blueAccent,
-                          player.assists,
-                          eventIconSize,
-                        ),
-                        _buildEventIcon(
-                          Icons.cancel,
-                          Colors.redAccent,
-                          player.ownGoals,
-                          eventIconSize,
-                        ),
+                        _buildEventIcon(Icons.sports_soccer, const Color(0xFF2E7D32), player.goals, eventIconSize),
+                        _buildEventIcon(Icons.auto_fix_high, Colors.blueAccent, player.assists, eventIconSize),
+                        _buildEventIcon(Icons.cancel, Colors.redAccent, player.ownGoals, eventIconSize),
                       ],
                     ),
                   ),
@@ -376,59 +288,24 @@ class PlayerAvatar extends StatelessWidget {
                   Positioned(
                     bottom: -radius * 0.45,
                     child: Container(
-                      padding: EdgeInsets.symmetric(
-                        horizontal: radius * 0.4,
-                        vertical: 2,
-                      ),
+                      padding: EdgeInsets.symmetric(horizontal: radius * 0.4, vertical: 2),
                       decoration: BoxDecoration(
                         color: Color.alphaBlend(
                           pillColor.withOpacity(0.12),
                           Colors.white.withOpacity(0.96),
                         ),
                         borderRadius: BorderRadius.circular(10),
-                        border: Border.all(
-                          color: pillColor.withOpacity(0.65),
-                          width: 1.5,
-                        ),
-                        boxShadow: const [
-                          BoxShadow(
-                            color: Colors.black26,
-                            blurRadius: 2,
-                            offset: Offset(0, 1),
-                          ),
-                        ],
+                        border: Border.all(color: pillColor.withOpacity(0.65), width: 1.5),
+                        boxShadow: const [BoxShadow(color: Colors.black26, blurRadius: 2, offset: Offset(0, 1))],
                       ),
                       child: Row(
                         mainAxisSize: MainAxisSize.min,
                         children: [
-                          if (modeIcon != null) ...[
-                            Icon(
-                              modeIcon,
-                              color: pillColor,
-                              size: ratingFontSize * 1.1,
-                            ),
-                            SizedBox(width: ratingFontSize * 0.3),
-                          ],
-                          if (modePrefix != null) ...[
-                            Text(
-                              modePrefix,
-                              style: TextStyle(
-                                color: pillColor,
-                                fontSize: ratingFontSize,
-                                fontWeight: FontWeight.bold,
-                              ),
-                            ),
-                            SizedBox(width: ratingFontSize * 0.3),
-                          ],
+                          if (modeIcon != null) ...[Icon(modeIcon, color: pillColor, size: ratingFontSize * 1.1), SizedBox(width: ratingFontSize * 0.3)],
+                          if (modePrefix != null) ...[Text(modePrefix, style: TextStyle(color: pillColor, fontSize: ratingFontSize, fontWeight: FontWeight.bold)), SizedBox(width: ratingFontSize * 0.3)],
                           Text(
-                            finalDisplayValue, // <--- HIER: finalDisplayValue statt displayValue
-                            style: TextStyle(
-                              color: pillColor,
-                              fontSize: finalDisplayValue.length > 3
-                                  ? ratingFontSize * 0.8
-                                  : ratingFontSize,
-                              fontWeight: FontWeight.w800,
-                            ),
+                              finalDisplayValue, // <--- HIER: finalDisplayValue statt displayValue
+                              style: TextStyle(color: pillColor, fontSize: finalDisplayValue.length > 3 ? ratingFontSize * 0.8 : ratingFontSize, fontWeight: FontWeight.w800)
                           ),
                         ],
                       ),
@@ -437,22 +314,11 @@ class PlayerAvatar extends StatelessWidget {
 
                 if (isLocked && !isPlaceholder)
                   Positioned(
-                    top: 0,
-                    left: -radius * 0.3,
+                    top: 0, left: -radius * 0.3,
                     child: Container(
                       padding: EdgeInsets.all(radius * 0.1),
-                      decoration: const BoxDecoration(
-                        color: Colors.white,
-                        shape: BoxShape.circle,
-                        boxShadow: [
-                          BoxShadow(color: Colors.black26, blurRadius: 2),
-                        ],
-                      ),
-                      child: Icon(
-                        Icons.lock,
-                        color: Colors.redAccent,
-                        size: radius * 0.5,
-                      ),
+                      decoration: const BoxDecoration(color: Colors.white, shape: BoxShape.circle, boxShadow: [BoxShadow(color: Colors.black26, blurRadius: 2)]),
+                      child: Icon(Icons.lock, color: Colors.redAccent, size: radius * 0.5),
                     ),
                   ),
               ],
@@ -462,36 +328,13 @@ class PlayerAvatar extends StatelessWidget {
               SizedBox(height: radius * 0.35),
               Container(
                 padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
-                decoration: BoxDecoration(
-                  color: Colors.white.withOpacity(isPlaceholder ? 0.8 : 0.95),
-                  borderRadius: BorderRadius.circular(4),
-                  boxShadow: isPlaceholder
-                      ? []
-                      : [
-                          BoxShadow(
-                            color: Colors.black.withOpacity(0.1),
-                            blurRadius: 2,
-                            offset: const Offset(0, 1),
-                          ),
-                        ],
-                ),
+                decoration: BoxDecoration(color: Colors.white.withOpacity(isPlaceholder ? 0.8 : 0.95), borderRadius: BorderRadius.circular(4), boxShadow: isPlaceholder ? [] : [BoxShadow(color: Colors.black.withOpacity(0.1), blurRadius: 2, offset: const Offset(0, 1))]),
                 child: FittedBox(
                   fit: BoxFit.scaleDown,
-                  child: Text(
-                    player.name.split(' ').last.toUpperCase(),
-                    style: TextStyle(
-                      color: isLocked
-                          ? Colors.grey.shade600
-                          : Colors.grey.shade800,
-                      fontSize: nameFontSize,
-                      fontWeight: FontWeight.bold,
-                      letterSpacing: 0.3,
-                    ),
-                    textAlign: TextAlign.center,
-                  ),
+                  child: Text(player.name.split(' ').last.toUpperCase(), style: TextStyle(color: isLocked ? Colors.grey.shade600 : Colors.grey.shade800, fontSize: nameFontSize, fontWeight: FontWeight.bold, letterSpacing: 0.3), textAlign: TextAlign.center),
                 ),
               ),
-            ],
+            ]
           ],
         ),
       ),
@@ -510,12 +353,10 @@ class MatchFormationDisplay extends StatefulWidget {
   final Color? awayGoalkeeperColor; // <--- NEU
   final void Function(int playerId, double radius) onPlayerTap;
   final List<PlayerInfo>? substitutes;
-  final void Function(PlayerInfo fieldSlot, PlayerInfo benchPlayer)?
-  onPlayerDrop;
+  final void Function(PlayerInfo fieldSlot, PlayerInfo benchPlayer)? onPlayerDrop;
   final void Function(PlayerInfo player)? onMoveToBench;
   final List<String> requiredPositions;
-  final List<int>
-  frozenPlayerIds; // NEU: Nimmt die Liste aus dem TeamScreen entgegen
+  final List<int> frozenPlayerIds; // NEU: Nimmt die Liste aus dem TeamScreen entgegen
   final AvatarDisplayMode displayMode; // NEU
   final int currentRound;
   final double ratingColorDecayBase;
@@ -544,7 +385,7 @@ class MatchFormationDisplay extends StatefulWidget {
     this.isReadOnly = false, // <--- NEU HINZUFÜGEN (Standard ist false)
     this.hideUnlockedMatchdayRating = false,
     this.homeGoalkeeperColor, // <--- NEU
-    this.awayGoalkeeperColor,
+    this.awayGoalkeeperColor
   });
 
   @override
@@ -562,22 +403,19 @@ class _MatchFormationDisplayState extends State<MatchFormationDisplay> {
 
   @override
   Widget build(BuildContext context) {
-    final bool singleTeamMode =
-        widget.awayPlayers == null || widget.awayFormation == null;
-    final bool showBench =
-        widget.substitutes != null && widget.substitutes!.isNotEmpty;
+    final bool singleTeamMode = widget.awayPlayers == null ||
+        widget.awayFormation == null;
+    final bool showBench = widget.substitutes != null &&
+        widget.substitutes!.isNotEmpty;
 
     final homeGoalkeeper = _findGoalkeeper(widget.homePlayers);
     final homeFieldPlayers = _findFieldPlayers(
-      widget.homePlayers,
-      homeGoalkeeper,
-    );
+        widget.homePlayers, homeGoalkeeper);
     final homeFormationLines = _parseFormation(widget.homeFormation);
 
     if (homeGoalkeeper == null || homeFieldPlayers.length < 10) {
       return const Center(
-        child: Text('Ungültige Spielerdaten für das Heimteam.'),
-      );
+          child: Text('Ungültige Spielerdaten für das Heimteam.'));
     }
 
     return LayoutBuilder(
@@ -600,9 +438,7 @@ class _MatchFormationDisplayState extends State<MatchFormationDisplay> {
         const double benchContainerFactor = 6.0;
 
         const double benchMarginFactor = 0.5;
-        final double totalBenchFactor = showBench
-            ? (benchContainerFactor + benchMarginFactor)
-            : 0.0;
+        final double totalBenchFactor = showBench ? (benchContainerFactor + benchMarginFactor) : 0.0;
         final double totalHeightFactor = fieldHeightFactor + totalBenchFactor;
 
         double radius = min(w / widthFactor, h / totalHeightFactor);
@@ -626,65 +462,57 @@ class _MatchFormationDisplayState extends State<MatchFormationDisplay> {
               width: fieldWidth,
               height: fieldHeight,
               decoration: BoxDecoration(
-                boxShadow: [
-                  BoxShadow(
-                    color: Colors.black.withOpacity(0.3),
-                    blurRadius: 15,
-                    offset: const Offset(0, 5),
-                  ),
-                ],
+                  boxShadow: [
+                    BoxShadow(color: Colors.black.withOpacity(0.3),
+                        blurRadius: 15,
+                        offset: const Offset(0, 5))
+                  ]
               ),
               child: ClipRRect(
                 borderRadius: BorderRadius.circular(4),
                 child: Stack(
                   children: [
-                    CustomPaint(
-                      size: Size.infinite,
-                      painter: SoccerFieldPainter(
-                        singleTeamMode: singleTeamMode,
-                      ),
-                    ),
+                    CustomPaint(size: Size.infinite,
+                        painter: SoccerFieldPainter(
+                            singleTeamMode: singleTeamMode)),
 
                     if (singleTeamMode) ...[
                       _buildPlayerLine(
-                        context,
-                        [homeGoalkeeper],
-                        0.96,
-                        widget.homeColor,
-                        widget.onPlayerTap,
-                        radius,
-                        false,
-                      ),
+                          context,
+                          [homeGoalkeeper],
+                          0.96,
+                          widget.homeColor,
+                          widget.onPlayerTap,
+                          radius,
+                          false),
                       ..._buildFormationLines(
-                        context,
-                        homeFormationLines,
-                        homeFieldPlayers,
-                        false,
-                        widget.homeColor,
-                        widget.onPlayerTap,
-                        radius,
-                        singleTeamMode: true,
-                      ),
-                    ] else ...[
-                      _buildPlayerLine(
-                        context,
-                        [homeGoalkeeper],
-                        0.98,
-                        widget.homeColor,
-                        widget.onPlayerTap,
-                        radius,
-                        false,
-                      ),
-                      ..._buildFormationLines(
-                        context,
-                        homeFormationLines,
-                        homeFieldPlayers,
-                        false,
-                        widget.homeColor,
-                        widget.onPlayerTap,
-                        radius,
-                      ),
-                    ],
+                          context,
+                          homeFormationLines,
+                          homeFieldPlayers,
+                          false,
+                          widget.homeColor,
+                          widget.onPlayerTap,
+                          radius,
+                          singleTeamMode: true),
+                    ] else
+                      ...[
+                        _buildPlayerLine(
+                            context,
+                            [homeGoalkeeper],
+                            0.98,
+                            widget.homeColor,
+                            widget.onPlayerTap,
+                            radius,
+                            false),
+                        ..._buildFormationLines(
+                            context,
+                            homeFormationLines,
+                            homeFieldPlayers,
+                            false,
+                            widget.homeColor,
+                            widget.onPlayerTap,
+                            radius),
+                      ],
 
                     if (!singleTeamMode)
                       _buildAwayTeam(context, constraints, radius),
@@ -713,33 +541,25 @@ class _MatchFormationDisplayState extends State<MatchFormationDisplay> {
                     margin: EdgeInsets.only(top: benchMargin),
                     decoration: BoxDecoration(
                       // WICHTIG: Visuelles Feedback beim Hovern
-                      color: isHovering
-                          ? Colors.green.withOpacity(0.2)
-                          : Colors.white,
+                      color: isHovering ? Colors.green.withOpacity(0.2) : Colors.white,
                       borderRadius: BorderRadius.circular(12),
                       border: Border.all(
-                        color: isHovering ? Colors.green : Colors.grey.shade200,
-                        width: isHovering ? 2 : 1,
+                          color: isHovering ? Colors.green : Colors.grey.shade200,
+                          width: isHovering ? 2 : 1
                       ),
                     ),
                     child: Column(
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Padding(
-                          padding: EdgeInsets.only(
-                            left: radius * 0.8,
-                            top: radius * 0.3,
-                            bottom: radius * 0.1,
-                          ),
+                          padding: EdgeInsets.only(left: radius * 0.8, top: radius * 0.3, bottom: radius * 0.1),
                           child: Text(
                             isHovering ? "LOSLASSEN ZUM AUSWECHSELN" : "BANK",
                             style: TextStyle(
-                              fontSize: radius * 0.5,
-                              fontWeight: FontWeight.bold,
-                              color: isHovering
-                                  ? Colors.green
-                                  : Colors.grey.shade600,
-                              letterSpacing: 1.0,
+                                fontSize: radius * 0.5,
+                                fontWeight: FontWeight.bold,
+                                color: isHovering ? Colors.green : Colors.grey.shade600,
+                                letterSpacing: 1.0
                             ),
                           ),
                         ),
@@ -748,15 +568,11 @@ class _MatchFormationDisplayState extends State<MatchFormationDisplay> {
                           child: SingleChildScrollView(
                             scrollDirection: Axis.horizontal,
                             physics: const BouncingScrollPhysics(),
-                            padding: EdgeInsets.symmetric(
-                              horizontal: radius * 0.5,
-                            ),
+                            padding: EdgeInsets.symmetric(horizontal: radius * 0.5),
                             child: Row(
                               children: widget.substitutes!.map((player) {
                                 // NEU: Prüfen, ob der Bankspieler gelockt ist
-                                final bool isPlayerLocked = widget
-                                    .frozenPlayerIds
-                                    .contains(player.id);
+                                final bool isPlayerLocked = widget.frozenPlayerIds.contains(player.id);
                                 final displayWidget = PlayerAvatar(
                                   player: player,
                                   teamColor: widget.homeColor,
@@ -766,71 +582,51 @@ class _MatchFormationDisplayState extends State<MatchFormationDisplay> {
                                   isLocked: isPlayerLocked, // NEU
                                   displayMode: widget.displayMode,
                                   currentRound: widget.currentRound,
-                                  ratingColorDecayBase:
-                                      widget.ratingColorDecayBase,
-                                  averageRatingColorDecayBase:
-                                      widget.averageRatingColorDecayBase,
-                                  hideUnlockedMatchdayRating:
-                                      widget.hideUnlockedMatchdayRating,
+                                  ratingColorDecayBase: widget.ratingColorDecayBase,
+                                  averageRatingColorDecayBase: widget.averageRatingColorDecayBase,
+                                  hideUnlockedMatchdayRating: widget.hideUnlockedMatchdayRating,
                                 );
 
                                 return Padding(
                                   padding: EdgeInsets.only(right: radius * 0.2),
                                   // NEU: Wenn gelockt ODER ReadOnly, dann nur Klickbar, nicht Draggable
-                                  child:
-                                      (isPlayerLocked || widget.isReadOnly) // <--- HIER widget.isReadOnly ERGÄNZEN
+                                  child: (isPlayerLocked || widget.isReadOnly) // <--- HIER widget.isReadOnly ERGÄNZEN
                                       ? GestureDetector(
-                                          onTap: () => widget.onPlayerTap(
-                                            player.id,
-                                            radius,
-                                          ),
-                                          child: displayWidget,
-                                        )
+                                    onTap: () => widget.onPlayerTap(player.id, radius),
+                                    child: displayWidget,
+                                  )
                                       : LongPressDraggable<PlayerInfo>(
-                                          data: player,
-                                          delay: const Duration(
-                                            milliseconds: 200,
-                                          ),
-                                          feedback: Material(
-                                            color: Colors.transparent,
-                                            child: Opacity(
-                                              opacity: 0.9,
-                                              child: PlayerAvatar(
-                                                player: player,
-                                                teamColor: widget.homeColor,
-                                                radius: radius * 1.1,
-                                                displayMode: widget.displayMode,
-                                                currentRound:
-                                                    widget.currentRound,
-                                                ratingColorDecayBase:
-                                                    widget.ratingColorDecayBase,
-                                                averageRatingColorDecayBase: widget
-                                                    .averageRatingColorDecayBase,
-                                              ),
-                                            ),
-                                          ),
-                                          childWhenDragging: Opacity(
-                                            opacity: 0.3,
-                                            child: displayWidget,
-                                          ),
-                                          onDragStarted: () => setState(
-                                            () => _draggingPlayer = player,
-                                          ),
-                                          onDragEnd: (_) => setState(
-                                            () => _draggingPlayer = null,
-                                          ),
-                                          child: GestureDetector(
-                                            onTap: () => widget.onPlayerTap(
-                                              player.id,
-                                              radius,
-                                            ),
-                                            child: displayWidget,
-                                          ),
+                                    data: player,
+                                    delay: const Duration(milliseconds: 200),
+                                    feedback: Material(
+                                      color: Colors.transparent,
+                                      child: Opacity(
+                                        opacity: 0.9,
+                                        child: PlayerAvatar(
+                                          player: player,
+                                          teamColor: widget.homeColor,
+                                          radius: radius * 1.1,
+                                          displayMode: widget.displayMode,
+                                          currentRound: widget.currentRound,
+                                          ratingColorDecayBase: widget.ratingColorDecayBase,
+                                          averageRatingColorDecayBase: widget.averageRatingColorDecayBase,
                                         ),
+                                      ),
+                                    ),
+                                    childWhenDragging: Opacity(
+                                      opacity: 0.3,
+                                      child: displayWidget,
+                                    ),
+                                    onDragStarted: () => setState(() => _draggingPlayer = player),
+                                    onDragEnd: (_) => setState(() => _draggingPlayer = null),
+                                    child: GestureDetector(
+                                      onTap: () => widget.onPlayerTap(player.id, radius),
+                                      child: displayWidget,
+                                    ),
+                                  ),
                                 );
                               }).toList(),
-                            ),
-                          ),
+                            ),                          ),
                         ),
                       ],
                     ),
@@ -844,15 +640,7 @@ class _MatchFormationDisplayState extends State<MatchFormationDisplay> {
   }
 
   // --- WICHTIG: Korrigierte _buildPlayerLine (Damit Feldspieler ziehbar sind) ---
-  Widget _buildPlayerLine(
-    BuildContext context,
-    List<PlayerInfo> players,
-    double lineYPosition,
-    Color teamColor,
-    void Function(int, double) onPlayerTap,
-    double radius,
-    bool isAwayTeam,
-  ) {
+  Widget _buildPlayerLine(BuildContext context, List<PlayerInfo> players, double lineYPosition, Color teamColor, void Function(int, double) onPlayerTap, double radius, bool isAwayTeam) {
     final playerCount = players.length;
     final orderedPlayers = isAwayTeam ? players : players.reversed.toList();
     return Positioned.fill(
@@ -865,13 +653,11 @@ class _MatchFormationDisplayState extends State<MatchFormationDisplay> {
 
               final int slotIndex = widget.homePlayers.indexOf(targetPlayer);
               String requiredRole = "";
-              if (slotIndex != -1 &&
-                  slotIndex < widget.requiredPositions.length) {
+              if (slotIndex != -1 && slotIndex < widget.requiredPositions.length) {
                 requiredRole = widget.requiredPositions[slotIndex];
               }
 
-              final bool isValidTarget =
-                  _draggingPlayer != null &&
+              final bool isValidTarget = _draggingPlayer != null &&
                   requiredRole.isNotEmpty &&
                   _isPositionValid(requiredRole, _draggingPlayer!.position);
 
@@ -881,34 +667,24 @@ class _MatchFormationDisplayState extends State<MatchFormationDisplay> {
                   player: targetPlayer,
                   teamColor: teamColor,
                   // NEU: Je nach Team die richtige Torwartfarbe übergeben
-                  goalkeeperColor: isAwayTeam
-                      ? widget.awayGoalkeeperColor
-                      : widget.homeGoalkeeperColor,
+                  goalkeeperColor: isAwayTeam ? widget.awayGoalkeeperColor : widget.homeGoalkeeperColor,
                   radius: radius,
                   showHoverEffect: false, // Wird unten vom DragTarget gesteuert
                   showValidTargetEffect: isValidTarget,
                   displayMode: widget.displayMode,
                   currentRound: widget.currentRound,
                   ratingColorDecayBase: widget.ratingColorDecayBase,
-                  averageRatingColorDecayBase:
-                      widget.averageRatingColorDecayBase,
+                  averageRatingColorDecayBase: widget.averageRatingColorDecayBase,
                   hideUnlockedMatchdayRating: widget.hideUnlockedMatchdayRating,
                 ),
               );
 
               return Align(
-                alignment: Alignment(
-                  (playerXPosition * 2) - 1,
-                  (lineYPosition * 2) - 1,
-                ),
+                alignment: Alignment((playerXPosition * 2) - 1, (lineYPosition * 2) - 1),
                 child: DragTarget<PlayerInfo>(
                   onWillAccept: (incomingPlayer) {
-                    if (incomingPlayer == null || requiredRole.isEmpty)
-                      return false;
-                    return _isPositionValid(
-                      requiredRole,
-                      incomingPlayer.position,
-                    );
+                    if (incomingPlayer == null || requiredRole.isEmpty) return false;
+                    return _isPositionValid(requiredRole, incomingPlayer.position);
                   },
                   onAccept: (incomingPlayer) {
                     if (widget.onPlayerDrop != null) {
@@ -919,18 +695,14 @@ class _MatchFormationDisplayState extends State<MatchFormationDisplay> {
                   builder: (context, candidateData, rejectedData) {
                     final bool isHovering = candidateData.isNotEmpty;
                     // NEU: Prüfen, ob der Spieler gelockt ist
-                    final bool isPlayerLocked = widget.frozenPlayerIds.contains(
-                      targetPlayer.id,
-                    );
+                    final bool isPlayerLocked = widget.frozenPlayerIds.contains(targetPlayer.id);
 
                     // Das Basis-Widget (Avatar)
                     final displayWidget = PlayerAvatar(
                       player: targetPlayer,
                       teamColor: teamColor,
                       // NEU: Auch hier die Torwartfarbe übergeben!
-                      goalkeeperColor: isAwayTeam
-                          ? widget.awayGoalkeeperColor
-                          : widget.homeGoalkeeperColor,
+                      goalkeeperColor: isAwayTeam ? widget.awayGoalkeeperColor : widget.homeGoalkeeperColor,
                       radius: radius,
                       showHoverEffect: isHovering,
                       showValidTargetEffect: isValidTarget,
@@ -938,15 +710,11 @@ class _MatchFormationDisplayState extends State<MatchFormationDisplay> {
                       displayMode: widget.displayMode,
                       currentRound: widget.currentRound,
                       ratingColorDecayBase: widget.ratingColorDecayBase,
-                      averageRatingColorDecayBase:
-                          widget.averageRatingColorDecayBase,
-                      hideUnlockedMatchdayRating:
-                          widget.hideUnlockedMatchdayRating,
+                      averageRatingColorDecayBase: widget.averageRatingColorDecayBase,
+                      hideUnlockedMatchdayRating: widget.hideUnlockedMatchdayRating,
                     );
 
-                    if (targetPlayer.id > 0 &&
-                        !isPlayerLocked &&
-                        !widget.isReadOnly) {
+                    if (targetPlayer.id > 0 && !isPlayerLocked && !widget.isReadOnly) {
                       return LongPressDraggable<PlayerInfo>(
                         data: targetPlayer,
                         delay: const Duration(milliseconds: 100),
@@ -961,8 +729,7 @@ class _MatchFormationDisplayState extends State<MatchFormationDisplay> {
                               displayMode: widget.displayMode,
                               currentRound: widget.currentRound,
                               ratingColorDecayBase: widget.ratingColorDecayBase,
-                              averageRatingColorDecayBase:
-                                  widget.averageRatingColorDecayBase,
+                              averageRatingColorDecayBase: widget.averageRatingColorDecayBase,
                             ),
                           ),
                         ),
@@ -970,12 +737,9 @@ class _MatchFormationDisplayState extends State<MatchFormationDisplay> {
                           opacity: 0.3,
                           child: displayWidget,
                         ),
-                        onDragStarted: () =>
-                            setState(() => _draggingPlayer = targetPlayer),
-                        onDragEnd: (_) =>
-                            setState(() => _draggingPlayer = null),
-                        onDraggableCanceled: (_, __) =>
-                            setState(() => _draggingPlayer = null),
+                        onDragStarted: () => setState(() => _draggingPlayer = targetPlayer),
+                        onDragEnd: (_) => setState(() => _draggingPlayer = null),
+                        onDraggableCanceled: (_, __) => setState(() => _draggingPlayer = null),
 
                         // Auch der Draggable braucht einen GestureDetector für normale Taps!
                         child: GestureDetector(
@@ -994,8 +758,7 @@ class _MatchFormationDisplayState extends State<MatchFormationDisplay> {
                         child: displayWidget,
                       );
                     }
-                  },
-                ),
+                  },                ),
               );
             }),
           );
@@ -1004,39 +767,32 @@ class _MatchFormationDisplayState extends State<MatchFormationDisplay> {
     );
   }
 
-  Widget _buildAwayTeam(
-    BuildContext context,
-    BoxConstraints constraints,
-    double radius,
-  ) {
+  Widget _buildAwayTeam(BuildContext context, BoxConstraints constraints,
+      double radius) {
     final awayGoalkeeper = _findGoalkeeper(widget.awayPlayers!);
     final awayFieldPlayers = _findFieldPlayers(
-      widget.awayPlayers!,
-      awayGoalkeeper,
-    );
+        widget.awayPlayers!, awayGoalkeeper);
     final awayFormationLines = _parseFormation(widget.awayFormation!);
     if (awayGoalkeeper == null || awayFieldPlayers.length < 10)
       return const SizedBox.shrink();
     return Stack(
       children: [
         _buildPlayerLine(
-          context,
-          [awayGoalkeeper],
-          0.02,
-          widget.awayColor!,
-          widget.onPlayerTap,
-          radius,
-          true,
-        ),
+            context,
+            [awayGoalkeeper],
+            0.02,
+            widget.awayColor!,
+            widget.onPlayerTap,
+            radius,
+            true),
         ..._buildFormationLines(
-          context,
-          awayFormationLines,
-          awayFieldPlayers,
-          true,
-          widget.awayColor!,
-          widget.onPlayerTap,
-          radius,
-        ),
+            context,
+            awayFormationLines,
+            awayFieldPlayers,
+            true,
+            widget.awayColor!,
+            widget.onPlayerTap,
+            radius),
       ],
     );
   }
@@ -1049,10 +805,8 @@ class _MatchFormationDisplayState extends State<MatchFormationDisplay> {
     }
   }
 
-  List<PlayerInfo> _findFieldPlayers(
-    List<PlayerInfo> players,
-    PlayerInfo? goalkeeper,
-  ) {
+  List<PlayerInfo> _findFieldPlayers(List<PlayerInfo> players,
+      PlayerInfo? goalkeeper) {
     if (goalkeeper == null) return [];
     return players.where((p) => p != goalkeeper).toList();
   }
@@ -1061,23 +815,16 @@ class _MatchFormationDisplayState extends State<MatchFormationDisplay> {
     return formation.split('-').map((e) => int.tryParse(e) ?? 0).toList();
   }
 
-  List<Widget> _buildFormationLines(
-    BuildContext context,
-    List<int> formationLines,
-    List<PlayerInfo> fieldPlayers,
-    bool isAwayTeam,
-    Color teamColor,
-    void Function(int, double) onPlayerTap,
-    double radius, {
-    bool singleTeamMode = false,
-  }) {
+  List<Widget> _buildFormationLines(BuildContext context,
+      List<int> formationLines, List<PlayerInfo> fieldPlayers, bool isAwayTeam,
+      Color teamColor, void Function(int, double) onPlayerTap, double radius,
+      {bool singleTeamMode = false}) {
     final List<Widget> lines = [];
     int playerIndexOffset = 0;
     double verticalSpacingFactor;
 
     if (singleTeamMode) {
-      verticalSpacingFactor =
-          (0.325 * 105 / 60) /
+      verticalSpacingFactor = (0.325 * 105 / 60) /
           (formationLines.length > 1 ? formationLines.length - 0.8 : 1);
     } else {
       verticalSpacingFactor =
@@ -1098,24 +845,20 @@ class _MatchFormationDisplayState extends State<MatchFormationDisplay> {
       }
 
       final linePlayers = fieldPlayers.sublist(
-        playerIndexOffset,
-        playerIndexOffset + linePlayerCount,
-      );
-      lines.add(
-        _buildPlayerLine(
+          playerIndexOffset, playerIndexOffset + linePlayerCount);
+      lines.add(_buildPlayerLine(
           context,
           linePlayers,
           lineYPosition,
           teamColor,
           onPlayerTap,
           radius,
-          isAwayTeam,
-        ),
-      );
+          isAwayTeam));
       playerIndexOffset += linePlayerCount;
     }
     return lines;
   }
+
 }
 
 class SoccerFieldPainter extends CustomPainter {
@@ -1129,9 +872,7 @@ class SoccerFieldPainter extends CustomPainter {
 
     // 1. Rasen: Schickes Streifenmuster
     final Color grassLight = const Color(0xFF4CAF50); // Klassisches Fußballgrün
-    final Color grassDark = const Color(
-      0xFF43A047,
-    ); // Leicht dunklerer Streifen
+    final Color grassDark = const Color(0xFF43A047);  // Leicht dunklerer Streifen
 
     // Hintergrund
     paint.color = grassLight;
@@ -1141,8 +882,7 @@ class SoccerFieldPainter extends CustomPainter {
     paint.color = grassDark;
     final double stripeHeight = size.height / 12; // 12 horizontale Streifen
     for (int i = 0; i < 12; i++) {
-      if (i % 2 == 0) {
-        // Jeder zweite Streifen
+      if (i % 2 == 0) { // Jeder zweite Streifen
         canvas.drawRect(
           Rect.fromLTWH(0, i * stripeHeight, size.width, stripeHeight),
           paint,
@@ -1158,23 +898,13 @@ class SoccerFieldPainter extends CustomPainter {
     // Außenlinie
     canvas.drawRect(Rect.fromLTWH(0, 0, size.width, size.height), paint);
 
-    final centerLineY = singleTeamMode
-        ? size.height * (1 - 52.5 / 65)
-        : size.height / 2;
+    final centerLineY = singleTeamMode ? size.height * (1 - 52.5 / 65) : size.height / 2;
 
     // Mittellinie
-    canvas.drawLine(
-      Offset(0, centerLineY),
-      Offset(size.width, centerLineY),
-      paint,
-    );
+    canvas.drawLine(Offset(0, centerLineY), Offset(size.width, centerLineY), paint);
 
     // Mittelkreis
-    canvas.drawCircle(
-      Offset(size.width / 2, centerLineY),
-      size.width * 0.15,
-      paint,
-    );
+    canvas.drawCircle(Offset(size.width / 2, centerLineY), size.width * 0.15, paint);
 
     // Anstoßpunkt
     paint.style = PaintingStyle.fill;
@@ -1197,10 +927,7 @@ class SoccerFieldPainter extends CustomPainter {
       // Großer Strafraum (16er)
       canvas.drawRect(
         Rect.fromCenter(
-          center: Offset(
-            size.width / 2,
-            yBase + (penaltyAreaHeight / 2 * direction),
-          ),
+          center: Offset(size.width / 2, yBase + (penaltyAreaHeight / 2 * direction)),
           width: penaltyAreaWidth,
           height: penaltyAreaHeight,
         ),
@@ -1210,10 +937,7 @@ class SoccerFieldPainter extends CustomPainter {
       // Torraum (5er)
       canvas.drawRect(
         Rect.fromCenter(
-          center: Offset(
-            size.width / 2,
-            yBase + (goalAreaHeight / 2 * direction),
-          ),
+          center: Offset(size.width / 2, yBase + (goalAreaHeight / 2 * direction)),
           width: goalAreaWidth,
           height: goalAreaHeight,
         ),
@@ -1223,11 +947,7 @@ class SoccerFieldPainter extends CustomPainter {
       // Elfmeterpunkt
       final penaltySpotDist = size.height * (singleTeamMode ? 0.12 : 0.11);
       paint.style = PaintingStyle.fill;
-      canvas.drawCircle(
-        Offset(size.width / 2, yBase + (penaltySpotDist * direction)),
-        2,
-        paint,
-      );
+      canvas.drawCircle(Offset(size.width / 2, yBase + (penaltySpotDist * direction)), 2, paint);
       paint.style = PaintingStyle.stroke;
 
       // Strafraum-Halbkreis (Arc)
@@ -1255,54 +975,12 @@ class SoccerFieldPainter extends CustomPainter {
 
     // Ecken (Corner Arcs)
     final double cornerSize = size.width * 0.02;
-    if (!singleTeamMode)
-      canvas.drawArc(
-        Rect.fromLTWH(-cornerSize, -cornerSize, cornerSize * 2, cornerSize * 2),
-        0,
-        pi / 2,
-        false,
-        paint,
-      ); // TL
-    if (!singleTeamMode)
-      canvas.drawArc(
-        Rect.fromLTWH(
-          size.width - cornerSize,
-          -cornerSize,
-          cornerSize * 2,
-          cornerSize * 2,
-        ),
-        pi / 2,
-        pi / 2,
-        false,
-        paint,
-      ); // TR
-    canvas.drawArc(
-      Rect.fromLTWH(
-        -cornerSize,
-        size.height - cornerSize,
-        cornerSize * 2,
-        cornerSize * 2,
-      ),
-      -pi / 2,
-      pi / 2,
-      false,
-      paint,
-    ); // BL
-    canvas.drawArc(
-      Rect.fromLTWH(
-        size.width - cornerSize,
-        size.height - cornerSize,
-        cornerSize * 2,
-        cornerSize * 2,
-      ),
-      pi,
-      pi / 2,
-      false,
-      paint,
-    ); // BR
+    if (!singleTeamMode) canvas.drawArc(Rect.fromLTWH(-cornerSize, -cornerSize, cornerSize*2, cornerSize*2), 0, pi/2, false, paint); // TL
+    if (!singleTeamMode) canvas.drawArc(Rect.fromLTWH(size.width-cornerSize, -cornerSize, cornerSize*2, cornerSize*2), pi/2, pi/2, false, paint); // TR
+    canvas.drawArc(Rect.fromLTWH(-cornerSize, size.height-cornerSize, cornerSize*2, cornerSize*2), -pi/2, pi/2, false, paint); // BL
+    canvas.drawArc(Rect.fromLTWH(size.width-cornerSize, size.height-cornerSize, cornerSize*2, cornerSize*2), pi, pi/2, false, paint); // BR
   }
 
   @override
-  bool shouldRepaint(covariant SoccerFieldPainter oldDelegate) =>
-      oldDelegate.singleTeamMode != singleTeamMode;
+  bool shouldRepaint(covariant SoccerFieldPainter oldDelegate) => oldDelegate.singleTeamMode != singleTeamMode;
 }

@@ -14,18 +14,12 @@ import 'package:premier_league/utils/color_helper.dart';
 import 'package:premier_league/utils/match_time_helper.dart';
 import 'package:fl_chart/fl_chart.dart';
 import 'package:premier_league/screens/screenelements/position_pitch.dart';
-
 class PlayerScreen extends StatefulWidget {
   final int playerId;
   final int? seasonId;
   final int? leagueId;
 
-  const PlayerScreen({
-    super.key,
-    required this.playerId,
-    this.seasonId,
-    this.leagueId,
-  });
+  const PlayerScreen({super.key, required this.playerId, this.seasonId, this.leagueId});
 
   @override
   _PlayerScreenState createState() => _PlayerScreenState();
@@ -78,7 +72,6 @@ class _PlayerScreenState extends State<PlayerScreen>
       setState(() {});
     });
   }
-
   void didChangeDependencies() {
     super.didChangeDependencies();
     fetchPlayerData();
@@ -115,9 +108,8 @@ class _PlayerScreenState extends State<PlayerScreen>
 
       // Wenn kein zukünftiges Spiel gefunden wurde, scrolle zum letzten Spiel
       if (upcomingMatchIndex == null) {
-        upcomingMatchIndex = teamMatches.isNotEmpty
-            ? teamMatches.length - 1
-            : 0;
+        upcomingMatchIndex =
+            teamMatches.isNotEmpty ? teamMatches.length - 1 : 0;
       }
 
       _scrollController.animateTo(
@@ -158,8 +150,7 @@ class _PlayerScreenState extends State<PlayerScreen>
 
     final seasonId = widget.leagueId != null
         ? await SupabaseService().fetchLeagueSeasonId(widget.leagueId!)
-        : widget.seasonId ??
-              context.read<TournamentViewModel>().currentSeasonId;
+        : widget.seasonId ?? context.read<TournamentViewModel>().currentSeasonId;
     if (seasonId == null) {
       if (mounted) {
         setState(() {
@@ -174,17 +165,13 @@ class _PlayerScreenState extends State<PlayerScreen>
       final ratingColorDecayBase = await fetchRatingColorDecayBase(supabase);
       final averageRatingColorDecayBase =
           await fetchAverageRatingColorDecayBase(supabase);
-      final ratedRoundCount = await fetchRatedSeasonRoundCount(
-        supabase,
-        seasonId,
-      );
+      final ratedRoundCount = await fetchRatedSeasonRoundCount(supabase, seasonId);
 
       // 1. Spieler- und Teamdaten abrufen (inkl. der neuen Analytics-Felder)
       final playerResponse = await supabase
           .from('season_players')
           .select(
-            'team:team(id, name, image_url), spieler:spieler(name, position, profilbild_url, spieler_analytics(marktwert, season_id, form, anzahl_spiele, punkteschnitt, gesamtstatistiken))',
-          )
+          'team:team(id, name, image_url), spieler:spieler(name, position, profilbild_url, spieler_analytics(marktwert, season_id, form, anzahl_spiele, punkteschnitt, gesamtstatistiken))')
           .eq('season_id', seasonId)
           .eq('player_id', widget.playerId)
           .single();
@@ -198,7 +185,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       Map<String, dynamic> analytics = {};
       if (analyticsRaw is List && analyticsRaw.isNotEmpty) {
         analytics = analyticsRaw.firstWhere(
-          (a) => a['season_id'] == seasonId,
+              (a) => a['season_id'] == seasonId,
           orElse: () => <String, dynamic>{},
         );
       } else if (analyticsRaw is Map) {
@@ -210,34 +197,26 @@ class _PlayerScreenState extends State<PlayerScreen>
       Map<String, dynamic> dbStats = analytics['gesamtstatistiken'] ?? {};
 
       // Mögliche Keys in gesamtstatistiken abfangen
-      final bool hasDbTotalPoints =
-          dbStats.containsKey('gesamtpunkte') ||
+      final bool hasDbTotalPoints = dbStats.containsKey('gesamtpunkte') ||
           dbStats.containsKey('punkte') ||
           dbStats.containsKey('total_points');
-      int dbTotalPoints =
-          (dbStats['gesamtpunkte'] as num?)?.toInt() ??
+      int dbTotalPoints = (dbStats['gesamtpunkte'] as num?)?.toInt() ??
           (dbStats['punkte'] as num?)?.toInt() ??
           (dbStats['total_points'] as num?)?.toInt() ??
           0;
-      int dbGoals =
-          (dbStats['goals'] as num?)?.toInt() ??
-          (dbStats['tore'] as num?)?.toInt() ??
-          0;
+      int dbGoals = (dbStats['goals'] as num?)?.toInt() ?? (dbStats['tore'] as num?)?.toInt() ?? 0;
       int dbAssists = (dbStats['assists'] as num?)?.toInt() ?? 0;
-      int dbMinutes =
-          (dbStats['minutesPlayed'] as num?)?.toInt() ??
-          (dbStats['minuten'] as num?)?.toInt() ??
-          0;
+      int dbMinutes = (dbStats['minutesPlayed'] as num?)?.toInt() ?? (dbStats['minuten'] as num?)?.toInt() ?? 0;
+
 
       // 2. ALLE Spiele des Teams abrufen
       final teamMatchesResponse = await supabase
           .from('spiel')
           .select(
-            '*, '
-            'heimteam:team!spiel_heimteam_id_fkey(name, image_url), '
-            'auswaertsteam:team!spiel_auswärtsteam_id_fkey(name, image_url), '
-            'matchrating!left(*)',
-          )
+          '*, '
+              'heimteam:team!spiel_heimteam_id_fkey(name, image_url), '
+              'auswaertsteam:team!spiel_auswärtsteam_id_fkey(name, image_url), '
+              'matchrating!left(*)')
           .eq('season_id', seasonId)
           .or('heimteam_id.eq.$playerTeamId,auswärtsteam_id.eq.$playerTeamId')
           .eq('matchrating.spieler_id', widget.playerId)
@@ -271,25 +250,21 @@ class _PlayerScreenState extends State<PlayerScreen>
       if (historyData.isEmpty && currentMarketValue > 0) {
         tempMin = currentMarketValue.toDouble();
         tempMax = currentMarketValue.toDouble();
-        historyData.add({
-          'datum': DateTime.now(),
-          'marktwert': currentMarketValue.toDouble(),
-        });
+        historyData.add({'datum': DateTime.now(), 'marktwert': currentMarketValue.toDouble()});
       }
 
       // 4. Daten für Radar-Chart & Fallback vorbereiten
       final actualRatings = teamMatchesResponse
           .where((match) => (match['matchrating'] as List<dynamic>).isNotEmpty)
           .map((match) {
-            final rating = (match['matchrating'] as List<dynamic>).first;
-            return {
-              'match_position': rating['match_position'],
-              'punkte': rating['punkte'],
-              'statistics': rating['statistics'],
-              'spiel': match,
-            };
-          })
-          .toList();
+        final rating = (match['matchrating'] as List<dynamic>).first;
+        return {
+          'match_position': rating['match_position'],
+          'punkte': rating['punkte'],
+          'statistics': rating['statistics'],
+          'spiel': match,
+        };
+      }).toList();
 
       // Fallback-Zähler (falls die DB noch leer ist)
       int aggregatedPoints = 0;
@@ -308,9 +283,7 @@ class _PlayerScreenState extends State<PlayerScreen>
       }
 
       // 5. Zuweisung: DB-Werte haben Vorrang, andernfalls wird der Fallback genutzt
-      int finalTotalPoints = hasDbTotalPoints
-          ? dbTotalPoints
-          : aggregatedPoints;
+      int finalTotalPoints = hasDbTotalPoints ? dbTotalPoints : aggregatedPoints;
       int finalAppearances = anzahlSpiele;
       int finalGoals = dbGoals > 0 ? dbGoals : tempGoals;
       int finalAssists = dbAssists > 0 ? dbAssists : tempAssists;
@@ -323,17 +296,13 @@ class _PlayerScreenState extends State<PlayerScreen>
 
       // 6. Positionen parsen
       String rawPositions = spielerData['position'] ?? 'N/A';
-      List<String> parsedPositions = rawPositions
-          .split(',')
-          .map((p) => p.trim())
-          .toList();
+      List<String> parsedPositions = rawPositions.split(',').map((p) => p.trim()).toList();
       if (parsedPositions.isEmpty || parsedPositions.first.isEmpty) {
         parsedPositions = ['N/A'];
       }
 
       final String selectedPos =
-          (selectedPosition != null &&
-              parsedPositions.contains(selectedPosition))
+      (selectedPosition != null && parsedPositions.contains(selectedPosition))
           ? selectedPosition!
           : parsedPositions.last;
 
@@ -343,7 +312,8 @@ class _PlayerScreenState extends State<PlayerScreen>
         marketValue = currentMarketValue;
         teamName = teamData!['name'];
         teamImageUrl = teamData!['image_url'];
-        profileImageUrl = spielerData['profilbild_url'] ?? 'https://rcfetlzldccwjnuabfgj.supabase.co/storage/v1/object/public/spielerbilder//Photo-Missing.png';
+        profileImageUrl = spielerData['profilbild_url'] ??
+            'https://rcfetlzldccwjnuabfgj.supabase.co/storage/v1/object/public/spielerbilder//Photo-Missing.png';
 
         teamMatches = teamMatchesResponse;
         matchRatingsRaw = actualRatings;
@@ -385,7 +355,6 @@ class _PlayerScreenState extends State<PlayerScreen>
       }
     }
   }
-
   Future<void> _triggerRadarChartCalculation(String comparisonPosition) async {
     if (!mounted) return;
     setState(() {
@@ -414,10 +383,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   Widget _buildCollapsedPlayerBar() {
-    final maxTotalScore = getAggregateRatingMaxValue(
-      _ratedRoundCount,
-      _ratingColorDecayBase,
-    );
+    final maxTotalScore = getAggregateRatingMaxValue(_ratedRoundCount, _ratingColorDecayBase);
     final playerInfo = PlayerInfo(
       id: widget.playerId,
       name: playerName,
@@ -477,8 +443,9 @@ class _PlayerScreenState extends State<PlayerScreen>
                 teamImageUrl!,
                 width: 22,
                 height: 22,
-                errorBuilder: (context, error, stackTrace) =>
-                    const Icon(Icons.shield, size: 22),
+                errorBuilder:
+                    (context, error, stackTrace) =>
+                        const Icon(Icons.shield, size: 22),
               ),
             ),
           Container(
@@ -508,11 +475,7 @@ class _PlayerScreenState extends State<PlayerScreen>
     );
   }
 
-  Widget _buildLineChart({
-    required bool isPreview,
-    Function(int)? onSpotTouched,
-    int? selectedIndex,
-  }) {
+  Widget _buildLineChart({required bool isPreview, Function(int)? onSpotTouched, int? selectedIndex,}) {
     List<FlSpot> spots = [];
     for (int i = 0; i < marktwertHistorie.length; i++) {
       spots.add(FlSpot(i.toDouble(), marktwertHistorie[i]['marktwert']));
@@ -558,33 +521,33 @@ class _PlayerScreenState extends State<PlayerScreen>
         maxY: maxMarktwert * 1.1,
         lineTouchData: LineTouchData(
           enabled: !isPreview,
-          touchCallback:
-              (FlTouchEvent event, LineTouchResponse? touchResponse) {
-                if (event is FlTapUpEvent || event is FlPanUpdateEvent) {
-                  if (touchResponse != null &&
-                      touchResponse.lineBarSpots != null &&
-                      touchResponse.lineBarSpots!.isNotEmpty) {
-                    if (onSpotTouched != null) {
-                      onSpotTouched(
-                        touchResponse.lineBarSpots!.first.spotIndex,
-                      );
-                    }
-                  }
+          touchCallback: (
+            FlTouchEvent event,
+            LineTouchResponse? touchResponse,
+          ) {
+            if (event is FlTapUpEvent || event is FlPanUpdateEvent) {
+              if (touchResponse != null &&
+                  touchResponse.lineBarSpots != null &&
+                  touchResponse.lineBarSpots!.isNotEmpty) {
+                if (onSpotTouched != null) {
+                  onSpotTouched(touchResponse.lineBarSpots!.first.spotIndex);
                 }
-              },
+              }
+            }
+          },
           touchTooltipData: LineTouchTooltipData(
-            getTooltipItems: (touchedSpots) =>
-                touchedSpots.map((_) => null).toList(),
+            getTooltipItems:
+                (touchedSpots) => touchedSpots.map((_) => null).toList(),
           ),
         ),
         gridData: FlGridData(
           show: !isPreview,
           drawVerticalLine: true,
           horizontalInterval: maxMarktwert > 0 ? (maxMarktwert * 0.2) : 1000000,
-          getDrawingHorizontalLine: (value) =>
-              FlLine(color: Colors.grey.shade200, strokeWidth: 1),
-          getDrawingVerticalLine: (value) =>
-              FlLine(color: Colors.grey.shade200, strokeWidth: 1),
+          getDrawingHorizontalLine:
+              (value) => FlLine(color: Colors.grey.shade200, strokeWidth: 1),
+          getDrawingVerticalLine:
+              (value) => FlLine(color: Colors.grey.shade200, strokeWidth: 1),
         ),
         titlesData: FlTitlesData(
           show: !isPreview,
@@ -754,16 +717,10 @@ class _PlayerScreenState extends State<PlayerScreen>
       ],
     );
   }
-
-  // --- Helfer: Basis-Kachel (Bento-Box) ---
-  // --- Helfer: Basis-Kachel exakt wie MatchCard formatiert ---
-  // --- Helfer: Basis-Kachel exakt wie MatchCard formatiert ---
-  Widget _buildBentoBox({
-    required Widget child,
-    VoidCallback? onTap,
-    Color? bgColor,
-    Color? borderColor,
-  }) {
+// --- Helfer: Basis-Kachel (Bento-Box) ---
+// --- Helfer: Basis-Kachel exakt wie MatchCard formatiert ---
+// --- Helfer: Basis-Kachel exakt wie MatchCard formatiert ---
+  Widget _buildBentoBox({required Widget child, VoidCallback? onTap, Color? bgColor, Color? borderColor}) {
     return Card(
       margin: EdgeInsets.zero,
       elevation: 1.5,
@@ -786,12 +743,14 @@ class _PlayerScreenState extends State<PlayerScreen>
             color: bgColor ?? Colors.transparent,
             borderRadius: BorderRadius.circular(16),
           ),
-          child: Padding(padding: const EdgeInsets.all(14.0), child: child),
+          child: Padding(
+            padding: const EdgeInsets.all(14.0),
+            child: child,
+          ),
         ),
       ),
     );
   }
-
   // --- Helfer: Mini-Bereich (Jetzt auch mit eigenen Text-Icons) ---
   Widget _buildMiniStat({
     required String value,
@@ -809,34 +768,18 @@ class _PlayerScreenState extends State<PlayerScreen>
       child: Column(
         mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          customIcon ??
-              Icon(
-                icon,
-                color: iconColor ?? Colors.blueGrey.shade600,
-                size: 24,
-              ),
+          customIcon ?? Icon(icon, color: iconColor ?? Colors.blueGrey.shade600, size: 24),
           const SizedBox(height: 6),
           FittedBox(
             fit: BoxFit.scaleDown,
-            child: Text(
-              value,
-              style: TextStyle(
-                fontSize: 18,
-                fontWeight: FontWeight.w900,
-                color: valueColor ?? Colors.black87,
-              ),
-            ),
+            child: Text(value, style: TextStyle(fontSize: 18, fontWeight: FontWeight.w900, color: valueColor ?? Colors.black87)),
           ),
           const SizedBox(height: 2),
           FittedBox(
             fit: BoxFit.scaleDown,
             child: Text(
               label,
-              style: TextStyle(
-                fontSize: 10,
-                color: iconColor ?? Colors.blueGrey.shade400,
-                fontWeight: FontWeight.bold,
-              ),
+              style: TextStyle(fontSize: 10, color: iconColor ?? Colors.blueGrey.shade400, fontWeight: FontWeight.bold),
             ),
           ),
         ],
@@ -845,9 +788,8 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   void _showMarktwertGraphOverlay(BuildContext context) {
-    int? selectedSpotIndex = marktwertHistorie.isNotEmpty
-        ? marktwertHistorie.length - 1
-        : null;
+    int? selectedSpotIndex =
+        marktwertHistorie.isNotEmpty ? marktwertHistorie.length - 1 : null;
 
     showGeneralDialog(
       context: context,
@@ -913,9 +855,10 @@ class _PlayerScreenState extends State<PlayerScreen>
                         child: SingleChildScrollView(
                           scrollDirection: Axis.horizontal,
                           child: SizedBox(
-                            width: marktwertHistorie.length > 20
-                                ? marktwertHistorie.length * 20.0
-                                : MediaQuery.of(context).size.width - 72,
+                            width:
+                                marktwertHistorie.length > 20
+                                    ? marktwertHistorie.length * 20.0
+                                    : MediaQuery.of(context).size.width - 72,
                             child: _buildLineChart(
                               isPreview: false,
                               selectedIndex: selectedSpotIndex,
@@ -942,120 +885,125 @@ class _PlayerScreenState extends State<PlayerScreen>
                           borderRadius: BorderRadius.circular(16),
                           border: Border.all(color: Colors.blueGrey.shade100),
                         ),
-                        child: selectedSpotIndex == null
-                            ? const Center(child: Text('Keine Daten'))
-                            : Row(
-                                mainAxisAlignment:
-                                    MainAxisAlignment.spaceBetween,
-                                children: [
-                                  IconButton(
-                                    icon: const Icon(
-                                      Icons.arrow_back_ios_rounded,
-                                      size: 22,
+                        child:
+                            selectedSpotIndex == null
+                                ? const Center(child: Text('Keine Daten'))
+                                : Row(
+                                  mainAxisAlignment:
+                                      MainAxisAlignment.spaceBetween,
+                                  children: [
+                                    IconButton(
+                                      icon: const Icon(
+                                        Icons.arrow_back_ios_rounded,
+                                        size: 22,
+                                      ),
+                                      color:
+                                          selectedSpotIndex! > 0
+                                              ? Colors.teal.shade700
+                                              : Colors.grey.shade400,
+                                      onPressed:
+                                          selectedSpotIndex! > 0
+                                              ? () {
+                                                setStateOverlay(() {
+                                                  selectedSpotIndex =
+                                                      selectedSpotIndex! - 1;
+                                                });
+                                              }
+                                              : null,
                                     ),
-                                    color: selectedSpotIndex! > 0
-                                        ? Colors.teal.shade700
-                                        : Colors.grey.shade400,
-                                    onPressed: selectedSpotIndex! > 0
-                                        ? () {
-                                            setStateOverlay(() {
-                                              selectedSpotIndex =
-                                                  selectedSpotIndex! - 1;
-                                            });
-                                          }
-                                        : null,
-                                  ),
 
-                                  Expanded(
-                                    child: Row(
-                                      mainAxisAlignment:
-                                          MainAxisAlignment.spaceEvenly,
-                                      children: [
-                                        Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.start,
-                                          children: [
-                                            Text(
-                                              'DATUM',
-                                              style: TextStyle(
-                                                color: Colors.blueGrey.shade400,
-                                                fontSize: 10,
-                                                fontWeight: FontWeight.bold,
-                                                letterSpacing: 1.2,
+                                    Expanded(
+                                      child: Row(
+                                        mainAxisAlignment:
+                                            MainAxisAlignment.spaceEvenly,
+                                        children: [
+                                          Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.start,
+                                            children: [
+                                              Text(
+                                                'DATUM',
+                                                style: TextStyle(
+                                                  color:
+                                                      Colors.blueGrey.shade400,
+                                                  fontSize: 10,
+                                                  fontWeight: FontWeight.bold,
+                                                  letterSpacing: 1.2,
+                                                ),
                                               ),
-                                            ),
-                                            const SizedBox(height: 2),
-                                            Text(
-                                              DateFormat('dd.MM.yyyy').format(
-                                                marktwertHistorie[selectedSpotIndex!]['datum'],
+                                              const SizedBox(height: 2),
+                                              Text(
+                                                DateFormat('dd.MM.yyyy').format(
+                                                  marktwertHistorie[selectedSpotIndex!]['datum'],
+                                                ),
+                                                style: const TextStyle(
+                                                  fontWeight: FontWeight.w700,
+                                                  fontSize: 15,
+                                                  color: Colors.black87,
+                                                ),
                                               ),
-                                              style: const TextStyle(
-                                                fontWeight: FontWeight.w700,
-                                                fontSize: 15,
-                                                color: Colors.black87,
+                                            ],
+                                          ),
+                                          Container(
+                                            width: 1,
+                                            height: 30,
+                                            color: Colors.blueGrey.shade200,
+                                          ), // Trennstrich
+                                          Column(
+                                            crossAxisAlignment:
+                                                CrossAxisAlignment.end,
+                                            children: [
+                                              Text(
+                                                'WERT',
+                                                style: TextStyle(
+                                                  color:
+                                                      Colors.blueGrey.shade400,
+                                                  fontSize: 10,
+                                                  fontWeight: FontWeight.bold,
+                                                  letterSpacing: 1.2,
+                                                ),
                                               ),
-                                            ),
-                                          ],
-                                        ),
-                                        Container(
-                                          width: 1,
-                                          height: 30,
-                                          color: Colors.blueGrey.shade200,
-                                        ), // Trennstrich
-                                        Column(
-                                          crossAxisAlignment:
-                                              CrossAxisAlignment.end,
-                                          children: [
-                                            Text(
-                                              'WERT',
-                                              style: TextStyle(
-                                                color: Colors.blueGrey.shade400,
-                                                fontSize: 10,
-                                                fontWeight: FontWeight.bold,
-                                                letterSpacing: 1.2,
+                                              const SizedBox(height: 2),
+                                              Text(
+                                                _formatMarketValue(
+                                                  marktwertHistorie[selectedSpotIndex!]['marktwert']
+                                                      .toInt(),
+                                                ),
+                                                style: TextStyle(
+                                                  fontWeight: FontWeight.w800,
+                                                  fontSize: 16,
+                                                  color: Colors.teal.shade700,
+                                                ),
                                               ),
-                                            ),
-                                            const SizedBox(height: 2),
-                                            Text(
-                                              _formatMarketValue(
-                                                marktwertHistorie[selectedSpotIndex!]['marktwert']
-                                                    .toInt(),
-                                              ),
-                                              style: TextStyle(
-                                                fontWeight: FontWeight.w800,
-                                                fontSize: 16,
-                                                color: Colors.teal.shade700,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ],
+                                            ],
+                                          ),
+                                        ],
+                                      ),
                                     ),
-                                  ),
 
-                                  IconButton(
-                                    icon: const Icon(
-                                      Icons.arrow_forward_ios_rounded,
-                                      size: 22,
+                                    IconButton(
+                                      icon: const Icon(
+                                        Icons.arrow_forward_ios_rounded,
+                                        size: 22,
+                                      ),
+                                      color:
+                                          selectedSpotIndex! <
+                                                  marktwertHistorie.length - 1
+                                              ? Colors.teal.shade700
+                                              : Colors.grey.shade400,
+                                      onPressed:
+                                          selectedSpotIndex! <
+                                                  marktwertHistorie.length - 1
+                                              ? () {
+                                                setStateOverlay(() {
+                                                  selectedSpotIndex =
+                                                      selectedSpotIndex! + 1;
+                                                });
+                                              }
+                                              : null,
                                     ),
-                                    color:
-                                        selectedSpotIndex! <
-                                            marktwertHistorie.length - 1
-                                        ? Colors.teal.shade700
-                                        : Colors.grey.shade400,
-                                    onPressed:
-                                        selectedSpotIndex! <
-                                            marktwertHistorie.length - 1
-                                        ? () {
-                                            setStateOverlay(() {
-                                              selectedSpotIndex =
-                                                  selectedSpotIndex! + 1;
-                                            });
-                                          }
-                                        : null,
-                                  ),
-                                ],
-                              ),
+                                  ],
+                                ),
                       ),
                     ],
                   ),
@@ -1083,86 +1031,85 @@ class _PlayerScreenState extends State<PlayerScreen>
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: isLoading
-          ? const Center(child: CircularProgressIndicator())
-          : _errorMessage.isNotEmpty
-          ? Center(child: Text(_errorMessage))
-          : NestedScrollView(
-              headerSliverBuilder: (context, innerBoxIsScrolled) {
-                return [
-                  SliverOverlapAbsorber(
-                    handle: NestedScrollView.sliverOverlapAbsorberHandleFor(
-                      context,
-                    ),
-                    sliver: SliverAppBar(
-                      expandedHeight: 240, // <-- REDUZIERT von 290
-                      pinned: true,
-                      backgroundColor: Colors.white,
-                      foregroundColor: Colors.black87,
-                      elevation: 1,
-                      flexibleSpace: LayoutBuilder(
-                        builder: (context, constraints) {
-                          final safeAreaTop = MediaQuery.of(context)
-                              .padding
-                              .top;
-                          const collapsedBottomHeight = 48.0;
-                          final collapsedHeight =
-                              kToolbarHeight +
-                              collapsedBottomHeight +
-                              safeAreaTop;
-                          const expandedHeight = 240.0;
-                          var fade = 1.0;
-                          if (expandedHeight > collapsedHeight) {
-                            fade =
-                                (constraints.maxHeight - collapsedHeight) /
-                                (expandedHeight - collapsedHeight);
-                            fade = fade.clamp(0.0, 1.0);
-                          }
+      body:
+          isLoading
+              ? const Center(child: CircularProgressIndicator())
+              : _errorMessage.isNotEmpty
+              ? Center(child: Text(_errorMessage))
+              : NestedScrollView(
+                headerSliverBuilder: (context, innerBoxIsScrolled) {
+                  return [
+                    SliverOverlapAbsorber(
+                      handle: NestedScrollView.sliverOverlapAbsorberHandleFor(
+                        context,
+                      ),
+                      sliver: SliverAppBar(
+                        expandedHeight: 240, // <-- REDUZIERT von 290
+                        pinned: true,
+                        backgroundColor: Colors.white,
+                        foregroundColor: Colors.black87,
+                        elevation: 1,
+                        flexibleSpace: LayoutBuilder(
+                          builder: (context, constraints) {
+                            final safeAreaTop = MediaQuery.of(context).padding.top;
+                            const collapsedBottomHeight = 48.0;
+                            final collapsedHeight = kToolbarHeight + collapsedBottomHeight + safeAreaTop;
+                            const expandedHeight = 240.0;
+                            var fade = 1.0;
+                            if (expandedHeight > collapsedHeight) {
+                              fade =
+                                  (constraints.maxHeight - collapsedHeight) /
+                                  (expandedHeight - collapsedHeight);
+                              fade = fade.clamp(0.0, 1.0);
+                            }
 
-                          return Stack(
-                            fit: StackFit.expand,
-                            children: [
-                              Positioned(
-                                top: safeAreaTop + 18,
-                                left: 0,
-                                right: 0,
-                                child: IgnorePointer(
-                                  ignoring: fade < 0.5,
-                                  child: Opacity(
-                                    opacity: fade,
-                                    child: Column(
-                                      children: [
-                                        SizedBox(
-                                          height: 140,
-                                          child: Row(
-                                            children: [
-                                              Expanded(
-                                                flex: 2,
-                                                child: Align(
-                                                  alignment:
-                                                      Alignment.centerRight,
-                                                  child: Opacity(
-                                                    opacity: 0.4,
-                                                    child: teamImageUrl != null
-                                                        ? Image.network(
-                                                            teamImageUrl!,
-                                                            width: 110,
-                                                            height: 110,
-                                                            fit: BoxFit.contain,
-                                                          )
-                                                        : const SizedBox.shrink(),
+                            return Stack(
+                              fit: StackFit.expand,
+                              children: [
+                                Positioned(
+                                  top: safeAreaTop + 18,
+                                  left: 0,
+                                  right: 0,
+                                  child: IgnorePointer(
+                                    ignoring: fade < 0.5,
+                                    child: Opacity(
+                                      opacity: fade,
+                                      child: Column(
+                                        children: [
+                                          SizedBox(
+                                            height: 140,
+                                            child: Row(
+                                              children: [
+                                                Expanded(
+                                                  flex: 2,
+                                                  child: Align(
+                                                    alignment:
+                                                        Alignment.centerRight,
+                                                    child: Opacity(
+                                                      opacity: 0.4,
+                                                      child:
+                                                          teamImageUrl != null
+                                                              ? Image.network(
+                                                                teamImageUrl!,
+                                                                width: 110,
+                                                                height: 110,
+                                                                fit:
+                                                                    BoxFit
+                                                                        .contain,
+                                                              )
+                                                              : const SizedBox.shrink(),
+                                                    ),
                                                   ),
                                                 ),
-                                              ),
-                                              ClipOval(
-                                                child: profileImageUrl != null
-                                                    ? Image.network(
-                                                        profileImageUrl!,
-                                                        width: 130,
-                                                        height: 130,
-                                                        fit: BoxFit.cover,
-                                                        errorBuilder:
-                                                            (
+                                                ClipOval(
+                                                  child:
+                                                      profileImageUrl != null
+                                                          ? Image.network(
+                                                            profileImageUrl!,
+                                                            width: 130,
+                                                            height: 130,
+                                                            fit: BoxFit.cover,
+                                                            errorBuilder: (
                                                               context,
                                                               error,
                                                               stackTrace,
@@ -1174,664 +1121,563 @@ class _PlayerScreenState extends State<PlayerScreen>
                                                                     Colors.red,
                                                               );
                                                             },
-                                                      )
-                                                    : const Icon(
-                                                        Icons.person,
-                                                        size: 100,
-                                                        color: Colors.grey,
-                                                      ),
-                                              ),
-                                              const Expanded(
-                                                flex: 2,
-                                                child: SizedBox.shrink(),
-                                              ),
-                                            ],
-                                          ),
-                                        ),
-                                        const SizedBox(height: 12),
-                                        Text(
-                                          playerName,
-                                          style: const TextStyle(
-                                            fontSize: 22,
-                                            fontWeight: FontWeight.bold,
-                                            color: Colors.black87,
-                                          ),
-                                        ),
-                                      ],
-                                    ),
-                                  ),
-                                ),
-                              ),
-                              Positioned(
-                                top: safeAreaTop,
-                                left: 72,
-                                right: 16,
-                                height: kToolbarHeight,
-                                child: IgnorePointer(
-                                  ignoring: fade > 0.5,
-                                  child: Opacity(
-                                    opacity: 1.0 - fade,
-                                    child: _buildCollapsedPlayerBar(),
-                                  ),
-                                ),
-                              ),
-                            ],
-                          );
-                        },
-                      ),
-                      bottom: TabBar(
-                        controller: _tabController,
-                        isScrollable: false,
-                        tabs: const [
-                          Tab(text: 'Übersicht'),
-                          Tab(text: 'Saisonspiele'),
-                          Tab(text: 'Radar Chart'),
-                          Tab(text: 'Marktwert'),
-                        ],
-                      ),
-                    ),
-                  ),
-                ];
-              },
-              body: TabBarView(
-                controller: _tabController,
-                children: [
-                  // --- 1. ÜBERSICHTS-TAB (Neues, logisches Layout) ---
-                  Builder(
-                    builder: (context) {
-                      final now = DateTime.now().toUtc();
-                      final upcomingMatches = teamMatches
-                          .where((m) {
-                            if (m['datum'] == null) return false;
-                            try {
-                              final matchDate = MatchTimeHelper.parseToUtc(
-                                m['datum'],
-                              );
-                              return matchDate != null &&
-                                  matchDate.isAfter(now);
-                            } catch (_) {
-                              return false;
-                            }
-                          })
-                          .take(3)
-                          .toList();
-
-                      int avgMinutes = totalAppearances > 0
-                          ? (totalMinutes / totalAppearances).round()
-                          : 0;
-                      int pointsPer90 = totalMinutes > 0
-                          ? (totalPlayerPoints / (totalMinutes / 90)).round()
-                          : 0;
-
-                      double pointsPerMio =
-                          marketValue != null && marketValue! > 0
-                          ? totalPlayerPoints / (marketValue! / 1000000)
-                          : 0.0;
-
-                      // --- UNABHÄNGIGE FARBBRECHNUNGEN ---
-
-                      // 1. Gesamtpunkte (Maximalwert abhängig von der Anzahl der Saisonspiele)
-                      final int maxTotalScore = getAggregateRatingMaxValue(
-                        _ratedRoundCount,
-                        _ratingColorDecayBase,
-                      );
-                      final Color colorGesamt = getColorForRating(
-                        totalPlayerPoints,
-                        maxTotalScore,
-                      );
-
-                      // 2. Durchschnitt: Gesamtpunkte / spieler_analytics.anzahl_spiele.
-                      final int averageColorMax = getAverageRatingMaxValue(
-                        totalAppearances,
-                        _averageRatingColorDecayBase,
-                      );
-                      final Color colorAvg = getColorForRating(
-                        averagePlayerRating.round(),
-                        averageColorMax,
-                      );
-
-                      // 3. Form (Wert zwischen 0.0 und 3.0 aus der DB).
-                      // Da getColorForRating wahrscheinlich Ganzzahlen (int) nutzt, multiplizieren wir es mit 10 (z.B. 2.5 wird 25 von 30)
-                      final Color colorForm = getColorForRating(
-                        playerForm.round(),
-                        250,
-                      );
-
-                      return CustomScrollView(
-                        key: const PageStorageKey<String>(
-                          'playerUebersichtTab',
-                        ),
-                        slivers: [
-                          SliverOverlapInjector(
-                            handle:
-                                NestedScrollView.sliverOverlapAbsorberHandleFor(
-                                  context,
-                                ),
-                          ),
-                          SliverPadding(
-                            padding: const EdgeInsets.all(16.0),
-                            sliver: SliverList(
-                              delegate: SliverChildListDelegate([
-                                // --- REIHE 1: Marktwert & Pkt/Mio (Links) und Position (Rechts) ---
-                                SizedBox(
-                                  height: 240, // Höhe für die gestapelten, länglichen Boxen
-                                  child: Row(
-                                    children: [
-                                      // Linke Spalte (Marktwert & Pkt/Mio)
-                                      Expanded(
-                                        flex: 5,
-                                        child: Column(
-                                          children: [
-                                            Expanded(
-                                              flex: 1,
-                                              child: _buildBentoBox(
-                                                onTap: () =>
-                                                    _tabController.animateTo(3),
-                                                child: SizedBox(
-                                                  width: double.infinity,
-                                                  child: Column(
-                                                    crossAxisAlignment:
-                                                        CrossAxisAlignment
-                                                            .start,
-                                                    mainAxisAlignment:
-                                                        MainAxisAlignment
-                                                            .center,
-                                                    children: [
-                                                      FittedBox(
-                                                        fit: BoxFit.scaleDown,
-                                                        child: Row(
-                                                          children: [
-                                                            Icon(
-                                                              Icons
-                                                                  .payments_rounded,
-                                                              color: Colors
-                                                                  .blueGrey
-                                                                  .shade600,
-                                                              size: 22,
-                                                            ),
-                                                            const SizedBox(
-                                                              width: 6,
-                                                            ),
-                                                            Text(
-                                                              _formatMarketValue(
-                                                                marketValue,
-                                                              ),
-                                                              style: TextStyle(
-                                                                fontSize: 22,
-                                                                fontWeight:
-                                                                    FontWeight
-                                                                        .w900,
-                                                                color: Colors
-                                                                    .blueGrey
-                                                                    .shade900,
-                                                              ),
-                                                            ),
-                                                          ],
-                                                        ),
-                                                      ),
-                                                      const SizedBox(height: 6),
-                                                      _buildMarktwertAenderung(),
-                                                    ],
-                                                  ),
+                                                          )
+                                                          : const Icon(
+                                                            Icons.person,
+                                                            size: 100,
+                                                            color: Colors.grey,
+                                                          ),
                                                 ),
-                                              ),
-                                            ),
-                                            const SizedBox(height: 12),
-                                            // Pkt/Mio exakt in gleicher Größe direkt darunter
-                                            Expanded(
-                                              flex: 1,
-                                              child: _buildMiniStat(
-                                                value: pointsPerMio
-                                                    .toStringAsFixed(1),
-                                                label: 'GESAMMTPUNKTE / MIO',
-                                                icon: Icons.savings_outlined,
-                                              ),
-                                            ),
-                                          ],
-                                        ),
-                                      ),
-                                      const SizedBox(width: 12),
-                                      // Rechte Spalte (Das Spielfeld)
-                                      Expanded(
-                                        flex: 4,
-                                        child: _buildBentoBox(
-                                          child: Center(
-                                            child: PositionPitch(
-                                              availablePositions:
-                                                  availablePositions,
-                                            ),
-                                          ),
-                                        ),
-                                      ),
-                                    ],
-                                  ),
-                                ),
-                                const SizedBox(height: 12),
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: _buildMiniStat(
-                                        value: totalPlayerPoints.toString(),
-                                        label: 'GESAMTPUNKTE',
-                                        icon: Icons.circle,
-                                        valueColor: colorGesamt,
-                                        iconColor: colorGesamt,
-                                        bgColor: colorGesamt.withOpacity(0.1),
-                                        borderColor: colorGesamt.withOpacity(
-                                          0.3,
-                                        ),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: _buildMiniStat(
-                                        value: averagePlayerRating
-                                            .toStringAsFixed(0),
-                                        label: 'DURCHSCHNITT',
-                                        customIcon: Text(
-                                          'Ø',
-                                          style: TextStyle(
-                                            fontSize: 26,
-                                            fontWeight: FontWeight.bold,
-                                            color: colorAvg,
-                                          ),
-                                        ),
-                                        valueColor: colorAvg,
-                                        iconColor: colorAvg,
-                                        bgColor: colorAvg.withOpacity(0.1),
-                                        borderColor: colorAvg.withOpacity(0.3),
-                                      ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: _buildMiniStat(
-                                        value: playerForm.toStringAsFixed(1),
-                                        label: 'FORM',
-                                        icon: Icons.query_stats_rounded,
-                                        valueColor: colorForm,
-                                        iconColor: colorForm,
-                                        bgColor: colorForm.withOpacity(0.1),
-                                        borderColor: colorForm.withOpacity(0.3),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 12),
-                                // --- REIHE 3: Einsätze, Minuten & Pkt pro 90 (MatchCard Look) ---
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: _buildMiniStat(
-                                        value: totalAppearances.toString(),
-                                        label: 'EINSÄTZE',
-                                        icon: Icons.directions_run_rounded,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: _buildMiniStat(
-                                        value: '$avgMinutes\'',
-                                        label: 'Ø-MINUTEN',
-                                        icon: Icons.timer_outlined,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: _buildMiniStat(
-                                        value: pointsPer90.toString(),
-                                        label: 'PKT / 90 MIN',
-                                        icon: Icons.av_timer_rounded,
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 12),
-
-                                // --- REIHE 4: Tore & Vorlagen (MatchCard Look) ---
-                                Row(
-                                  children: [
-                                    Expanded(
-                                      child: _buildMiniStat(
-                                        value: totalGoals.toString(),
-                                        label: 'TORE',
-                                        icon: Icons.sports_soccer,
-                                      ),
-                                    ),
-                                    const SizedBox(width: 12),
-                                    Expanded(
-                                      child: _buildMiniStat(
-                                        value: totalAssists.toString(),
-                                        label: 'VORLAGEN',
-                                        customIcon: const Text(
-                                          '👟',
-                                          style: TextStyle(fontSize: 24),
-                                        ),
-                                      ),
-                                    ),
-                                  ],
-                                ),
-                                const SizedBox(height: 12),
-
-                                // --- REIHE 5: Nächste Spiele (MatchCard Look) ---
-                                _buildBentoBox(
-                                  onTap: () => _tabController.animateTo(1),
-                                  child: upcomingMatches.isEmpty
-                                      ? Center(
-                                          child: Text(
-                                            'Keine Spiele',
-                                            style: TextStyle(
-                                              color: Colors.blueGrey.shade300,
-                                            ),
-                                          ),
-                                        )
-                                      : Row(
-                                          mainAxisAlignment:
-                                              MainAxisAlignment.spaceEvenly,
-                                          children: upcomingMatches.map((
-                                            match,
-                                          ) {
-                                            return Row(
-                                              mainAxisSize: MainAxisSize.min,
-                                              children: [
-                                                _TeamCrest(
-                                                  imageUrl:
-                                                      match['heimteam']['image_url'],
-                                                ),
-                                                Padding(
-                                                  padding:
-                                                      const EdgeInsets.symmetric(
-                                                        horizontal: 6.0,
-                                                      ),
-                                                  child: Text(
-                                                    ':',
-                                                    style: TextStyle(
-                                                      fontWeight:
-                                                          FontWeight.bold,
-                                                      color: Colors
-                                                          .blueGrey
-                                                          .shade300,
-                                                    ),
-                                                  ),
-                                                ),
-                                                _TeamCrest(
-                                                  imageUrl:
-                                                      match['auswaertsteam']['image_url'],
+                                                const Expanded(
+                                                  flex: 2,
+                                                  child: SizedBox.shrink(),
                                                 ),
                                               ],
-                                            );
-                                          }).toList(),
-                                        ),
-                                ),
-                              ]),
-                            ),
-                          ),
-                        ],
-                      );
-                    },
-                  ),
-                  Builder(
-                    builder: (context) {
-                      return CustomScrollView(
-                        key: const PageStorageKey<String>('playerMatchesTab'),
-                        controller: _scrollController,
-                        slivers: [
-                          SliverOverlapInjector(
-                            handle:
-                                NestedScrollView.sliverOverlapAbsorberHandleFor(
-                                  context,
-                                ),
-                          ),
-                          if (teamMatches.isEmpty)
-                            const SliverFillRemaining(
-                              hasScrollBody: false,
-                              child: Center(
-                                child: Text('Keine Spiele vorhanden'),
-                              ),
-                            )
-                          else
-                            SliverList(
-                              delegate: SliverChildBuilderDelegate((
-                                context,
-                                index,
-                              ) {
-                                final match = teamMatches[index];
-                                return MatchRatingRow(
-                                  match: match,
-                                  playerId: widget.playerId,
-                                  playerName: playerName,
-                                  playerProfileImageUrl: profileImageUrl,
-                                );
-                              }, childCount: teamMatches.length),
-                            ),
-                        ],
-                      );
-                    },
-                  ),
-                  Builder(
-                    builder: (context) {
-                      return CustomScrollView(
-                        key: const PageStorageKey<String>('playerRadarTab'),
-                        slivers: [
-                          SliverOverlapInjector(
-                            handle:
-                                NestedScrollView.sliverOverlapAbsorberHandleFor(
-                                  context,
-                                ),
-                          ),
-                          if (radarChartData.isEmpty)
-                            const SliverFillRemaining(
-                              hasScrollBody: false,
-                              child: Center(
-                                child: Text('Statistiken nicht verfügbar.'),
-                              ),
-                            )
-                          else
-                            SliverFillRemaining(
-                              hasScrollBody: false,
-                              child: Column(
-                                children: [
-                                  Padding(
-                                    padding: const EdgeInsets.symmetric(
-                                      vertical: 8.0,
-                                      horizontal: 16.0,
-                                    ),
-                                    child: DropdownButton<String>(
-                                      value: selectedPosition,
-                                      isExpanded: true,
-                                      hint: const Text(
-                                        'Vergleichsposition wählen',
-                                      ),
-                                      items: availablePositions.map((
-                                        String value,
-                                      ) {
-                                        return DropdownMenuItem<String>(
-                                          value: value,
-                                          child: Text(value),
-                                        );
-                                      }).toList(),
-                                      onChanged: (newValue) {
-                                        if (newValue != null) {
-                                          setState(() {
-                                            selectedPosition = newValue;
-                                          });
-                                          _triggerRadarChartCalculation(
-                                            newValue,
-                                          );
-                                        }
-                                      },
-                                    ),
-                                  ),
-                                  Expanded(
-                                    child: Padding(
-                                      padding: const EdgeInsets.all(16.0),
-                                      child: RadialSegmentChart(
-                                        groups: radarChartData,
-                                        maxAbsValue: 100.0,
-                                        centerDisplayValue: averagePlayerRating
-                                            .round(),
-                                        centerComparisonValue:
-                                            averagePlayerRatingPercentile,
-                                      ),
-                                    ),
-                                  ),
-                                ],
-                              ),
-                            ),
-                        ],
-                      );
-                    },
-                  ),
-                  Builder(
-                    builder: (context) {
-                      return CustomScrollView(
-                        key: const PageStorageKey<String>('playerMarktwertTab'),
-                        slivers: [
-                          SliverOverlapInjector(
-                            handle:
-                                NestedScrollView.sliverOverlapAbsorberHandleFor(
-                                  context,
-                                ),
-                          ),
-                          SliverFillRemaining(
-                            hasScrollBody: false,
-                            child: Padding(
-                              padding: const EdgeInsets.all(16.0),
-                              child: Column(
-                                crossAxisAlignment: CrossAxisAlignment.start,
-                                children: [
-                                  const Text(
-                                    'Allgemeine Infos',
-                                    style: TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.bold,
-                                    ),
-                                  ),
-                                  const SizedBox(height: 8),
-                                  Card(
-                                    child: Padding(
-                                      padding: const EdgeInsets.all(16.0),
-                                      child: Row(
-                                        mainAxisAlignment:
-                                            MainAxisAlignment.spaceBetween,
-                                        children: [
-                                          // --- DIESER BEREICH WIRD ANGEPASST ---
-                                          Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.start,
-                                            children: [
-                                              const Text(
-                                                'Aktueller Wert',
-                                                style: TextStyle(
-                                                  color: Colors.grey,
-                                                ),
-                                              ),
-                                              Row(
-                                                children: [
-                                                  Text(
-                                                    _formatMarketValue(
-                                                      marketValue,
-                                                    ),
-                                                    style: const TextStyle(
-                                                      fontWeight:
-                                                          FontWeight.bold,
-                                                      fontSize: 16,
-                                                    ),
-                                                  ),
-                                                  const SizedBox(
-                                                    width: 8,
-                                                  ), // Etwas Abstand
-                                                  _buildMarktwertAenderung(), // Aufruf unserer neuen Methode!
-                                                ],
-                                              ),
-                                            ],
+                                            ),
                                           ),
-                                          // ------------------------------------
-                                          Column(
-                                            crossAxisAlignment:
-                                                CrossAxisAlignment.end,
-                                            children: [
-                                              const Text(
-                                                'Höchstwert',
-                                                style: TextStyle(
-                                                  color: Colors.grey,
-                                                ),
-                                              ),
-                                              Text(
-                                                _formatMarketValue(
-                                                  maxMarktwert.toInt(),
-                                                ),
-                                                style: const TextStyle(
-                                                  fontWeight: FontWeight.bold,
-                                                  fontSize: 16,
-                                                  color: Colors.green,
-                                                ),
-                                              ),
-                                            ],
+                                          const SizedBox(height: 12),
+                                          Text(
+                                            playerName,
+                                            style: const TextStyle(
+                                              fontSize: 22,
+                                              fontWeight: FontWeight.bold,
+                                              color: Colors.black87,
+                                            ),
                                           ),
                                         ],
                                       ),
                                     ),
                                   ),
-                                  const SizedBox(height: 24),
-                                  const Text(
-                                    'Marktwert Verlauf',
-                                    style: TextStyle(
-                                      fontSize: 18,
-                                      fontWeight: FontWeight.bold,
+                                ),
+                                Positioned(
+                                  top: safeAreaTop,
+                                  left: 72,
+                                  right: 16,
+                                  height: kToolbarHeight,
+                                  child: IgnorePointer(
+                                    ignoring: fade > 0.5,
+                                    child: Opacity(
+                                      opacity: 1.0 - fade,
+                                      child: _buildCollapsedPlayerBar(),
                                     ),
                                   ),
-                                  const SizedBox(height: 8),
-                                  // Das klickbare Vorschau-Fenster für den Graphen
-                                  GestureDetector(
-                                    onTap: () {
-                                      if (marktwertHistorie.isNotEmpty) {
-                                        _showMarktwertGraphOverlay(context);
-                                      }
-                                    },
-                                    child: Card(
-                                      elevation: 2,
-                                      child: Container(
-                                        height: 200,
-                                        width: double.infinity,
-                                        padding: const EdgeInsets.all(16),
-                                        child: marktwertHistorie.isEmpty
-                                            ? const Center(
-                                                child: Text(
-                                                  'Keine Historie vorhanden',
-                                                ),
-                                              )
-                                            : IgnorePointer(
-                                                // Deaktiviert Interaktion auf der Vorschau
-                                                child: _buildLineChart(
-                                                  isPreview: true,
+                                ),
+                              ],
+                            );
+                          },
+                        ),
+                        bottom: TabBar(
+                          controller: _tabController,
+                          isScrollable: false,
+                          tabs: const [
+                            Tab(text: 'Übersicht'),
+                            Tab(text: 'Saisonspiele'),
+                            Tab(text: 'Radar Chart'),
+                            Tab(text: 'Marktwert'),
+                          ],
+                        ),
+                      ),
+                    ),
+                  ];
+                },
+            body: TabBarView(
+              controller: _tabController,
+              children: [
+// --- 1. ÜBERSICHTS-TAB (Neues, logisches Layout) ---
+                Builder(
+                  builder: (context) {
+                    final now = DateTime.now().toUtc();
+                    final upcomingMatches = teamMatches.where((m) {
+                      if (m['datum'] == null) return false;
+                      try {
+                        final matchDate = MatchTimeHelper.parseToUtc(m['datum']);
+                        return matchDate != null && matchDate.isAfter(now);
+                      } catch (_) { return false; }
+                    }).take(3).toList();
+
+                    int avgMinutes = totalAppearances > 0 ? (totalMinutes / totalAppearances).round() : 0;
+                    int pointsPer90 = totalMinutes > 0 ? (totalPlayerPoints / (totalMinutes / 90)).round() : 0;
+
+                    double pointsPerMio = marketValue != null && marketValue! > 0
+                        ? totalPlayerPoints / (marketValue! / 1000000)
+                        : 0.0;
+
+                    // --- UNABHÄNGIGE FARBBRECHNUNGEN ---
+
+                    // 1. Gesamtpunkte (Maximalwert abhängig von der Anzahl der Saisonspiele)
+                    final int maxTotalScore = getAggregateRatingMaxValue(
+                      _ratedRoundCount,
+                      _ratingColorDecayBase,
+                    );
+                    final Color colorGesamt = getColorForRating(totalPlayerPoints, maxTotalScore);
+
+                    // 2. Durchschnitt: Gesamtpunkte / spieler_analytics.anzahl_spiele.
+                    final int averageColorMax = getAverageRatingMaxValue(
+                      totalAppearances,
+                      _averageRatingColorDecayBase,
+                    );
+                    final Color colorAvg = getColorForRating(
+                      averagePlayerRating.round(),
+                      averageColorMax,
+                    );
+
+                    // 3. Form (Wert zwischen 0.0 und 3.0 aus der DB).
+                    // Da getColorForRating wahrscheinlich Ganzzahlen (int) nutzt, multiplizieren wir es mit 10 (z.B. 2.5 wird 25 von 30)
+                    final Color colorForm = getColorForRating(playerForm.round(), 250);
+
+                    return CustomScrollView(
+                      key: const PageStorageKey<String>('playerUebersichtTab'),
+                      slivers: [
+                        SliverOverlapInjector(handle: NestedScrollView.sliverOverlapAbsorberHandleFor(context)),
+                        SliverPadding(
+                          padding: const EdgeInsets.all(16.0),
+                          sliver: SliverList(
+                            delegate: SliverChildListDelegate([
+                              // --- REIHE 1: Marktwert & Pkt/Mio (Links) und Position (Rechts) ---
+                              SizedBox(
+                                height: 240, // Höhe für die gestapelten, länglichen Boxen
+                                child: Row(
+                                  children: [
+                                    // Linke Spalte (Marktwert & Pkt/Mio)
+                                    Expanded(
+                                      flex: 5,
+                                      child: Column(
+                                        children: [
+                                          Expanded(
+                                            flex: 1,
+                                            child: _buildBentoBox(
+                                              onTap: () => _tabController.animateTo(3),
+                                              child: SizedBox(
+                                                width: double.infinity,
+                                                child: Column(
+                                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                                  mainAxisAlignment: MainAxisAlignment.center,
+                                                  children: [
+                                                    FittedBox(
+                                                      fit: BoxFit.scaleDown,
+                                                      child: Row(
+                                                        children: [
+                                                          Icon(Icons.payments_rounded, color: Colors.blueGrey.shade600, size: 22),
+                                                          const SizedBox(width: 6),
+                                                          Text(
+                                                            _formatMarketValue(marketValue),
+                                                            style: TextStyle(fontSize: 22, fontWeight: FontWeight.w900, color: Colors.blueGrey.shade900),
+                                                          ),
+                                                        ],
+                                                      ),
+                                                    ),
+                                                    const SizedBox(height: 6),
+                                                    _buildMarktwertAenderung(),
+                                                  ],
                                                 ),
                                               ),
+                                            ),
+                                          ),
+                                          const SizedBox(height: 12),
+                                          // Pkt/Mio exakt in gleicher Größe direkt darunter
+                                          Expanded(
+                                            flex: 1,
+                                            child: _buildMiniStat(value: pointsPerMio.toStringAsFixed(1), label: 'GESAMMTPUNKTE / MIO', icon: Icons.savings_outlined),
+                                          ),
+                                        ],
                                       ),
                                     ),
-                                  ),
-                                  const Padding(
-                                    padding: EdgeInsets.only(top: 8.0),
-                                    child: Center(
-                                      child: Text(
-                                        'Tippe auf den Graphen, um ihn interaktiv zu öffnen.',
-                                        style: TextStyle(
-                                          fontSize: 12,
-                                          color: Colors.grey,
+                                    const SizedBox(width: 12),
+                                    // Rechte Spalte (Das Spielfeld)
+                                    Expanded(
+                                      flex: 4,
+                                      child: _buildBentoBox(
+                                        child: Center(
+                                          child: PositionPitch(availablePositions: availablePositions),
                                         ),
                                       ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                              const SizedBox(height: 12),
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: _buildMiniStat(
+                                      value: totalPlayerPoints.toString(),
+                                      label: 'GESAMTPUNKTE',
+                                      icon: Icons.circle,
+                                      valueColor: colorGesamt,
+                                      iconColor: colorGesamt,
+                                      bgColor: colorGesamt.withOpacity(0.1),
+                                      borderColor: colorGesamt.withOpacity(0.3),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: _buildMiniStat(
+                                      value: averagePlayerRating.toStringAsFixed(0),
+                                      label: 'DURCHSCHNITT',
+                                      customIcon: Text('Ø', style: TextStyle(fontSize: 26, fontWeight: FontWeight.bold, color: colorAvg)),
+                                      valueColor: colorAvg,
+                                      iconColor: colorAvg,
+                                      bgColor: colorAvg.withOpacity(0.1),
+                                      borderColor: colorAvg.withOpacity(0.3),
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: _buildMiniStat(
+                                      value: playerForm.toStringAsFixed(1),
+                                      label: 'FORM',
+                                      icon: Icons.query_stats_rounded,
+                                      valueColor: colorForm,
+                                      iconColor: colorForm,
+                                      bgColor: colorForm.withOpacity(0.1),
+                                      borderColor: colorForm.withOpacity(0.3),
                                     ),
                                   ),
                                 ],
                               ),
-                            ),
+                              const SizedBox(height: 12),
+// --- REIHE 3: Einsätze, Minuten & Pkt pro 90 (MatchCard Look) ---
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: _buildMiniStat(
+                                      value: totalAppearances.toString(),
+                                      label: 'EINSÄTZE',
+                                      icon: Icons.directions_run_rounded,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: _buildMiniStat(
+                                      value: '$avgMinutes\'',
+                                      label: 'Ø-MINUTEN',
+                                      icon: Icons.timer_outlined,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: _buildMiniStat(
+                                      value: pointsPer90.toString(),
+                                      label: 'PKT / 90 MIN',
+                                      icon: Icons.av_timer_rounded,
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+
+                              // --- REIHE 4: Tore & Vorlagen (MatchCard Look) ---
+                              Row(
+                                children: [
+                                  Expanded(
+                                    child: _buildMiniStat(
+                                      value: totalGoals.toString(),
+                                      label: 'TORE',
+                                      icon: Icons.sports_soccer,
+                                    ),
+                                  ),
+                                  const SizedBox(width: 12),
+                                  Expanded(
+                                    child: _buildMiniStat(
+                                      value: totalAssists.toString(),
+                                      label: 'VORLAGEN',
+                                      customIcon: const Text('👟', style: TextStyle(fontSize: 24)),
+                                    ),
+                                  ),
+                                ],
+                              ),
+                              const SizedBox(height: 12),
+
+                              // --- REIHE 5: Nächste Spiele (MatchCard Look) ---
+                              _buildBentoBox(
+                                onTap: () => _tabController.animateTo(1),
+                                child: upcomingMatches.isEmpty
+                                    ? Center(child: Text('Keine Spiele', style: TextStyle(color: Colors.blueGrey.shade300)))
+                                    : Row(
+                                  mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                                  children: upcomingMatches.map((match) {
+                                    return Row(
+                                      mainAxisSize: MainAxisSize.min,
+                                      children: [
+                                        _TeamCrest(imageUrl: match['heimteam']['image_url']),
+                                        Padding(
+                                          padding: const EdgeInsets.symmetric(horizontal: 6.0),
+                                          child: Text(':', style: TextStyle(fontWeight: FontWeight.bold, color: Colors.blueGrey.shade300)),
+                                        ),
+                                        _TeamCrest(imageUrl: match['auswaertsteam']['image_url']),
+                                      ],
+                                    );
+                                  }).toList(),
+                                ),
+                              ),
+
+                            ]),
                           ),
-                        ],
-                      );
-                    },
-                  ),
+                        ),
+                      ],
+                    );
+                  },
+                ),
+                Builder(
+            builder: (context) {
+              return CustomScrollView(
+                key: const PageStorageKey<String>('playerMatchesTab'),
+                controller: _scrollController,
+                slivers: [
+                  SliverOverlapInjector(handle: NestedScrollView.sliverOverlapAbsorberHandleFor(context)),
+                  if (teamMatches.isEmpty)
+                    const SliverFillRemaining(
+                      hasScrollBody: false,
+                      child: Center(child: Text('Keine Spiele vorhanden')),
+                    )
+                  else
+                    SliverList(
+                      delegate: SliverChildBuilderDelegate(
+                            (context, index) {
+                          final match = teamMatches[index];
+                          return MatchRatingRow(
+                            match: match,
+                            playerId: widget.playerId,
+                            playerName: playerName,
+                            playerProfileImageUrl: profileImageUrl,
+                          );
+                        },
+                        childCount: teamMatches.length,
+                      ),
+                    ),
                 ],
+              );
+            },
+          ),
+                Builder(
+                      builder: (context) {
+                        return CustomScrollView(
+                          key: const PageStorageKey<String>('playerRadarTab'),
+                          slivers: [
+                            SliverOverlapInjector(
+                              handle:
+                                  NestedScrollView.sliverOverlapAbsorberHandleFor(
+                                    context,
+                                  ),
+                            ),
+                            if (radarChartData.isEmpty)
+                              const SliverFillRemaining(
+                                hasScrollBody: false,
+                                child: Center(
+                                  child: Text('Statistiken nicht verfügbar.'),
+                                ),
+                              )
+                            else
+                              SliverFillRemaining(
+                                hasScrollBody: false,
+                                child: Column(
+                                  children: [
+                                    Padding(
+                                      padding: const EdgeInsets.symmetric(
+                                        vertical: 8.0,
+                                        horizontal: 16.0,
+                                      ),
+                                      child: DropdownButton<String>(
+                                        value: selectedPosition,
+                                        isExpanded: true,
+                                        hint: const Text(
+                                          'Vergleichsposition wählen',
+                                        ),
+                                        items:
+                                            availablePositions.map((
+                                              String value,
+                                            ) {
+                                              return DropdownMenuItem<String>(
+                                                value: value,
+                                                child: Text(value),
+                                              );
+                                            }).toList(),
+                                        onChanged: (newValue) {
+                                          if (newValue != null) {
+                                            setState(() {
+                                              selectedPosition = newValue;
+                                            });
+                                            _triggerRadarChartCalculation(
+                                              newValue,
+                                            );
+                                          }
+                                        },
+                                      ),
+                                    ),
+                                    Expanded(
+                                      child: Padding(
+                                        padding: const EdgeInsets.all(16.0),
+                                        child: RadialSegmentChart(
+                                          groups: radarChartData,
+                                          maxAbsValue: 100.0,
+                                          centerDisplayValue:
+                                              averagePlayerRating.round(),
+                                          centerComparisonValue:
+                                              averagePlayerRatingPercentile,
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                          ],
+                        );
+                      },
+                    ),
+                Builder(
+                      builder: (context) {
+                        return CustomScrollView(
+                          key: const PageStorageKey<String>(
+                            'playerMarktwertTab',
+                          ),
+                          slivers: [
+                            SliverOverlapInjector(
+                              handle:
+                                  NestedScrollView.sliverOverlapAbsorberHandleFor(
+                                    context,
+                                  ),
+                            ),
+                            SliverFillRemaining(
+                              hasScrollBody: false,
+                              child: Padding(
+                                padding: const EdgeInsets.all(16.0),
+                                child: Column(
+                                  crossAxisAlignment: CrossAxisAlignment.start,
+                                  children: [
+                                    const Text(
+                                      'Allgemeine Infos',
+                                      style: TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    Card(
+                                      child: Padding(
+                                        padding: const EdgeInsets.all(16.0),
+                                        child: Row(
+                                          mainAxisAlignment:
+                                              MainAxisAlignment.spaceBetween,
+                                          children: [
+                                            // --- DIESER BEREICH WIRD ANGEPASST ---
+                                            Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.start,
+                                              children: [
+                                                const Text(
+                                                  'Aktueller Wert',
+                                                  style: TextStyle(
+                                                    color: Colors.grey,
+                                                  ),
+                                                ),
+                                                Row(
+                                                  children: [
+                                                    Text(
+                                                      _formatMarketValue(
+                                                        marketValue,
+                                                      ),
+                                                      style: const TextStyle(
+                                                        fontWeight:
+                                                            FontWeight.bold,
+                                                        fontSize: 16,
+                                                      ),
+                                                    ),
+                                                    const SizedBox(
+                                                      width: 8,
+                                                    ), // Etwas Abstand
+                                                    _buildMarktwertAenderung(), // Aufruf unserer neuen Methode!
+                                                  ],
+                                                ),
+                                              ],
+                                            ),
+                                            // ------------------------------------
+                                            Column(
+                                              crossAxisAlignment:
+                                                  CrossAxisAlignment.end,
+                                              children: [
+                                                const Text(
+                                                  'Höchstwert',
+                                                  style: TextStyle(
+                                                    color: Colors.grey,
+                                                  ),
+                                                ),
+                                                Text(
+                                                  _formatMarketValue(
+                                                    maxMarktwert.toInt(),
+                                                  ),
+                                                  style: const TextStyle(
+                                                    fontWeight: FontWeight.bold,
+                                                    fontSize: 16,
+                                                    color: Colors.green,
+                                                  ),
+                                                ),
+                                              ],
+                                            ),
+                                          ],
+                                        ),
+                                      ),
+                                    ),
+                                    const SizedBox(height: 24),
+                                    const Text(
+                                      'Marktwert Verlauf',
+                                      style: TextStyle(
+                                        fontSize: 18,
+                                        fontWeight: FontWeight.bold,
+                                      ),
+                                    ),
+                                    const SizedBox(height: 8),
+                                    // Das klickbare Vorschau-Fenster für den Graphen
+                                    GestureDetector(
+                                      onTap: () {
+                                        if (marktwertHistorie.isNotEmpty) {
+                                          _showMarktwertGraphOverlay(context);
+                                        }
+                                      },
+                                      child: Card(
+                                        elevation: 2,
+                                        child: Container(
+                                          height: 200,
+                                          width: double.infinity,
+                                          padding: const EdgeInsets.all(16),
+                                          child:
+                                              marktwertHistorie.isEmpty
+                                                  ? const Center(
+                                                    child: Text(
+                                                      'Keine Historie vorhanden',
+                                                    ),
+                                                  )
+                                                  : IgnorePointer(
+                                                    // Deaktiviert Interaktion auf der Vorschau
+                                                    child: _buildLineChart(
+                                                      isPreview: true,
+                                                    ),
+                                                  ),
+                                        ),
+                                      ),
+                                    ),
+                                    const Padding(
+                                      padding: EdgeInsets.only(top: 8.0),
+                                      child: Center(
+                                        child: Text(
+                                          'Tippe auf den Graphen, um ihn interaktiv zu öffnen.',
+                                          style: TextStyle(
+                                            fontSize: 12,
+                                            color: Colors.grey,
+                                          ),
+                                        ),
+                                      ),
+                                    ),
+                                  ],
+                                ),
+                              ),
+                            ),
+                          ],
+                        );
+                      },
+                    ),
+                  ],
+                ),
               ),
-            ),
     );
   }
 }
@@ -1871,9 +1717,8 @@ class MatchRatingRow extends StatelessWidget {
     }
 
     final ratingList = match['matchrating'] as List<dynamic>;
-    final playerRating = ratingList.isNotEmpty
-        ? ratingList.first as Map<String, dynamic>
-        : null;
+    final playerRating =
+        ratingList.isNotEmpty ? ratingList.first as Map<String, dynamic> : null;
 
     // Fall 1: Spiel gespielt, aber kein Rating -> Nicht im Kader
     if (playerRating == null) {
@@ -1916,9 +1761,8 @@ class MatchRatingRow extends StatelessWidget {
   Widget build(BuildContext context) {
     // Logik, um das Rating aus dem Spiel-Objekt zu extrahieren
     final ratingList = match['matchrating'] as List<dynamic>;
-    final playerRating = ratingList.isNotEmpty
-        ? ratingList.first as Map<String, dynamic>
-        : null;
+    final playerRating =
+        ratingList.isNotEmpty ? ratingList.first as Map<String, dynamic> : null;
 
     final stats = playerRating?['statistics'] as Map<String, dynamic>? ?? {};
     final punkte = playerRating?['punkte'] ?? 0;
@@ -1939,15 +1783,13 @@ class MatchRatingRow extends StatelessWidget {
     final ergebnis = match['ergebnis'] ?? 'N/A';
     final datumString = match['datum'] ?? '';
     final datum = MatchTimeHelper.parseToLocal(datumString);
-    final formattedDate = datum != null
-        ? DateFormat('dd.MM.yy').format(datum)
-        : 'N/A';
+    final formattedDate =
+        datum != null ? DateFormat('dd.MM.yy').format(datum) : 'N/A';
 
     // *** START ÄNDERUNG ***
     // Uhrzeit für "nicht gestartet" Spiele extrahieren
-    final formattedTime = datum != null
-        ? DateFormat('HH:mm').format(datum)
-        : 'N/A';
+    final formattedTime =
+        datum != null ? DateFormat('HH:mm').format(datum) : 'N/A';
     // *** ENDE ÄNDERUNG ***
 
     return GestureDetector(
@@ -1994,34 +1836,35 @@ class MatchRatingRow extends StatelessWidget {
                         // *** START ÄNDERUNG: Ergebnis ODER Uhrzeit ***
                         Padding(
                           padding: const EdgeInsets.symmetric(horizontal: 12.0),
-                          child: isNotStarted
-                              ? Column(
-                                  mainAxisSize: MainAxisSize.min,
-                                  children: [
-                                    const Text(
-                                      '-:-',
-                                      style: TextStyle(
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 16,
+                          child:
+                              isNotStarted
+                                  ? Column(
+                                    mainAxisSize: MainAxisSize.min,
+                                    children: [
+                                      const Text(
+                                        '-:-',
+                                        style: TextStyle(
+                                          fontWeight: FontWeight.bold,
+                                          fontSize: 16,
+                                        ),
                                       ),
-                                    ),
-                                    const SizedBox(height: 2),
-                                    Text(
-                                      formattedTime,
-                                      style: const TextStyle(
-                                        fontSize: 12,
-                                        color: Colors.grey,
+                                      const SizedBox(height: 2),
+                                      Text(
+                                        formattedTime,
+                                        style: const TextStyle(
+                                          fontSize: 12,
+                                          color: Colors.grey,
+                                        ),
                                       ),
+                                    ],
+                                  )
+                                  : Text(
+                                    ergebnis,
+                                    style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16,
                                     ),
-                                  ],
-                                )
-                              : Text(
-                                  ergebnis,
-                                  style: const TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 16,
                                   ),
-                                ),
                         ),
 
                         // *** ENDE ÄNDERUNG ***
@@ -2127,17 +1970,15 @@ class MatchRatingRow extends StatelessWidget {
                         width: 40,
                         padding: const EdgeInsets.symmetric(vertical: 4),
                         decoration: BoxDecoration(
-                          color:
-                              (isNotStarted
-                                      ? Colors.grey
-                                      : getColorForRating(punkte, 250))
-                                  .withOpacity(0.1),
+                          color: (isNotStarted
+                                  ? Colors.grey
+                                  : getColorForRating(punkte, 250))
+                              .withOpacity(0.1),
                           border: Border.all(
-                            color:
-                                (isNotStarted
-                                        ? Colors.grey
-                                        : getColorForRating(punkte, 250))
-                                    .withOpacity(0.3),
+                            color: (isNotStarted
+                                    ? Colors.grey
+                                    : getColorForRating(punkte, 250))
+                                .withOpacity(0.3),
                           ),
                           borderRadius: BorderRadius.circular(4),
                         ),
@@ -2145,9 +1986,10 @@ class MatchRatingRow extends StatelessWidget {
                           isNotStarted ? '-' : punkte.toString(),
                           textAlign: TextAlign.center,
                           style: TextStyle(
-                            color: isNotStarted
-                                ? Colors.grey
-                                : getColorForRating(punkte, 250),
+                            color:
+                                isNotStarted
+                                    ? Colors.grey
+                                    : getColorForRating(punkte, 250),
                             fontWeight: FontWeight.bold,
                           ),
                         ),
@@ -2174,13 +2016,15 @@ class _TeamCrest extends StatelessWidget {
     return SizedBox(
       width: 24,
       height: 24,
-      child: imageUrl != null
-          ? Image.network(
-              imageUrl!,
-              errorBuilder: (context, error, stackTrace) =>
-                  const Icon(Icons.shield, color: Colors.grey, size: 24),
-            )
-          : const Icon(Icons.shield, color: Colors.grey, size: 24),
+      child:
+          imageUrl != null
+              ? Image.network(
+                imageUrl!,
+                errorBuilder:
+                    (context, error, stackTrace) =>
+                        const Icon(Icons.shield, color: Colors.grey, size: 24),
+              )
+              : const Icon(Icons.shield, color: Colors.grey, size: 24),
     );
   }
 }

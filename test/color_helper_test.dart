@@ -51,6 +51,7 @@ void main() {
     });
   });
 
+
   test('season-wide round count is independent of player appearances', () {
     const roundCount = 4;
     const playerAppearances = 1;
@@ -61,17 +62,17 @@ void main() {
   });
 
   group('average rating color scaling', () {
-    test(
-      'average points use total points divided by analytics appearances',
-      () {
-        expect(getAveragePoints(500, 4), closeTo(125.0, 1e-12));
-        expect(getAveragePoints(500, 0), 0);
-      },
-    );
+    test('average points use total points divided by analytics appearances', () {
+      expect(getAveragePoints(500, 4), closeTo(125.0, 1e-12));
+      expect(getAveragePoints(500, 0), 0);
+    });
 
     test('one appearance keeps the normal 250 maximum', () {
       expect(getAverageRatingFactor(1, 0.85), closeTo(1.0, 1e-12));
-      expect(getAverageRatingMaxValue(1, 0.85), singleMatchRatingMax);
+      expect(
+        getAverageRatingMaxValue(1, 0.85),
+        singleMatchRatingMax,
+      );
     });
 
     test('average color maximum decays with more appearances', () {
@@ -94,4 +95,5 @@ void main() {
       );
     });
   });
+
 }
