@@ -30,6 +30,7 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
   Map<String, dynamic>? _bestFormation;
   Map<String, List<String>> _allFormations = {};
   String? _selectedFormationName;
+  double _ratingColorDecayBase = defaultRatingColorDecayBase;
 
   // Filter & Selection
   int? _selectedSpieltag;
@@ -37,10 +38,40 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
   int? _selectedTeamId;
   String? _selectedPosition;
 
-  int _headerRatingMax() {
-    return _showGesamt
-        ? (_spieltage.length * 250 * 0.8).toInt().clamp(1, 99999999)
-        : 2500;
+  int _gameCountForPlayer(Map<String, dynamic> player) {
+    final count = (player['games_played'] as num?)?.toInt() ?? 1;
+    return count < 1 ? 1 : count;
+  }
+
+  int _ratingMaxForPlayer(Map<String, dynamic> player) {
+    if (!_showGesamt) return singleMatchRatingMax;
+    return getAggregateRatingMaxValue(
+      _gameCountForPlayer(player),
+      _ratingColorDecayBase,
+    );
+  }
+
+  double _formationEquivalentRating(List<Map<String, dynamic>> players) {
+    if (players.isEmpty) return 0;
+
+    if (!_showGesamt) {
+      final total = players.fold<num>(
+        0,
+        (sum, player) => sum + ((player['total_punkte'] as num?) ?? 0),
+      );
+      return total / players.length;
+    }
+
+    final totalEquivalent = players.fold<double>(0, (sum, player) {
+      return sum +
+          getAggregateEquivalentRating(
+            (player['total_punkte'] as num?) ?? 0,
+            _gameCountForPlayer(player),
+            _ratingColorDecayBase,
+          );
+    });
+
+    return totalEquivalent / players.length;
   }
 
   @override
@@ -74,6 +105,30 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
   Future<void> _fetchFilterData() async {
     final seasonId = context.read<TournamentViewModel>().currentSeasonId;
     if (seasonId == null) return;
+
+    try {
+      final settings = await Supabase.instance.client
+          .from('game_settings')
+          .select('rating_color_decay_base')
+          .eq('id', 1)
+          .maybeSingle();
+      final rawDecayBase = settings?['rating_color_decay_base'];
+      final parsedDecayBase =
+          rawDecayBase is num
+              ? rawDecayBase.toDouble()
+              : double.tryParse(rawDecayBase?.toString() ?? '');
+      if (parsedDecayBase != null &&
+          parsedDecayBase > 0 &&
+          parsedDecayBase <= 1) {
+        _ratingColorDecayBase = parsedDecayBase;
+      }
+    } catch (e) {
+      debugPrint(
+        '⚠️ rating_color_decay_base konnte nicht geladen werden: $e. '
+        'Fallback: $defaultRatingColorDecayBase',
+      );
+      _ratingColorDecayBase = defaultRatingColorDecayBase;
+    }
 
     final teamsResponse = await Supabase.instance.client
         .from('season_teams')
@@ -119,7 +174,8 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
     if (!mounted) return;
     setState(() => _isLoading = true);
     try {
-      final dynamic rawSeasonId = context.read<TournamentViewModel>().currentSeasonId;
+      final dynamic rawSeasonId =
+          context.read<TournamentViewModel>().currentSeasonId;
       if (rawSeasonId == null) {
         if (mounted) setState(() => _topPlayers = []);
         return;
@@ -130,7 +186,7 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
       var query = Supabase.instance.client
           .from('spieler')
           .select(
-            'id, name, profilbild_url, position, spieler_analytics(marktwert, gesamtstatistiken, season_id), season_players!inner(season_id, team:team(id, name, image_url))',
+            'id, name, profilbild_url, position, spieler_analytics(marktwert, gesamtstatistiken, anzahl_spiele, season_id), season_players!inner(season_id, team:team(id, name, image_url))',
           )
           .eq('season_players.season_id', seasonIdInt ?? rawSeasonId);
 
@@ -190,6 +246,7 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
 
           final totalPunkte =
               (seasonStats is Map) ? (seasonStats['gesamtpunkte'] ?? 0) : 0;
+          final gamesPlayed = (analytics?['anzahl_spiele'] as num?)?.toInt() ?? 0;
 
           topPlayersList.add({
             'id': player['id'],
@@ -198,6 +255,7 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
             'team_image_url': team['image_url'],
             'marktwert': (analytics?['marktwert'] as num?)?.toInt(),
             'total_punkte': (totalPunkte as num).toInt(),
+            'games_played': gamesPlayed,
             'position': player['position'],
           });
         } catch (e) {
@@ -309,6 +367,7 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
                 return (a is Map ? (a['marktwert'] as num?)?.toInt() : null);
               })(),
           'total_punkte': (rating['punkte'] as num?)?.toInt() ?? 0,
+          'games_played': 1,
           'position': player['position'],
         });
       }
@@ -429,10 +488,7 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        // Die neue, kompakte Kombi-Leiste
         _buildMatchdaySelector(),
-
-        // Der eigentliche Inhalt
         Expanded(
           child:
               _isLoading
@@ -445,10 +501,8 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
     );
   }
 
-  // --- DIE NEUE, KOMPAKTE KOPFLEISTE ---
   Widget _buildMatchdaySelector() {
     final primaryColor = Theme.of(context).primaryColor;
-    // Prüfen ob wir gerade den aktuellsten Spieltag anzeigen
     final bool isCurrentRound =
         _spieltage.isNotEmpty && _selectedSpieltag == _spieltage.last;
     final bool highlightCurrent = !_showGesamt && isCurrentRound;
@@ -465,9 +519,8 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // --- LINKE SEITE: Zwingend 45% des verfügbaren Platzes ---
           Expanded(
-            flex: 50, // Definiert das feste Verhältnis
+            flex: 50,
             child: FittedBox(
               fit: BoxFit.scaleDown,
               alignment: Alignment.centerLeft,
@@ -504,12 +557,10 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
                     constraints: const BoxConstraints(),
                   ),
                   const SizedBox(width: 8),
-
                   GestureDetector(
                     onTap: () {
                       setState(() {
                         _showGesamt = !_showGesamt;
-                        // Falls noch kein Spieltag gewählt war, nimm den aktuellsten
                         if (!_showGesamt &&
                             _selectedSpieltag == null &&
                             _spieltage.isNotEmpty) {
@@ -540,8 +591,8 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
                         children: [
                           Text(
                             _showGesamt
-                                ? "Gesamt"
-                                : "Spieltag ${_selectedSpieltag ?? '-'}",
+                                ? 'Gesamt'
+                                : 'Spieltag ${_selectedSpieltag ?? '-'}',
                             style: const TextStyle(
                               fontWeight: FontWeight.bold,
                               fontSize: 16,
@@ -559,7 +610,6 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
                     ),
                   ),
                   const SizedBox(width: 8),
-
                   IconButton(
                     icon: const Icon(Icons.chevron_right),
                     onPressed:
@@ -593,11 +643,8 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
               ),
             ),
           ),
-
-          // --- RECHTE SEITE: Filter & Ansicht ---
           Expanded(
-            flex:
-                50, // Gibt der rechten Seite minimal mehr Raum für die Filter/Ansichten
+            flex: 50,
             child: FittedBox(
               fit: BoxFit.scaleDown,
               alignment: Alignment.centerRight,
@@ -606,8 +653,6 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
                 children: [
                   _buildTeamPopup(),
                   _buildPositionPopup(),
-
-                  // Feld- / Listenansicht Toggle
                   Container(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 10,
@@ -644,7 +689,7 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
                           ),
                           const SizedBox(width: 4),
                           Text(
-                            _showFormation ? "Liste" : "Feld",
+                            _showFormation ? 'Liste' : 'Feld',
                             style: TextStyle(
                               fontWeight: FontWeight.bold,
                               color: primaryColor,
@@ -673,16 +718,13 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
             )
             : null;
 
-    // Wir nutzen <int> statt <int?>, und -1 als Platzhalter für "Alle Teams"
     return PopupMenuButton<int>(
       enabled: !_showFormation,
       initialValue: _selectedTeamId ?? -1,
-      // Design des ausklappenden Menüs
       color: Colors.white,
       elevation: 3,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       onSelected: (val) {
-        // Wenn -1 ausgewählt wird, setzen wir den Filter auf null zurück
         setState(() => _selectedTeamId = (val == -1) ? null : val);
         _fetchData();
       },
@@ -699,10 +741,8 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
           margin: const EdgeInsets.only(right: 6),
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
           decoration: BoxDecoration(
-            color: Colors.grey.shade100, // Bleibt immer grau
-            border: Border.all(
-              color: Colors.grey.shade300,
-            ), // Bleibt immer grau
+            color: Colors.grey.shade100,
+            border: Border.all(color: Colors.grey.shade300),
             borderRadius: BorderRadius.circular(8),
           ),
           child: Row(
@@ -727,16 +767,13 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
   }
 
   Widget _buildPositionPopup() {
-    // Wir nutzen <String> und "ALL" als Platzhalter für "Alle Positionen"
     return PopupMenuButton<String>(
       enabled: !_showFormation,
       initialValue: _selectedPosition ?? 'ALL',
-      // Design des ausklappenden Menüs
       color: Colors.white,
       elevation: 3,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       onSelected: (val) {
-        // Wenn "ALL" ausgewählt wird, setzen wir den Filter auf null zurück
         setState(() => _selectedPosition = (val == 'ALL') ? null : val);
         _fetchData();
       },
@@ -756,10 +793,8 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
           margin: const EdgeInsets.only(right: 8),
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
           decoration: BoxDecoration(
-            color: Colors.grey.shade100, // Bleibt immer grau
-            border: Border.all(
-              color: Colors.grey.shade300,
-            ), // Bleibt immer grau
+            color: Colors.grey.shade100,
+            border: Border.all(color: Colors.grey.shade300),
             borderRadius: BorderRadius.circular(8),
           ),
           child: Row(
@@ -794,7 +829,7 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
     if (_topPlayers.isEmpty) {
       return const Center(
         child: Text(
-          "Keine Spieler für diesen Filter gefunden.",
+          'Keine Spieler für diesen Filter gefunden.',
           style: TextStyle(color: Colors.grey, fontSize: 16),
         ),
       );
@@ -810,12 +845,9 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
           teamImageUrl: player['team_image_url'],
           marketValue: player['marktwert'],
           score: player['total_punkte'],
-          maxScore: _showGesamt ? (_spieltage.length * 250 * 0.5).toInt() : 250,
-
-          // Neue Felder für PlayerListItem (falls benötigt)
+          maxScore: _ratingMaxForPlayer(player),
           position: player['position'] ?? '',
           id: player['id'],
-
           onTap: () {
             Navigator.push(
               context,
@@ -835,11 +867,16 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
     }
 
     if (_bestFormation == null || _selectedFormationName == null) {
-      return const Center(child: Text("Keine gültige Formation gefunden."));
+      return const Center(child: Text('Keine gültige Formation gefunden.'));
     }
 
-    final players =
+    final rawFormationPlayers =
         (_bestFormation!['players'] as List)
+            .map((p) => Map<String, dynamic>.from(p as Map))
+            .toList();
+
+    final players =
+        rawFormationPlayers
             .map(
               (p) => PlayerInfo(
                 id: p['id'],
@@ -847,8 +884,7 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
                 position: p['position'],
                 profileImageUrl: p['profilbild_url'],
                 rating: p['total_punkte'],
-                maxRating:
-                    _showGesamt ? (_spieltage.length * 250 * 0.8).toInt() : 250,
+                maxRating: _ratingMaxForPlayer(p),
                 goals: 0,
                 assists: 0,
                 ownGoals: 0,
@@ -895,9 +931,12 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
                         builder: (context) {
                           final int formationScore =
                               (_bestFormation?['score'] as num?)?.toInt() ?? 0;
-                          final int formationMax = _headerRatingMax();
-                          final Color formationColor =
-                              getColorForRating(formationScore, formationMax);
+                          final double formationEquivalentRating =
+                              _formationEquivalentRating(rawFormationPlayers);
+                          final Color formationColor = getColorForRating(
+                            formationEquivalentRating,
+                            singleMatchRatingMax,
+                          );
 
                           return Container(
                             padding: const EdgeInsets.symmetric(
