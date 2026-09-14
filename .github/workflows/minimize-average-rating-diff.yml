@@ -1,0 +1,77 @@
+name: Minimize average rating diff
+
+on:
+  push:
+    branches:
+      - fix/unify-rating-colors
+    paths:
+      - .github/trigger-minimize-average-rating-diff
+
+permissions:
+  contents: write
+
+jobs:
+  clean-patch:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/unify-rating-colors
+          fetch-depth: 0
+
+      - name: Restore pre-average formatting and reapply targeted patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          PRE_AVERAGE=4725733c36313730c8478f3a00533e396aeebfab
+          git checkout "$PRE_AVERAGE" -- \
+            analysis_options.yaml \
+            pubspec.lock \
+            lib/utils/color_helper.dart \
+            lib/screens/screenelements/match_screen/formations.dart \
+            lib/screens/leagues/league_team_screen.dart \
+            lib/screens/player_screen.dart \
+            test/color_helper_test.dart
+
+          mkdir -p .github/scripts
+          git show "$PRE_AVERAGE:.github/scripts/apply_average_formula.py" > .github/scripts/apply_average_formula.py
+          git show "$PRE_AVERAGE:.github/scripts/fix_average_patch_script.py" > .github/scripts/fix_average_patch_script.py
+          python3 .github/scripts/fix_average_patch_script.py
+          python3 .github/scripts/apply_average_formula.py
+          rm -f .github/scripts/apply_average_formula.py .github/scripts/fix_average_patch_script.py
+          rm -f .github/average-patch-error.txt
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Run color helper tests
+        run: flutter test test/color_helper_test.dart
+
+      - name: Analyze affected Dart files
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings lib/utils/color_helper.dart lib/screens/screenelements/match_screen/formations.dart lib/screens/leagues/league_team_screen.dart lib/screens/player_screen.dart
+
+      - name: Commit clean targeted patch
+        shell: bash
+        run: |
+          set -euo pipefail
+          PRE_AVERAGE=4725733c36313730c8478f3a00533e396aeebfab
+          git checkout "$PRE_AVERAGE" -- analysis_options.yaml pubspec.lock
+          rm -f .github/workflows/minimize-average-rating-diff.yml
+          rm -f .github/trigger-minimize-average-rating-diff
+          rm -f .github/workflows/apply-average-rating-formula.yml
+          rm -f .github/trigger-average-rating-patch
+          rm -f .github/scripts/apply_average_formula.py
+          rm -f .github/scripts/fix_average_patch_script.py
+          rm -f .github/average-patch-error.txt
+          rm -f .github/workflows/scan-average-point-usages.yml
+          rm -f .github/trigger-average-scan
+          rm -f .github/average-point-usages.txt
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'chore: keep average rating diff targeted'
+          git push origin HEAD:fix/unify-rating-colors
