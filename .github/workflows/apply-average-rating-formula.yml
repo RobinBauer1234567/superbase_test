@@ -19,6 +19,9 @@ jobs:
           ref: fix/unify-rating-colors
           fetch-depth: 0
 
+      - name: Prepare patch guard
+        run: python3 .github/scripts/fix_average_patch_script.py
+
       - name: Apply patch script
         run: python3 .github/scripts/apply_average_formula.py
 
