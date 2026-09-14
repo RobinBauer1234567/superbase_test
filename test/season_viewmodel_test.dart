@@ -14,23 +14,39 @@ Map<String, dynamic> season(
   'is_active': active,
   'is_initialized': initialized,
 };
+
 void main() {
-  test('deterministic chronological ordering including unknown labels', () {
+  test('deterministic chronological ordering including short historical labels', () {
     final result = sortedSeasons([
       season(900, 'unknown'),
       season(3, '25/26'),
       season(2, '2026'),
       season(1, '26/27'),
+      season(4, '99/00'),
     ]);
-    expect(result.map((s) => s['id']), [2, 1, 3, 900]);
+    expect(result.map((s) => s['id']), [2, 1, 3, 4, 900]);
     expect(seasonYear({'name': '1999/2000'}), 1999);
+    expect(seasonYear({'name': '99/00'}), 1999);
+    expect(seasonYear({'name': '26/27'}), 2026);
     expect(
       () => discoveredSeason(17, {'id': null, 'year': '26/27'}),
       throwsFormatException,
     );
   });
+
+  test('manager seasons keep newest plus initialized archive only', () {
+    final result = managerSeasons([
+      season(103, '26/27', initialized: false),
+      season(102, '25/26', initialized: true),
+      season(101, '24/25', initialized: false),
+      season(100, '23/24', initialized: true),
+    ]);
+
+    expect(result.map((s) => s['id']), [103, 102, 100]);
+  });
+
   test(
-    'active default, explicit history retained, league creation stays active',
+    'latest default, explicit archive retained, league creation stays latest',
     () async {
       var rows = [
         {
@@ -39,17 +55,24 @@ void main() {
           'season': [
             season(101, '25/26', active: true),
             season(102, '26/27', initialized: false),
+            season(100, '24/25', initialized: false),
           ],
         },
       ];
       final vm = TournamentViewModel(load: () async => rows, autoLoad: false);
       await vm.fetchTournaments();
-      expect(vm.currentSeasonId, 101);
+      expect(vm.currentSeasonId, 102);
+      expect(vm.seasons.map((s) => s['id']), [102, 101]);
+      expect(vm.leagueCreationSeasonId, isNull);
+
       rows = [
         {
           'id': 17,
           'name': 'League',
-          'season': [season(101, '25/26'), season(102, '26/27', active: true)],
+          'season': [
+            season(101, '25/26'),
+            season(102, '26/27', active: true),
+          ],
         },
       ];
       await vm.fetchTournaments();
@@ -68,6 +91,7 @@ void main() {
       vm.dispose();
     },
   );
+
   test(
     'late fetch cannot overwrite newer results and empty tournament clears selection',
     () async {
