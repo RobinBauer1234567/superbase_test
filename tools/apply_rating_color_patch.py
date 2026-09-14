@@ -1,0 +1,369 @@
+from pathlib import Path
+
+
+def replace(path, old, new, count=None):
+    p = Path(path)
+    text = p.read_text()
+    found = text.count(old)
+    expected = count if count is not None else 1
+    if found != expected:
+        raise SystemExit(
+            f"{path}: expected {expected} matches, found {found} for {old[:80]!r}"
+        )
+    p.write_text(text.replace(old, new))
+
+
+# Shared helpers: DB-configured decay base + season-wide started matchdays.
+replace(
+    "lib/utils/color_helper.dart",
+    "import 'package:flutter/material.dart';\n",
+    "import 'package:flutter/material.dart';\nimport 'package:supabase_flutter/supabase_flutter.dart';\n",
+)
+p = Path("lib/utils/color_helper.dart")
+text = p.read_text()
+marker = "const double defaultRatingColorDecayBase = 0.8;\n"
+addition = r'''
+
+Future<double> fetchRatingColorDecayBase(SupabaseClient client) async {
+  try {
+    final settings = await client
+        .from('game_settings')
+        .select('rating_color_decay_base')
+        .eq('id', 1)
+        .maybeSingle();
+    final rawValue = settings?['rating_color_decay_base'];
+    final value = rawValue is num
+        ? rawValue.toDouble()
+        : double.tryParse(rawValue?.toString() ?? '');
+    if (value != null && value > 0 && value <= 1) return value;
+  } catch (_) {
+    // Use the safe default below.
+  }
+  return defaultRatingColorDecayBase;
+}
+
+Future<int> fetchRatedSeasonRoundCount(
+  SupabaseClient client,
+  dynamic seasonId,
+) async {
+  try {
+    final rows = await client
+        .from('spieltag')
+        .select('round')
+        .eq('season_id', seasonId)
+        .neq('status', 'nicht gestartet');
+    final rounds = rows.map((row) => row['round'].toString()).toSet();
+    return math.max(1, rounds.length);
+  } catch (_) {
+    return 1;
+  }
+}
+'''
+if text.count(marker) != 1:
+    raise SystemExit("color_helper marker mismatch")
+p.write_text(text.replace(marker, marker + addition))
+
+# TOP TEAM: season-wide rated rounds, never per-player appearances.
+replace(
+    "lib/screens/premier_league/top_team_screen.dart",
+    """  int _gameCountForPlayer(Map<String, dynamic> player) {
+    final count = (player['games_played'] as num?)?.toInt() ?? 1;
+    return count < 1 ? 1 : count;
+  }
+
+  int _ratingMaxForPlayer(Map<String, dynamic> player) {
+    if (!_showGesamt) return singleMatchRatingMax;
+    return getAggregateRatingMaxValue(
+      _gameCountForPlayer(player),
+      _ratingColorDecayBase,
+    );
+  }
+""",
+    """  int get _ratedRoundCount => _spieltage.isEmpty ? 1 : _spieltage.length;
+
+  int _ratingMaxForPlayer(Map<String, dynamic> player) {
+    if (!_showGesamt) return singleMatchRatingMax;
+    return getAggregateRatingMaxValue(
+      _ratedRoundCount,
+      _ratingColorDecayBase,
+    );
+  }
+""",
+)
+replace(
+    "lib/screens/premier_league/top_team_screen.dart",
+    """            _gameCountForPlayer(player),
+            _ratingColorDecayBase,
+""",
+    """            _ratedRoundCount,
+            _ratingColorDecayBase,
+""",
+)
+start = """    try {
+      final settings = await Supabase.instance.client
+          .from('game_settings')
+          .select('rating_color_decay_base')
+          .eq('id', 1)
+          .maybeSingle();
+      final rawDecayBase = settings?['rating_color_decay_base'];
+      final parsedDecayBase =
+          rawDecayBase is num
+              ? rawDecayBase.toDouble()
+              : double.tryParse(rawDecayBase?.toString() ?? '');
+      if (parsedDecayBase != null &&
+          parsedDecayBase > 0 &&
+          parsedDecayBase <= 1) {
+        _ratingColorDecayBase = parsedDecayBase;
+      }
+    } catch (e) {
+      debugPrint(
+        '⚠️ rating_color_decay_base konnte nicht geladen werden: $e. '
+        'Fallback: $defaultRatingColorDecayBase',
+      );
+      _ratingColorDecayBase = defaultRatingColorDecayBase;
+    }
+"""
+replace(
+    "lib/screens/premier_league/top_team_screen.dart",
+    start,
+    """    _ratingColorDecayBase = await fetchRatingColorDecayBase(
+      Supabase.instance.client,
+    );
+""",
+)
+replace(
+    "lib/screens/premier_league/top_team_screen.dart",
+    "spieler_analytics(marktwert, gesamtstatistiken, anzahl_spiele, season_id)",
+    "spieler_analytics(marktwert, gesamtstatistiken, season_id)",
+)
+replace(
+    "lib/screens/premier_league/top_team_screen.dart",
+    """          final totalPunkte = seasonStats['gesamtpunkte'] ?? 0;
+          final gamesPlayed = (analytics?['anzahl_spiele'] as num?)?.toInt() ?? 0;
+""",
+    """          final totalPunkte = seasonStats['gesamtpunkte'] ?? 0;
+""",
+)
+replace(
+    "lib/screens/premier_league/top_team_screen.dart",
+    """            'total_punkte': (totalPunkte as num).toInt(),
+            'games_played': gamesPlayed,
+""",
+    """            'total_punkte': (totalPunkte as num).toInt(),
+""",
+)
+replace(
+    "lib/screens/premier_league/top_team_screen.dart",
+    "matchCount: _gameCountForPlayer(p),",
+    "matchCount: _ratedRoundCount,",
+)
+replace(
+    "lib/screens/premier_league/top_team_screen.dart",
+    "currentRound: _spieltage.isEmpty ? 1 : _spieltage.length,",
+    "currentRound: _ratedRoundCount,",
+)
+
+# Shared PlayerAvatar: season total always uses the season-wide round count passed by its parent.
+replace(
+    "lib/screens/screenelements/match_screen/formations.dart",
+    """        final gameCount = player.matchCount > 0 ? player.matchCount : currentRound;
+        return getAggregateRatingMaxValue(gameCount, ratingColorDecayBase);
+""",
+    """        return getAggregateRatingMaxValue(
+          currentRound,
+          ratingColorDecayBase,
+        );
+""",
+)
+
+# Player screen: use started season matchdays instead of appearances or full schedule length.
+replace(
+    "lib/screens/player_screen.dart",
+    "  double playerForm = 0.0; // NEU: Form aus spieler_analytics\n",
+    """  double playerForm = 0.0; // NEU: Form aus spieler_analytics
+  double _ratingColorDecayBase = defaultRatingColorDecayBase;
+  int _ratedRoundCount = 1;
+""",
+)
+replace(
+    "lib/screens/player_screen.dart",
+    """    try {
+      // 1. Spieler- und Teamdaten abrufen (inkl. der neuen Analytics-Felder)
+""",
+    """    try {
+      final ratingColorDecayBase = await fetchRatingColorDecayBase(supabase);
+      final ratedRoundCount = await fetchRatedSeasonRoundCount(supabase, seasonId);
+
+      // 1. Spieler- und Teamdaten abrufen (inkl. der neuen Analytics-Felder)
+""",
+)
+replace(
+    "lib/screens/player_screen.dart",
+    """        playerForm = form; // Die Form aus der DB
+
+        // Marktwert-Historie Zuweisung (Für Graphen & Trend)
+""",
+    """        playerForm = form; // Die Form aus der DB
+        _ratingColorDecayBase = ratingColorDecayBase;
+        _ratedRoundCount = ratedRoundCount;
+
+        // Marktwert-Historie Zuweisung (Für Graphen & Trend)
+""",
+)
+replace(
+    "lib/screens/player_screen.dart",
+    "final maxTotalScore = (teamMatches.length * 250 * 0.8).round();",
+    "final maxTotalScore = getAggregateRatingMaxValue(_ratedRoundCount, _ratingColorDecayBase);",
+)
+replace(
+    "lib/screens/player_screen.dart",
+    """                    int maxTotalScore = (teamMatches.length * 250 * 0.8).round();
+                    if (maxTotalScore < 1) maxTotalScore = 1;
+""",
+    """                    final int maxTotalScore = getAggregateRatingMaxValue(
+                      _ratedRoundCount,
+                      _ratingColorDecayBase,
+                    );
+""",
+)
+
+# Team screen: same season-wide scale for all player total points.
+replace(
+    "lib/screens/team_screen.dart",
+    "import 'package:premier_league/utils/match_time_helper.dart';\n",
+    "import 'package:premier_league/utils/match_time_helper.dart';\nimport 'package:premier_league/utils/color_helper.dart';\n",
+)
+replace(
+    "lib/screens/team_screen.dart",
+    "  int anzahlMatches = 0;\n",
+    """  int anzahlMatches = 0;
+  double _ratingColorDecayBase = defaultRatingColorDecayBase;
+  int _ratedRoundCount = 1;
+""",
+)
+replace(
+    "lib/screens/team_screen.dart",
+    """    try {
+      final teamResponse = await Supabase.instance.client
+""",
+    """    try {
+      final ratingColorDecayBase = await fetchRatingColorDecayBase(
+        Supabase.instance.client,
+      );
+      final ratedRoundCount = await fetchRatedSeasonRoundCount(
+        Supabase.instance.client,
+        seasonId,
+      );
+
+      final teamResponse = await Supabase.instance.client
+""",
+)
+replace(
+    "lib/screens/team_screen.dart",
+    """          _topPlayers = topPlayersList;
+          _isLoading = false;
+""",
+    """          _topPlayers = topPlayersList;
+          _ratingColorDecayBase = ratingColorDecayBase;
+          _ratedRoundCount = ratedRoundCount;
+          _isLoading = false;
+""",
+)
+replace(
+    "lib/screens/team_screen.dart",
+    "final maxTotalScore = (anzahlMatches * 250 * 0.8).round();",
+    "final maxTotalScore = getAggregateRatingMaxValue(_ratedRoundCount, _ratingColorDecayBase);",
+)
+replace(
+    "lib/screens/team_screen.dart",
+    "maxScore: (anzahlMatches * 250 * 0.8).toInt(),",
+    "maxScore: getAggregateRatingMaxValue(_ratedRoundCount, _ratingColorDecayBase),",
+)
+
+# Manager ranking overall points: same decay formula, preserving 2500 as the single-match team maximum.
+replace(
+    "lib/screens/leagues/ranking_screen.dart",
+    "  int _latestActiveRound = 38;\n",
+    """  int _latestActiveRound = 38;
+  double _ratingColorDecayBase = defaultRatingColorDecayBase;
+  int _ratedRoundCount = 1;
+""",
+)
+replace(
+    "lib/screens/leagues/ranking_screen.dart",
+    """    try {
+      _currentRound = await service.getCurrentRound(seasonId);
+""",
+    """    try {
+      _ratingColorDecayBase = await fetchRatingColorDecayBase(service.supabase);
+      _ratedRoundCount = await fetchRatedSeasonRoundCount(service.supabase, seasonId);
+      _currentRound = await service.getCurrentRound(seasonId);
+""",
+)
+replace(
+    "lib/screens/leagues/ranking_screen.dart",
+    """    final int maxScore =
+        _isOverallRanking ? (_currentRound * 2500).toInt() : 2500;
+""",
+    """    final int maxScore = _isOverallRanking
+        ? getAggregateRatingMaxValue(
+            _ratedRoundCount,
+            _ratingColorDecayBase,
+            singleMatchMax: 2500,
+          )
+        : 2500;
+""",
+)
+
+# League team season-total avatars: same DB setting and same season-wide started-round count.
+replace(
+    "lib/screens/leagues/league_team_screen.dart",
+    "  int _currentRound = 1;\n",
+    """  int _currentRound = 1;
+  double _ratingColorDecayBase = defaultRatingColorDecayBase;
+  int _ratedRoundCount = 1;
+""",
+)
+replace(
+    "lib/screens/leagues/league_team_screen.dart",
+    """    // 1. Aktuellen Spieltag abfragen (hier starten wir standardmäßig)
+    final currentRound = await dataManagement.supabaseService.getCurrentRound(
+""",
+    """    _ratingColorDecayBase = await fetchRatingColorDecayBase(
+      dataManagement.supabaseService.supabase,
+    );
+    _ratedRoundCount = await fetchRatedSeasonRoundCount(
+      dataManagement.supabaseService.supabase,
+      seasonId,
+    );
+
+    // 1. Aktuellen Spieltag abfragen (hier starten wir standardmäßig)
+    final currentRound = await dataManagement.supabaseService.getCurrentRound(
+""",
+)
+replace(
+    "lib/screens/leagues/league_team_screen.dart",
+    "currentRound: _currentRound,",
+    "currentRound: _ratedRoundCount,\n                  ratingColorDecayBase: _ratingColorDecayBase,",
+    count=2,
+)
+
+# Update tests to lock in the intended distinction between season rounds and player appearances.
+p = Path("test/color_helper_test.dart")
+text = p.read_text()
+if "season-wide round count is independent of player appearances" not in text:
+    insert = r'''
+
+  test('season-wide round count is independent of player appearances', () {
+    const roundCount = 4;
+    const playerAppearances = 1;
+    final seasonMax = getAggregateRatingMaxValue(roundCount, 0.8);
+    final appearanceMax = getAggregateRatingMaxValue(playerAppearances, 0.8);
+    expect(seasonMax, isNot(appearanceMax));
+    expect(seasonMax, greaterThan(appearanceMax));
+  });
+'''
+    idx = text.rfind("}")
+    if idx < 0:
+        raise SystemExit("test file closing brace missing")
+    p.write_text(text[:idx] + insert + text[idx:])
