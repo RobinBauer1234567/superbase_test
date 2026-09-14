@@ -41,6 +41,9 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
   int _overallTeamPoints = 0;
   bool _isViewingHistory = false;
   int _currentRound = 1;
+  double _ratingColorDecayBase = defaultRatingColorDecayBase;
+  double _averageRatingColorDecayBase = defaultAverageRatingColorDecayBase;
+  int _ratedRoundCount = 1;
   DateTime? _matchdayStart;
   DateTime? _matchdayEnd;
   final Map<int, Map<String, dynamic>> _matchdayMetaByRound = {};
@@ -70,6 +73,17 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
       if (mounted) setState(() => _isLoading = false);
       return;
     }
+
+    _ratingColorDecayBase = await fetchRatingColorDecayBase(
+      dataManagement.supabaseService.supabase,
+    );
+    _averageRatingColorDecayBase = await fetchAverageRatingColorDecayBase(
+      dataManagement.supabaseService.supabase,
+    );
+    _ratedRoundCount = await fetchRatedSeasonRoundCount(
+      dataManagement.supabaseService.supabase,
+      seasonId,
+    );
 
     // 1. Aktuellen Spieltag abfragen (hier starten wir standardmäßig)
     final currentRound = await dataManagement.supabaseService.getCurrentRound(
@@ -483,11 +497,39 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
   int _getStartingElevenAveragePoints() {
     int sum = 0;
     for (var p in _fieldPlayers) {
-      if (p.id > 0 && p.matchCount > 0) {
-        sum += (p.totalSeasonPoints / p.matchCount).round();
+      if (p.id > 0) {
+        sum += getAveragePoints(p.totalSeasonPoints, p.matchCount).round();
       }
     }
     return sum;
+  }
+
+  int _getStartingElevenAverageMaxPoints() {
+    int sum = 0;
+    for (var p in _fieldPlayers) {
+      if (p.id > 0) {
+        sum += getAverageRatingMaxValue(
+          p.matchCount,
+          _averageRatingColorDecayBase,
+        );
+      }
+    }
+    return sum > 0 ? sum : 1;
+  }
+
+  double _getStartingElevenEquivalentRating() {
+    final players = _fieldPlayers.where((p) => p.id > 0).toList();
+    if (players.isEmpty) return 0;
+
+    final equivalentTotal = players.fold<double>(0, (sum, player) {
+      return sum +
+          getAggregateEquivalentRating(
+            player.totalSeasonPoints,
+            _ratedRoundCount,
+            _ratingColorDecayBase,
+          );
+    });
+    return equivalentTotal / players.length;
   }
 
   int _getStartingElevenMarketValue() {
@@ -557,7 +599,9 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
                       isBeforeMatchday
                           ? AvatarDisplayMode.seasonTotal
                           : AvatarDisplayMode.matchday,
-                  currentRound: _currentRound,
+                  currentRound: _ratedRoundCount,
+                  ratingColorDecayBase: _ratingColorDecayBase,
+                  averageRatingColorDecayBase: _averageRatingColorDecayBase,
                 ),
               ),
               const SizedBox(width: 16),
@@ -782,10 +826,22 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
     final bool showOverallPoints = phase == MatchdayPhase.before;
     final int displayedPoints =
         showOverallPoints ? _overallTeamPoints : _matchdayPoints;
-    final Color pointsColor =
-        showOverallPoints
-            ? Theme.of(context).primaryColor
-            : getColorForRating(displayedPoints, 2500);
+    final Color pointsColor;
+    if (!showOverallPoints) {
+      pointsColor = getColorForRating(displayedPoints, 2500);
+    } else if (_selectedDisplayMode == AvatarDisplayMode.seasonTotal) {
+      pointsColor = getColorForRating(
+        _getStartingElevenEquivalentRating(),
+        singleMatchRatingMax,
+      );
+    } else if (_selectedDisplayMode == AvatarDisplayMode.seasonAverage) {
+      pointsColor = getColorForRating(
+        _getStartingElevenAveragePoints(),
+        _getStartingElevenAverageMaxPoints(),
+      );
+    } else {
+      pointsColor = Theme.of(context).primaryColor;
+    }
     final String phaseLabel = switch (phase) {
       MatchdayPhase.before => 'nicht gestartet',
       MatchdayPhase.inProgress => 'läuft',
@@ -1229,7 +1285,9 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
                     onMoveToBench: _handleMoveToBench,
                     requiredPositions: currentRequiredPositions,
                     frozenPlayerIds: _frozenPlayerIds,
-                    currentRound: _currentRound,
+                    currentRound: _ratedRoundCount,
+                  ratingColorDecayBase: _ratingColorDecayBase,
+                  averageRatingColorDecayBase: _averageRatingColorDecayBase,
                     displayMode:
                         _matchdayPhase == MatchdayPhase.before
                             ? _selectedDisplayMode

@@ -7,6 +7,7 @@ import 'package:premier_league/screens/premier_league/matches_screen.dart';
 import 'package:premier_league/viewmodels/tournament_viewmodel.dart';
 import 'package:premier_league/screens/screenelements/player_list_item.dart';
 import 'package:premier_league/utils/match_time_helper.dart';
+import 'package:premier_league/utils/color_helper.dart';
 
 class TeamScreen extends StatefulWidget {
   final int teamId;
@@ -28,6 +29,8 @@ class _TeamScreenState extends State<TeamScreen> with SingleTickerProviderStateM
   List<dynamic> _teamMatches = [];
   List<Map<String, dynamic>> _topPlayers = [];
   int anzahlMatches = 0;
+  double _ratingColorDecayBase = defaultRatingColorDecayBase;
+  int _ratedRoundCount = 1;
   bool _hasInitialAutoScroll = false;
 
   @override
@@ -94,6 +97,14 @@ class _TeamScreenState extends State<TeamScreen> with SingleTickerProviderStateM
     }
 
     try {
+      final ratingColorDecayBase = await fetchRatingColorDecayBase(
+        Supabase.instance.client,
+      );
+      final ratedRoundCount = await fetchRatedSeasonRoundCount(
+        Supabase.instance.client,
+        seasonId,
+      );
+
       final teamResponse = await Supabase.instance.client
           .from('team')
           .select()
@@ -152,6 +163,8 @@ class _TeamScreenState extends State<TeamScreen> with SingleTickerProviderStateM
           _teamData = teamResponse;
           _teamMatches = List<Map<String, dynamic>>.from(matchesResponse);
           _topPlayers = topPlayersList;
+          _ratingColorDecayBase = ratingColorDecayBase;
+          _ratedRoundCount = ratedRoundCount;
           _isLoading = false;
         });
 
@@ -228,7 +241,12 @@ class _TeamScreenState extends State<TeamScreen> with SingleTickerProviderStateM
       );
 
   Widget _buildCollapsedTeamBar() {
-    final maxTotalScore = (anzahlMatches * 250 * 0.8).round();
+    final playerAggregateMax = getAggregateRatingMaxValue(
+      _ratedRoundCount,
+      _ratingColorDecayBase,
+    );
+    final squadPlayerCount = _topPlayers.isEmpty ? 1 : _topPlayers.length;
+    final maxTotalScore = playerAggregateMax * squadPlayerCount;
     final teamScore = _totalSquadRating;
     return SizedBox(
       height: kToolbarHeight,
@@ -388,7 +406,7 @@ class _TeamScreenState extends State<TeamScreen> with SingleTickerProviderStateM
                             showTeamImageTrailing: false,
                             marketValue: player['marktwert'],
                             score: player['total_punkte'],
-                            maxScore: (anzahlMatches * 250 * 0.8).toInt(),
+                            maxScore: getAggregateRatingMaxValue(_ratedRoundCount, _ratingColorDecayBase),
                             position: _normalizePosition(player['position']),
                             id: player['id'],
                             goals: 0,

@@ -60,6 +60,9 @@ class _PlayerScreenState extends State<PlayerScreen>
   int totalMinutes = 0;
   int totalAppearances = 0;
   double playerForm = 0.0; // NEU: Form aus spieler_analytics
+  double _ratingColorDecayBase = defaultRatingColorDecayBase;
+  double _averageRatingColorDecayBase = defaultAverageRatingColorDecayBase;
+  int _ratedRoundCount = 1;
 
   @override
   void initState() {
@@ -159,6 +162,11 @@ class _PlayerScreenState extends State<PlayerScreen>
     }
 
     try {
+      final ratingColorDecayBase = await fetchRatingColorDecayBase(supabase);
+      final averageRatingColorDecayBase =
+          await fetchAverageRatingColorDecayBase(supabase);
+      final ratedRoundCount = await fetchRatedSeasonRoundCount(supabase, seasonId);
+
       // 1. Spieler- und Teamdaten abrufen (inkl. der neuen Analytics-Felder)
       final playerResponse = await supabase
           .from('season_players')
@@ -189,7 +197,13 @@ class _PlayerScreenState extends State<PlayerScreen>
       Map<String, dynamic> dbStats = analytics['gesamtstatistiken'] ?? {};
 
       // Mögliche Keys in gesamtstatistiken abfangen
-      int dbTotalPoints = (dbStats['punkte'] as num?)?.toInt() ?? (dbStats['total_points'] as num?)?.toInt() ?? 0;
+      final bool hasDbTotalPoints = dbStats.containsKey('gesamtpunkte') ||
+          dbStats.containsKey('punkte') ||
+          dbStats.containsKey('total_points');
+      int dbTotalPoints = (dbStats['gesamtpunkte'] as num?)?.toInt() ??
+          (dbStats['punkte'] as num?)?.toInt() ??
+          (dbStats['total_points'] as num?)?.toInt() ??
+          0;
       int dbGoals = (dbStats['goals'] as num?)?.toInt() ?? (dbStats['tore'] as num?)?.toInt() ?? 0;
       int dbAssists = (dbStats['assists'] as num?)?.toInt() ?? 0;
       int dbMinutes = (dbStats['minutesPlayed'] as num?)?.toInt() ?? (dbStats['minuten'] as num?)?.toInt() ?? 0;
@@ -257,7 +271,6 @@ class _PlayerScreenState extends State<PlayerScreen>
       int tempGoals = 0;
       int tempAssists = 0;
       int tempMinutes = 0;
-      int tempAppearances = actualRatings.length;
 
       for (var rating in actualRatings) {
         final points = (rating['punkte'] as num? ?? 0.0).toDouble();
@@ -270,8 +283,8 @@ class _PlayerScreenState extends State<PlayerScreen>
       }
 
       // 5. Zuweisung: DB-Werte haben Vorrang, andernfalls wird der Fallback genutzt
-      int finalTotalPoints = dbTotalPoints > 0 ? dbTotalPoints : aggregatedPoints;
-      int finalAppearances = anzahlSpiele > 0 ? anzahlSpiele : tempAppearances;
+      int finalTotalPoints = hasDbTotalPoints ? dbTotalPoints : aggregatedPoints;
+      int finalAppearances = anzahlSpiele;
       int finalGoals = dbGoals > 0 ? dbGoals : tempGoals;
       int finalAssists = dbAssists > 0 ? dbAssists : tempAssists;
       int finalMinutes = dbMinutes > 0 ? dbMinutes : tempMinutes;
@@ -315,6 +328,9 @@ class _PlayerScreenState extends State<PlayerScreen>
         totalMinutes = finalMinutes;
         averagePlayerRating = calculatedAverageRating;
         playerForm = form; // Die Form aus der DB
+        _ratingColorDecayBase = ratingColorDecayBase;
+        _averageRatingColorDecayBase = averageRatingColorDecayBase;
+        _ratedRoundCount = ratedRoundCount;
 
         // Marktwert-Historie Zuweisung (Für Graphen & Trend)
         marktwertHistorie = historyData;
@@ -367,7 +383,7 @@ class _PlayerScreenState extends State<PlayerScreen>
   }
 
   Widget _buildCollapsedPlayerBar() {
-    final maxTotalScore = (teamMatches.length * 250 * 0.8).round();
+    final maxTotalScore = getAggregateRatingMaxValue(_ratedRoundCount, _ratingColorDecayBase);
     final playerInfo = PlayerInfo(
       id: widget.playerId,
       name: playerName,
@@ -1189,12 +1205,21 @@ class _PlayerScreenState extends State<PlayerScreen>
                     // --- UNABHÄNGIGE FARBBRECHNUNGEN ---
 
                     // 1. Gesamtpunkte (Maximalwert abhängig von der Anzahl der Saisonspiele)
-                    int maxTotalScore = (teamMatches.length * 250 * 0.8).round();
-                    if (maxTotalScore < 1) maxTotalScore = 1;
+                    final int maxTotalScore = getAggregateRatingMaxValue(
+                      _ratedRoundCount,
+                      _ratingColorDecayBase,
+                    );
                     final Color colorGesamt = getColorForRating(totalPlayerPoints, maxTotalScore);
 
-                    // 2. Durchschnitt (Punkte pro einzelnem Spiel, ca. 250 als theoretisches Maximum)
-                    final Color colorAvg = getColorForRating(averagePlayerRating.round(), 250);
+                    // 2. Durchschnitt: Gesamtpunkte / spieler_analytics.anzahl_spiele.
+                    final int averageColorMax = getAverageRatingMaxValue(
+                      totalAppearances,
+                      _averageRatingColorDecayBase,
+                    );
+                    final Color colorAvg = getColorForRating(
+                      averagePlayerRating.round(),
+                      averageColorMax,
+                    );
 
                     // 3. Form (Wert zwischen 0.0 und 3.0 aus der DB).
                     // Da getColorForRating wahrscheinlich Ganzzahlen (int) nutzt, multiplizieren wir es mit 10 (z.B. 2.5 wird 25 von 30)

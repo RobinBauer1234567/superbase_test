@@ -24,6 +24,8 @@ class _RankingScreenState extends State<RankingScreen> {
   int _selectedRound = 1;
   int _currentRound = 1;
   int _latestActiveRound = 38;
+  double _ratingColorDecayBase = defaultRatingColorDecayBase;
+  int _ratedRoundCount = 1;
 
   List<Map<String, dynamic>> _rankingData = [];
   List<Map<String, dynamic>> _allSpieltageData = [];
@@ -47,6 +49,8 @@ class _RankingScreenState extends State<RankingScreen> {
     }
 
     try {
+      _ratingColorDecayBase = await fetchRatingColorDecayBase(service.supabase);
+      _ratedRoundCount = await fetchRatedSeasonRoundCount(service.supabase, seasonId);
       _currentRound = await service.getCurrentRound(seasonId);
       _selectedRound = _currentRound;
 
@@ -359,8 +363,13 @@ class _RankingScreenState extends State<RankingScreen> {
           listen: false,
         ).supabaseService.supabase.auth.currentUser?.id;
 
-    final int maxScore =
-        _isOverallRanking ? (_currentRound * 2500).toInt() : 2500;
+    final int maxScore = _isOverallRanking
+        ? getAggregateRatingMaxValue(
+            _ratedRoundCount,
+            _ratingColorDecayBase,
+            singleMatchMax: 2500,
+          )
+        : 2500;
 
     return Scaffold(
       backgroundColor:

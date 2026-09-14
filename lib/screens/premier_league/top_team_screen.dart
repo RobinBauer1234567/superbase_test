@@ -17,30 +17,55 @@ class TopTeamScreen extends StatefulWidget {
 }
 
 class _TopTeamScreenState extends State<TopTeamScreen> {
-  // View State
   bool _showGesamt = true;
   bool _isLoading = true;
   bool _showFormation = false;
   bool _isCalculatingFormation = false;
 
-  // Data
   List<Map<String, dynamic>> _topPlayers = [];
   List<Map<String, dynamic>> _teams = [];
   List<String> _positions = [];
   Map<String, dynamic>? _bestFormation;
   Map<String, List<String>> _allFormations = {};
   String? _selectedFormationName;
+  double _ratingColorDecayBase = defaultRatingColorDecayBase;
 
-  // Filter & Selection
   int? _selectedSpieltag;
   List<int> _spieltage = [];
   int? _selectedTeamId;
   String? _selectedPosition;
 
-  int _headerRatingMax() {
-    return _showGesamt
-        ? (_spieltage.length * 250 * 0.8).toInt().clamp(1, 99999999)
-        : 2500;
+  int get _ratedRoundCount => _spieltage.isEmpty ? 1 : _spieltage.length;
+
+  int _ratingMaxForPlayer(Map<String, dynamic> player) {
+    if (!_showGesamt) return singleMatchRatingMax;
+    return getAggregateRatingMaxValue(
+      _ratedRoundCount,
+      _ratingColorDecayBase,
+    );
+  }
+
+  double _formationEquivalentRating(List<Map<String, dynamic>> players) {
+    if (players.isEmpty) return 0;
+
+    if (!_showGesamt) {
+      final total = players.fold<num>(
+        0,
+        (sum, player) => sum + ((player['total_punkte'] as num?) ?? 0),
+      );
+      return total / players.length;
+    }
+
+    final totalEquivalent = players.fold<double>(0, (sum, player) {
+      return sum +
+          getAggregateEquivalentRating(
+            (player['total_punkte'] as num?) ?? 0,
+            _ratedRoundCount,
+            _ratingColorDecayBase,
+          );
+    });
+
+    return totalEquivalent / players.length;
   }
 
   @override
@@ -59,10 +84,8 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
     setState(() => _isLoading = true);
     if (_showGesamt) {
       await _fetchGesamtStats();
-    } else {
-      if (_selectedSpieltag != null) {
-        await _fetchSpieltagStats();
-      }
+    } else if (_selectedSpieltag != null) {
+      await _fetchSpieltagStats();
     }
     if (!mounted) return;
     if (_showFormation) {
@@ -74,6 +97,10 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
   Future<void> _fetchFilterData() async {
     final seasonId = context.read<TournamentViewModel>().currentSeasonId;
     if (seasonId == null) return;
+
+    _ratingColorDecayBase = await fetchRatingColorDecayBase(
+      Supabase.instance.client,
+    );
 
     final teamsResponse = await Supabase.instance.client
         .from('season_teams')
@@ -110,16 +137,15 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
     }
     _positions = positionSet.toList()..sort();
 
-    if (mounted) {
-      setState(() {});
-    }
+    if (mounted) setState(() {});
   }
 
   Future<void> _fetchGesamtStats() async {
     if (!mounted) return;
     setState(() => _isLoading = true);
     try {
-      final dynamic rawSeasonId = context.read<TournamentViewModel>().currentSeasonId;
+      final dynamic rawSeasonId =
+          context.read<TournamentViewModel>().currentSeasonId;
       if (rawSeasonId == null) {
         if (mounted) setState(() => _topPlayers = []);
         return;
@@ -167,9 +193,7 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
             team = seasonPlayers['team'];
           }
 
-          if (seasonStats == null || team == null) {
-            continue;
-          }
+          if (seasonStats == null || team == null) continue;
 
           if (selectedPosition != null && selectedPosition.isNotEmpty) {
             final dynamic rawPos = player['position'];
@@ -182,14 +206,10 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
             } else {
               playerPosStr = rawPos?.toString().toLowerCase() ?? '';
             }
-
-            if (!playerPosStr.contains(selectedPosition)) {
-              continue;
-            }
+            if (!playerPosStr.contains(selectedPosition)) continue;
           }
 
-          final totalPunkte =
-              (seasonStats is Map) ? (seasonStats['gesamtpunkte'] ?? 0) : 0;
+          final totalPunkte = seasonStats['gesamtpunkte'] ?? 0;
 
           topPlayersList.add({
             'id': player['id'],
@@ -201,10 +221,9 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
             'position': player['position'],
           });
         } catch (e) {
-          print(
+          debugPrint(
             '⚠️ Fehler beim Verarbeiten eines Spielers in _fetchGesamtStats: $e',
           );
-          continue;
         }
       }
 
@@ -214,17 +233,11 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
       );
 
       if (mounted) {
-        setState(() {
-          _topPlayers = topPlayersList.take(50).toList();
-        });
+        setState(() => _topPlayers = topPlayersList.take(50).toList());
       }
     } catch (e, st) {
-      print('❌ Fehler in _fetchGesamtStats: $e\n$st');
-      if (mounted) {
-        setState(() {
-          _topPlayers = [];
-        });
-      }
+      debugPrint('❌ Fehler in _fetchGesamtStats: $e\n$st');
+      if (mounted) setState(() => _topPlayers = []);
     } finally {
       if (mounted) setState(() => _isLoading = false);
     }
@@ -252,7 +265,6 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
           .eq('spiel.season_id', seasonId);
 
       final response = await query;
-
       final playerTeamQueryIds =
           response
               .where((r) => r['spieler'] != null)
@@ -267,15 +279,14 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
             .select('player_id, team:team(id, image_url)')
             .eq('season_id', seasonId)
             .inFilter('player_id', playerTeamQueryIds);
-
         playerTeamMap = {
           for (var item in teamResponse) item['player_id']: item['team'],
         };
       }
 
       final String? selectedPosition = _selectedPosition?.toLowerCase();
-
       List<Map<String, dynamic>> topPlayersList = [];
+
       for (var rating in response) {
         final player = rating['spieler'];
         if (player == null) continue;
@@ -296,19 +307,19 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
           'name': player['name'],
           'profilbild_url': player['profilbild_url'],
           'team_image_url': team['image_url'],
-          'marktwert':
-              (() {
-                final a = player['spieler_analytics'];
-                if (a is List) {
-                  final f = a.cast<Map<String, dynamic>>().firstWhere(
-                    (x) => x['season_id'] == seasonId,
-                    orElse: () => <String, dynamic>{},
-                  );
-                  return (f['marktwert'] as num?)?.toInt();
-                }
-                return (a is Map ? (a['marktwert'] as num?)?.toInt() : null);
-              })(),
+          'marktwert': (() {
+            final a = player['spieler_analytics'];
+            if (a is List) {
+              final f = a.cast<Map<String, dynamic>>().firstWhere(
+                (x) => x['season_id'] == seasonId,
+                orElse: () => <String, dynamic>{},
+              );
+              return (f['marktwert'] as num?)?.toInt();
+            }
+            return a is Map ? (a['marktwert'] as num?)?.toInt() : null;
+          })(),
           'total_punkte': (rating['punkte'] as num?)?.toInt() ?? 0,
+          'games_played': 1,
           'position': player['position'],
         });
       }
@@ -318,12 +329,10 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
       );
 
       if (mounted) {
-        setState(() {
-          _topPlayers = topPlayersList.take(50).toList();
-        });
+        setState(() => _topPlayers = topPlayersList.take(50).toList());
       }
     } catch (e, st) {
-      print('Fehler in _fetchSpieltagStats: $e\n$st');
+      debugPrint('Fehler in _fetchSpieltagStats: $e\n$st');
       if (mounted) setState(() => _topPlayers = []);
     } finally {
       if (mounted) setState(() => _isLoading = false);
@@ -332,7 +341,7 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
 
   Future<void> _calculateInitialBestFormation() async {
     setState(() => _isCalculatingFormation = true);
-    SupabaseService supabaseService = SupabaseService();
+    final supabaseService = SupabaseService();
     final formations = await supabaseService.fetchFormationsFromDb();
     _allFormations = formations;
 
@@ -341,9 +350,9 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
     String? bestFormationName;
 
     formations.forEach((formationName, positions) {
-      List<Map<String, dynamic>> currentFormation = [];
+      final currentFormation = <Map<String, dynamic>>[];
       int currentScore = 0;
-      List<int> usedPlayerIds = [];
+      final usedPlayerIds = <int>[];
 
       for (var pos in positions) {
         final bestPlayerForPos = _topPlayers.firstWhere(
@@ -352,7 +361,6 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
               (p['position'] as String).contains(pos),
           orElse: () => {},
         );
-
         if (bestPlayerForPos.isNotEmpty) {
           currentFormation.add(bestPlayerForPos);
           currentScore += bestPlayerForPos['total_punkte'] as int;
@@ -371,6 +379,7 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
       }
     });
 
+    if (!mounted) return;
     setState(() {
       _bestFormation = bestFormation;
       _selectedFormationName = bestFormationName;
@@ -380,7 +389,6 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
 
   void _calculateTeamForSelectedFormation(String formationName) {
     setState(() => _isCalculatingFormation = true);
-
     final positions = _allFormations[formationName];
     if (positions == null) {
       setState(() {
@@ -390,9 +398,9 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
       return;
     }
 
-    List<Map<String, dynamic>> currentFormation = [];
+    final currentFormation = <Map<String, dynamic>>[];
     int currentScore = 0;
-    List<int> usedPlayerIds = [];
+    final usedPlayerIds = <int>[];
 
     for (var pos in positions) {
       final bestPlayerForPos = _topPlayers.firstWhere(
@@ -401,7 +409,6 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
             (p['position'] as String).contains(pos),
         orElse: () => {},
       );
-
       if (bestPlayerForPos.isNotEmpty) {
         currentFormation.add(bestPlayerForPos);
         currentScore += bestPlayerForPos['total_punkte'] as int;
@@ -429,10 +436,7 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
   Widget build(BuildContext context) {
     return Column(
       children: [
-        // Die neue, kompakte Kombi-Leiste
         _buildMatchdaySelector(),
-
-        // Der eigentliche Inhalt
         Expanded(
           child:
               _isLoading
@@ -445,10 +449,8 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
     );
   }
 
-  // --- DIE NEUE, KOMPAKTE KOPFLEISTE ---
   Widget _buildMatchdaySelector() {
     final primaryColor = Theme.of(context).primaryColor;
-    // Prüfen ob wir gerade den aktuellsten Spieltag anzeigen
     final bool isCurrentRound =
         _spieltage.isNotEmpty && _selectedSpieltag == _spieltage.last;
     final bool highlightCurrent = !_showGesamt && isCurrentRound;
@@ -465,9 +467,8 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
       child: Row(
         mainAxisAlignment: MainAxisAlignment.spaceBetween,
         children: [
-          // --- LINKE SEITE: Zwingend 45% des verfügbaren Platzes ---
           Expanded(
-            flex: 50, // Definiert das feste Verhältnis
+            flex: 50,
             child: FittedBox(
               fit: BoxFit.scaleDown,
               alignment: Alignment.centerLeft,
@@ -483,9 +484,7 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
                                 _selectedSpieltag == _spieltage.first)
                             ? null
                             : () {
-                              final idx = _spieltage.indexOf(
-                                _selectedSpieltag!,
-                              );
+                              final idx = _spieltage.indexOf(_selectedSpieltag!);
                               if (idx > 0) {
                                 setState(
                                   () => _selectedSpieltag = _spieltage[idx - 1],
@@ -504,12 +503,10 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
                     constraints: const BoxConstraints(),
                   ),
                   const SizedBox(width: 8),
-
                   GestureDetector(
                     onTap: () {
                       setState(() {
                         _showGesamt = !_showGesamt;
-                        // Falls noch kein Spieltag gewählt war, nimm den aktuellsten
                         if (!_showGesamt &&
                             _selectedSpieltag == null &&
                             _spieltage.isNotEmpty) {
@@ -540,8 +537,8 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
                         children: [
                           Text(
                             _showGesamt
-                                ? "Gesamt"
-                                : "Spieltag ${_selectedSpieltag ?? '-'}",
+                                ? 'Gesamt'
+                                : 'Spieltag ${_selectedSpieltag ?? '-'}',
                             style: const TextStyle(
                               fontWeight: FontWeight.bold,
                               fontSize: 16,
@@ -559,7 +556,6 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
                     ),
                   ),
                   const SizedBox(width: 8),
-
                   IconButton(
                     icon: const Icon(Icons.chevron_right),
                     onPressed:
@@ -569,9 +565,7 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
                                 _selectedSpieltag == _spieltage.last)
                             ? null
                             : () {
-                              final idx = _spieltage.indexOf(
-                                _selectedSpieltag!,
-                              );
+                              final idx = _spieltage.indexOf(_selectedSpieltag!);
                               if (idx < _spieltage.length - 1) {
                                 setState(
                                   () => _selectedSpieltag = _spieltage[idx + 1],
@@ -593,11 +587,8 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
               ),
             ),
           ),
-
-          // --- RECHTE SEITE: Filter & Ansicht ---
           Expanded(
-            flex:
-                50, // Gibt der rechten Seite minimal mehr Raum für die Filter/Ansichten
+            flex: 50,
             child: FittedBox(
               fit: BoxFit.scaleDown,
               alignment: Alignment.centerRight,
@@ -606,13 +597,8 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
                 children: [
                   _buildTeamPopup(),
                   _buildPositionPopup(),
-
-                  // Feld- / Listenansicht Toggle
                   Container(
-                    padding: const EdgeInsets.symmetric(
-                      horizontal: 10,
-                      vertical: 6,
-                    ),
+                    padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
                     decoration: BoxDecoration(
                       color: primaryColor.withOpacity(0.1),
                       borderRadius: BorderRadius.circular(20),
@@ -644,7 +630,7 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
                           ),
                           const SizedBox(width: 4),
                           Text(
-                            _showFormation ? "Liste" : "Feld",
+                            _showFormation ? 'Liste' : 'Feld',
                             style: TextStyle(
                               fontWeight: FontWeight.bold,
                               color: primaryColor,
@@ -673,17 +659,14 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
             )
             : null;
 
-    // Wir nutzen <int> statt <int?>, und -1 als Platzhalter für "Alle Teams"
     return PopupMenuButton<int>(
       enabled: !_showFormation,
       initialValue: _selectedTeamId ?? -1,
-      // Design des ausklappenden Menüs
       color: Colors.white,
       elevation: 3,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       onSelected: (val) {
-        // Wenn -1 ausgewählt wird, setzen wir den Filter auf null zurück
-        setState(() => _selectedTeamId = (val == -1) ? null : val);
+        setState(() => _selectedTeamId = val == -1 ? null : val);
         _fetchData();
       },
       itemBuilder:
@@ -699,10 +682,8 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
           margin: const EdgeInsets.only(right: 6),
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
           decoration: BoxDecoration(
-            color: Colors.grey.shade100, // Bleibt immer grau
-            border: Border.all(
-              color: Colors.grey.shade300,
-            ), // Bleibt immer grau
+            color: Colors.grey.shade100,
+            border: Border.all(color: Colors.grey.shade300),
             borderRadius: BorderRadius.circular(8),
           ),
           child: Row(
@@ -710,15 +691,14 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
             children: [
               Icon(Icons.filter_list, size: 12, color: Colors.grey.shade600),
               const SizedBox(width: 4),
-              if (_selectedTeamId == null) ...[
+              if (_selectedTeamId == null)
                 Icon(
                   Icons.shield_outlined,
                   size: 16,
                   color: Colors.grey.shade700,
-                ),
-              ] else ...[
+                )
+              else
                 Image.network(team!['image_url'], width: 16, height: 16),
-              ],
             ],
           ),
         ),
@@ -727,17 +707,14 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
   }
 
   Widget _buildPositionPopup() {
-    // Wir nutzen <String> und "ALL" als Platzhalter für "Alle Positionen"
     return PopupMenuButton<String>(
       enabled: !_showFormation,
       initialValue: _selectedPosition ?? 'ALL',
-      // Design des ausklappenden Menüs
       color: Colors.white,
       elevation: 3,
       shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
       onSelected: (val) {
-        // Wenn "ALL" ausgewählt wird, setzen wir den Filter auf null zurück
-        setState(() => _selectedPosition = (val == 'ALL') ? null : val);
+        setState(() => _selectedPosition = val == 'ALL' ? null : val);
         _fetchData();
       },
       itemBuilder:
@@ -756,10 +733,8 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
           margin: const EdgeInsets.only(right: 8),
           padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
           decoration: BoxDecoration(
-            color: Colors.grey.shade100, // Bleibt immer grau
-            border: Border.all(
-              color: Colors.grey.shade300,
-            ), // Bleibt immer grau
+            color: Colors.grey.shade100,
+            border: Border.all(color: Colors.grey.shade300),
             borderRadius: BorderRadius.circular(8),
           ),
           child: Row(
@@ -767,13 +742,13 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
             children: [
               Icon(Icons.filter_list, size: 12, color: Colors.grey.shade600),
               const SizedBox(width: 4),
-              if (_selectedPosition == null) ...[
+              if (_selectedPosition == null)
                 Icon(
                   Icons.person_outline,
                   size: 16,
                   color: Colors.grey.shade700,
-                ),
-              ] else ...[
+                )
+              else
                 Text(
                   _selectedPosition!,
                   style: TextStyle(
@@ -782,7 +757,6 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
                     color: Colors.grey.shade800,
                   ),
                 ),
-              ],
             ],
           ),
         ),
@@ -794,7 +768,7 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
     if (_topPlayers.isEmpty) {
       return const Center(
         child: Text(
-          "Keine Spieler für diesen Filter gefunden.",
+          'Keine Spieler für diesen Filter gefunden.',
           style: TextStyle(color: Colors.grey, fontSize: 16),
         ),
       );
@@ -810,12 +784,9 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
           teamImageUrl: player['team_image_url'],
           marketValue: player['marktwert'],
           score: player['total_punkte'],
-          maxScore: _showGesamt ? (_spieltage.length * 250 * 0.5).toInt() : 250,
-
-          // Neue Felder für PlayerListItem (falls benötigt)
+          maxScore: _ratingMaxForPlayer(player),
           position: player['position'] ?? '',
           id: player['id'],
-
           onTap: () {
             Navigator.push(
               context,
@@ -833,13 +804,17 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
     if (_isCalculatingFormation) {
       return const Center(child: CircularProgressIndicator());
     }
-
     if (_bestFormation == null || _selectedFormationName == null) {
-      return const Center(child: Text("Keine gültige Formation gefunden."));
+      return const Center(child: Text('Keine gültige Formation gefunden.'));
     }
 
-    final players =
+    final rawFormationPlayers =
         (_bestFormation!['players'] as List)
+            .map((p) => Map<String, dynamic>.from(p as Map))
+            .toList();
+
+    final players =
+        rawFormationPlayers
             .map(
               (p) => PlayerInfo(
                 id: p['id'],
@@ -847,8 +822,9 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
                 position: p['position'],
                 profileImageUrl: p['profilbild_url'],
                 rating: p['total_punkte'],
-                maxRating:
-                    _showGesamt ? (_spieltage.length * 250 * 0.8).toInt() : 250,
+                totalSeasonPoints: p['total_punkte'],
+                matchCount: _ratedRoundCount,
+                maxRating: _ratingMaxForPlayer(p),
                 goals: 0,
                 assists: 0,
                 ownGoals: 0,
@@ -859,82 +835,77 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
     return LayoutBuilder(
       builder: (context, constraints) {
         final sortedFormationKeys = _allFormations.keys.toList()..sort();
-
         return Column(
           children: [
             Padding(
-              padding: const EdgeInsets.symmetric(
-                horizontal: 16.0,
-                vertical: 8.0,
-              ),
-              child: Column(
+              padding: const EdgeInsets.symmetric(horizontal: 16.0, vertical: 8.0),
+              child: Row(
                 children: [
-                  Row(
-                    children: [
-                      Expanded(
-                        child: DropdownButton<String>(
-                          value: _selectedFormationName,
-                          isExpanded: true,
-                          items:
-                              sortedFormationKeys.map((String value) {
-                                return DropdownMenuItem<String>(
-                                  value: value,
-                                  child: Text('Formation: $value'),
-                                );
-                              }).toList(),
-                          onChanged: (String? newValue) {
-                            if (newValue != null &&
-                                newValue != _selectedFormationName) {
-                              _calculateTeamForSelectedFormation(newValue);
-                            }
-                          },
-                        ),
-                      ),
-                      const SizedBox(width: 8),
-                      Builder(
-                        builder: (context) {
-                          final int formationScore =
-                              (_bestFormation?['score'] as num?)?.toInt() ?? 0;
-                          final int formationMax = _headerRatingMax();
-                          final Color formationColor =
-                              getColorForRating(formationScore, formationMax);
+                  Expanded(
+                    child: DropdownButton<String>(
+                      value: _selectedFormationName,
+                      isExpanded: true,
+                      items:
+                          sortedFormationKeys.map((value) {
+                            return DropdownMenuItem<String>(
+                              value: value,
+                              child: Text('Formation: $value'),
+                            );
+                          }).toList(),
+                      onChanged: (newValue) {
+                        if (newValue != null &&
+                            newValue != _selectedFormationName) {
+                          _calculateTeamForSelectedFormation(newValue);
+                        }
+                      },
+                    ),
+                  ),
+                  const SizedBox(width: 8),
+                  Builder(
+                    builder: (context) {
+                      final int formationScore =
+                          (_bestFormation?['score'] as num?)?.toInt() ?? 0;
+                      final double formationEquivalentRating =
+                          _formationEquivalentRating(rawFormationPlayers);
+                      final Color formationColor = getColorForRating(
+                        formationEquivalentRating,
+                        singleMatchRatingMax,
+                      );
 
-                          return Container(
-                            padding: const EdgeInsets.symmetric(
-                              horizontal: 12,
-                              vertical: 8,
-                            ),
-                            decoration: BoxDecoration(
-                              color: formationColor.withOpacity(0.1),
-                              borderRadius: BorderRadius.circular(12),
-                              border: Border.all(
-                                color: formationColor.withOpacity(0.3),
+                      return Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 12,
+                          vertical: 8,
+                        ),
+                        decoration: BoxDecoration(
+                          color: formationColor.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
+                          border: Border.all(
+                            color: formationColor.withOpacity(0.3),
+                          ),
+                        ),
+                        child: Column(
+                          children: [
+                            Text(
+                              'PUNKTE',
+                              style: TextStyle(
+                                fontSize: 8,
+                                fontWeight: FontWeight.bold,
+                                color: formationColor,
                               ),
                             ),
-                            child: Column(
-                              children: [
-                                Text(
-                                  'PUNKTE',
-                                  style: TextStyle(
-                                    fontSize: 8,
-                                    fontWeight: FontWeight.bold,
-                                    color: formationColor,
-                                  ),
-                                ),
-                                Text(
-                                  formationScore.toString(),
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 14,
-                                    color: formationColor,
-                                  ),
-                                ),
-                              ],
+                            Text(
+                              formationScore.toString(),
+                              style: TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 14,
+                                color: formationColor,
+                              ),
                             ),
-                          );
-                        },
-                      ),
-                    ],
+                          ],
+                        ),
+                      );
+                    },
                   ),
                 ],
               ),
@@ -944,6 +915,12 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
                 homeFormation: _selectedFormationName!,
                 homePlayers: players,
                 homeColor: Colors.blue,
+                displayMode:
+                    _showGesamt
+                        ? AvatarDisplayMode.seasonTotal
+                        : AvatarDisplayMode.matchday,
+                currentRound: _ratedRoundCount,
+                ratingColorDecayBase: _ratingColorDecayBase,
                 onPlayerTap: (playerId, radius) {
                   Navigator.push(
                     context,
