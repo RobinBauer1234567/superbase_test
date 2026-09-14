@@ -62,6 +62,7 @@ class PlayerAvatar extends StatelessWidget {
   final bool hideUnlockedMatchdayRating;
   final AvatarDisplayMode displayMode; // <--- NEU
   final int currentRound;              // <--- NEU
+  final double ratingColorDecayBase;
 
   const PlayerAvatar({
     super.key,
@@ -76,6 +77,7 @@ class PlayerAvatar extends StatelessWidget {
     this.hideUnlockedMatchdayRating = false,
     this.displayMode = AvatarDisplayMode.matchday, // Standard
     this.currentRound = 1,
+    this.ratingColorDecayBase = defaultRatingColorDecayBase,
     this.goalkeeperColor,
   });
 
@@ -113,12 +115,13 @@ class PlayerAvatar extends StatelessWidget {
   int _getCalculatedMaxScore() {
     switch (displayMode) {
       case AvatarDisplayMode.matchday:
-      case AvatarDisplayMode.seasonAverage: return 250;
+      case AvatarDisplayMode.seasonAverage:
+        return singleMatchRatingMax;
       case AvatarDisplayMode.seasonTotal:
-         //print(currentRound);
-        int max = (currentRound * 250 * 0.8).toInt();
-        return max < 1 ? 1 : max;
-      case AvatarDisplayMode.marketValue: return 50000000; // Ab 25 Mio gibt es die beste Farbe
+        final gameCount = player.matchCount > 0 ? player.matchCount : currentRound;
+        return getAggregateRatingMaxValue(gameCount, ratingColorDecayBase);
+      case AvatarDisplayMode.marketValue:
+        return 50000000; // Ab 25 Mio gibt es die beste Farbe
     }
   }
 
@@ -342,6 +345,7 @@ class MatchFormationDisplay extends StatefulWidget {
   final List<int> frozenPlayerIds; // NEU: Nimmt die Liste aus dem TeamScreen entgegen
   final AvatarDisplayMode displayMode; // NEU
   final int currentRound;
+  final double ratingColorDecayBase;
   final bool isReadOnly; // <--- NEU HINZUFÜGEN
   final bool hideUnlockedMatchdayRating;
 
@@ -361,6 +365,7 @@ class MatchFormationDisplay extends StatefulWidget {
     this.frozenPlayerIds = const [], // NEU
     this.displayMode = AvatarDisplayMode.matchday, // NEU
     this.currentRound = 1,
+    this.ratingColorDecayBase = defaultRatingColorDecayBase,
     this.isReadOnly = false, // <--- NEU HINZUFÜGEN (Standard ist false)
     this.hideUnlockedMatchdayRating = false,
     this.homeGoalkeeperColor, // <--- NEU
@@ -561,6 +566,7 @@ class _MatchFormationDisplayState extends State<MatchFormationDisplay> {
                                   isLocked: isPlayerLocked, // NEU
                                   displayMode: widget.displayMode,
                                   currentRound: widget.currentRound,
+                                  ratingColorDecayBase: widget.ratingColorDecayBase,
                                   hideUnlockedMatchdayRating: widget.hideUnlockedMatchdayRating,
                                 );
 
@@ -579,7 +585,14 @@ class _MatchFormationDisplayState extends State<MatchFormationDisplay> {
                                       color: Colors.transparent,
                                       child: Opacity(
                                         opacity: 0.9,
-                                        child: PlayerAvatar(player: player, teamColor: widget.homeColor, radius: radius * 1.1),
+                                        child: PlayerAvatar(
+                                          player: player,
+                                          teamColor: widget.homeColor,
+                                          radius: radius * 1.1,
+                                          displayMode: widget.displayMode,
+                                          currentRound: widget.currentRound,
+                                          ratingColorDecayBase: widget.ratingColorDecayBase,
+                                        ),
                                       ),
                                     ),
                                     childWhenDragging: Opacity(
@@ -642,6 +655,7 @@ class _MatchFormationDisplayState extends State<MatchFormationDisplay> {
                   showValidTargetEffect: isValidTarget,
                   displayMode: widget.displayMode,
                   currentRound: widget.currentRound,
+                  ratingColorDecayBase: widget.ratingColorDecayBase,
                   hideUnlockedMatchdayRating: widget.hideUnlockedMatchdayRating,
                 ),
               );
@@ -676,6 +690,7 @@ class _MatchFormationDisplayState extends State<MatchFormationDisplay> {
                       isLocked: isPlayerLocked, // NEU übergeben
                       displayMode: widget.displayMode,
                       currentRound: widget.currentRound,
+                      ratingColorDecayBase: widget.ratingColorDecayBase,
                       hideUnlockedMatchdayRating: widget.hideUnlockedMatchdayRating,
                     );
 
@@ -687,7 +702,14 @@ class _MatchFormationDisplayState extends State<MatchFormationDisplay> {
                           color: Colors.transparent,
                           child: Opacity(
                             opacity: 0.9,
-                            child: PlayerAvatar(player: targetPlayer, teamColor: teamColor, radius: radius * 1.1, displayMode: widget.displayMode, currentRound: widget.currentRound,),
+                            child: PlayerAvatar(
+                              player: targetPlayer,
+                              teamColor: teamColor,
+                              radius: radius * 1.1,
+                              displayMode: widget.displayMode,
+                              currentRound: widget.currentRound,
+                              ratingColorDecayBase: widget.ratingColorDecayBase,
+                            ),
                           ),
                         ),
                         childWhenDragging: Opacity(
