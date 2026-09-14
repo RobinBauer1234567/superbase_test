@@ -5,7 +5,7 @@ on:
     branches:
       - fix/unify-rating-colors
     paths:
-      - tools/apply_rating_color_patch.py
+      - .github/trigger-rating-color-patch
 
 permissions:
   contents: write
@@ -23,6 +23,7 @@ jobs:
       - name: Remove temporary patch helpers
         run: |
           rm -f tools/apply_rating_color_patch.py
+          rm -f .github/trigger-rating-color-patch
           rm -f .github/workflows/apply-rating-color-unification.yml
           rm -f .github/workflows/apply-rating-color-unification-v2.yml
       - name: Commit patch
