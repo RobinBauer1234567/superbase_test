@@ -35,15 +35,12 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
   int? _selectedTeamId;
   String? _selectedPosition;
 
-  int _gameCountForPlayer(Map<String, dynamic> player) {
-    final count = (player['games_played'] as num?)?.toInt() ?? 1;
-    return count < 1 ? 1 : count;
-  }
+  int get _ratedRoundCount => _spieltage.isEmpty ? 1 : _spieltage.length;
 
   int _ratingMaxForPlayer(Map<String, dynamic> player) {
     if (!_showGesamt) return singleMatchRatingMax;
     return getAggregateRatingMaxValue(
-      _gameCountForPlayer(player),
+      _ratedRoundCount,
       _ratingColorDecayBase,
     );
   }
@@ -63,7 +60,7 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
       return sum +
           getAggregateEquivalentRating(
             (player['total_punkte'] as num?) ?? 0,
-            _gameCountForPlayer(player),
+            _ratedRoundCount,
             _ratingColorDecayBase,
           );
     });
@@ -101,29 +98,9 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
     final seasonId = context.read<TournamentViewModel>().currentSeasonId;
     if (seasonId == null) return;
 
-    try {
-      final settings = await Supabase.instance.client
-          .from('game_settings')
-          .select('rating_color_decay_base')
-          .eq('id', 1)
-          .maybeSingle();
-      final rawDecayBase = settings?['rating_color_decay_base'];
-      final parsedDecayBase =
-          rawDecayBase is num
-              ? rawDecayBase.toDouble()
-              : double.tryParse(rawDecayBase?.toString() ?? '');
-      if (parsedDecayBase != null &&
-          parsedDecayBase > 0 &&
-          parsedDecayBase <= 1) {
-        _ratingColorDecayBase = parsedDecayBase;
-      }
-    } catch (e) {
-      debugPrint(
-        '⚠️ rating_color_decay_base konnte nicht geladen werden: $e. '
-        'Fallback: $defaultRatingColorDecayBase',
-      );
-      _ratingColorDecayBase = defaultRatingColorDecayBase;
-    }
+    _ratingColorDecayBase = await fetchRatingColorDecayBase(
+      Supabase.instance.client,
+    );
 
     final teamsResponse = await Supabase.instance.client
         .from('season_teams')
@@ -179,7 +156,7 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
       var query = Supabase.instance.client
           .from('spieler')
           .select(
-            'id, name, profilbild_url, position, spieler_analytics(marktwert, gesamtstatistiken, anzahl_spiele, season_id), season_players!inner(season_id, team:team(id, name, image_url))',
+            'id, name, profilbild_url, position, spieler_analytics(marktwert, gesamtstatistiken, season_id), season_players!inner(season_id, team:team(id, name, image_url))',
           )
           .eq('season_players.season_id', seasonIdInt ?? rawSeasonId);
 
@@ -233,7 +210,6 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
           }
 
           final totalPunkte = seasonStats['gesamtpunkte'] ?? 0;
-          final gamesPlayed = (analytics?['anzahl_spiele'] as num?)?.toInt() ?? 0;
 
           topPlayersList.add({
             'id': player['id'],
@@ -242,7 +218,6 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
             'team_image_url': team['image_url'],
             'marktwert': (analytics?['marktwert'] as num?)?.toInt(),
             'total_punkte': (totalPunkte as num).toInt(),
-            'games_played': gamesPlayed,
             'position': player['position'],
           });
         } catch (e) {
@@ -848,7 +823,7 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
                 profileImageUrl: p['profilbild_url'],
                 rating: p['total_punkte'],
                 totalSeasonPoints: p['total_punkte'],
-                matchCount: _gameCountForPlayer(p),
+                matchCount: _ratedRoundCount,
                 maxRating: _ratingMaxForPlayer(p),
                 goals: 0,
                 assists: 0,
@@ -944,7 +919,7 @@ class _TopTeamScreenState extends State<TopTeamScreen> {
                     _showGesamt
                         ? AvatarDisplayMode.seasonTotal
                         : AvatarDisplayMode.matchday,
-                currentRound: _spieltage.isEmpty ? 1 : _spieltage.length,
+                currentRound: _ratedRoundCount,
                 ratingColorDecayBase: _ratingColorDecayBase,
                 onPlayerTap: (playerId, radius) {
                   Navigator.push(

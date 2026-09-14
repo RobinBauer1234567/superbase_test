@@ -50,4 +50,14 @@ void main() {
       );
     });
   });
+
+
+  test('season-wide round count is independent of player appearances', () {
+    const roundCount = 4;
+    const playerAppearances = 1;
+    final seasonMax = getAggregateRatingMaxValue(roundCount, 0.8);
+    final appearanceMax = getAggregateRatingMaxValue(playerAppearances, 0.8);
+    expect(seasonMax, isNot(appearanceMax));
+    expect(seasonMax, greaterThan(appearanceMax));
+  });
 }

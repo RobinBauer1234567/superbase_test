@@ -41,6 +41,8 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
   int _overallTeamPoints = 0;
   bool _isViewingHistory = false;
   int _currentRound = 1;
+  double _ratingColorDecayBase = defaultRatingColorDecayBase;
+  int _ratedRoundCount = 1;
   DateTime? _matchdayStart;
   DateTime? _matchdayEnd;
   final Map<int, Map<String, dynamic>> _matchdayMetaByRound = {};
@@ -70,6 +72,14 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
       if (mounted) setState(() => _isLoading = false);
       return;
     }
+
+    _ratingColorDecayBase = await fetchRatingColorDecayBase(
+      dataManagement.supabaseService.supabase,
+    );
+    _ratedRoundCount = await fetchRatedSeasonRoundCount(
+      dataManagement.supabaseService.supabase,
+      seasonId,
+    );
 
     // 1. Aktuellen Spieltag abfragen (hier starten wir standardmäßig)
     final currentRound = await dataManagement.supabaseService.getCurrentRound(
@@ -557,7 +567,8 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
                       isBeforeMatchday
                           ? AvatarDisplayMode.seasonTotal
                           : AvatarDisplayMode.matchday,
-                  currentRound: _currentRound,
+                  currentRound: _ratedRoundCount,
+                  ratingColorDecayBase: _ratingColorDecayBase,
                 ),
               ),
               const SizedBox(width: 16),
@@ -1229,7 +1240,8 @@ class _LeagueTeamScreenState extends State<LeagueTeamScreen> {
                     onMoveToBench: _handleMoveToBench,
                     requiredPositions: currentRequiredPositions,
                     frozenPlayerIds: _frozenPlayerIds,
-                    currentRound: _currentRound,
+                    currentRound: _ratedRoundCount,
+                  ratingColorDecayBase: _ratingColorDecayBase,
                     displayMode:
                         _matchdayPhase == MatchdayPhase.before
                             ? _selectedDisplayMode

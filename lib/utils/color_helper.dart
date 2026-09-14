@@ -1,9 +1,46 @@
 import 'dart:math' as math;
 
 import 'package:flutter/material.dart';
+import 'package:supabase_flutter/supabase_flutter.dart';
 
 const int singleMatchRatingMax = 250;
 const double defaultRatingColorDecayBase = 0.8;
+
+
+Future<double> fetchRatingColorDecayBase(SupabaseClient client) async {
+  try {
+    final settings = await client
+        .from('game_settings')
+        .select('rating_color_decay_base')
+        .eq('id', 1)
+        .maybeSingle();
+    final rawValue = settings?['rating_color_decay_base'];
+    final value = rawValue is num
+        ? rawValue.toDouble()
+        : double.tryParse(rawValue?.toString() ?? '');
+    if (value != null && value > 0 && value <= 1) return value;
+  } catch (_) {
+    // Use the safe default below.
+  }
+  return defaultRatingColorDecayBase;
+}
+
+Future<int> fetchRatedSeasonRoundCount(
+  SupabaseClient client,
+  dynamic seasonId,
+) async {
+  try {
+    final rows = await client
+        .from('spieltag')
+        .select('round')
+        .eq('season_id', seasonId)
+        .neq('status', 'nicht gestartet');
+    final rounds = rows.map((row) => row['round'].toString()).toSet();
+    return math.max(1, rounds.length);
+  } catch (_) {
+    return 1;
+  }
+}
 
 Color getColorForRating(num rating, int maxValue) {
   final effectiveMax = maxValue <= 0 ? 1.0 : maxValue.toDouble();

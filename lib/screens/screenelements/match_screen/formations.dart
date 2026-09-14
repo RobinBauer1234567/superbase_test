@@ -118,8 +118,10 @@ class PlayerAvatar extends StatelessWidget {
       case AvatarDisplayMode.seasonAverage:
         return singleMatchRatingMax;
       case AvatarDisplayMode.seasonTotal:
-        final gameCount = player.matchCount > 0 ? player.matchCount : currentRound;
-        return getAggregateRatingMaxValue(gameCount, ratingColorDecayBase);
+        return getAggregateRatingMaxValue(
+          currentRound,
+          ratingColorDecayBase,
+        );
       case AvatarDisplayMode.marketValue:
         return 50000000; // Ab 25 Mio gibt es die beste Farbe
     }
