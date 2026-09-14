@@ -109,13 +109,15 @@ class TournamentViewModel extends ChangeNotifier {
     return null;
   }
 
-  /// New manager leagues may only be created for the newest season.
-  /// Historical initialized seasons remain readable, but cannot become the
-  /// target of newly created fantasy leagues.
+  /// New manager leagues may only be created for the newest running season.
+  /// A season can remain is_active while already sportingly finished, until its
+  /// successor is activated. finished_at therefore has to be checked as well.
   int? get leagueCreationSeasonId {
     final latest = latestSeason;
     if (latest == null) return null;
-    return latest['is_active'] == true && latest['is_initialized'] == true
+    return latest['is_active'] == true &&
+            latest['is_initialized'] == true &&
+            latest['finished_at'] == null
         ? latest['id'] as int
         : null;
   }
@@ -129,12 +131,15 @@ class TournamentViewModel extends ChangeNotifier {
   String? get currentTournamentLogo => selectedTournament?['image_url'];
   bool get isCurrentActive => selectedSeason?['is_active'] == true;
   bool get isCurrentInitialized => selectedSeason?['is_initialized'] == true;
+  bool get isCurrentFinished => selectedSeason?['finished_at'] != null;
 
   static String seasonStatus(Map<String, dynamic> season) => [
-    if (season['is_active'] == true)
+    if (season['archived_at'] != null)
+      season['finished_at'] != null ? 'archiviert · beendet' : 'archiviert'
+    else if (season['finished_at'] != null)
+      'beendet'
+    else if (season['is_active'] == true)
       'aktuell · aktiv'
-    else if (season['archived_at'] != null)
-      'archiviert'
     else
       'inaktiv',
     season['is_initialized'] == true ? 'initialisiert' : 'nicht initialisiert',
