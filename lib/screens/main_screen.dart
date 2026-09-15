@@ -1,6 +1,8 @@
 // lib/screens/main_screen.dart
 import 'dart:async';
 import 'dart:typed_data';
+import 'dart:math';
+
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:premier_league/auth_service.dart';
@@ -9,15 +11,15 @@ import 'package:premier_league/screens/screenelements/main_screen/draggable_nav_
 import 'package:premier_league/screens/leagues/league_detail_screen.dart';
 import 'package:premier_league/screens/premier_league/premier_league_screen.dart';
 import 'package:premier_league/screens/leagues/league_hub_screen.dart';
-import 'dart:math';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:premier_league/screens/player_screen.dart';
 import 'package:premier_league/screens/team_screen.dart';
 import 'package:image_picker/image_picker.dart';
-import 'package:premier_league/screens/User/profile_screen.dart'; // NEU hinzufügen
+import 'package:premier_league/screens/User/profile_screen.dart';
 import 'package:premier_league/screens/leagues/league_settings_screen.dart';
 import 'package:premier_league/screens/screenelements/league_logo.dart';
 import 'package:premier_league/viewmodels/tournament_viewmodel.dart';
+import 'package:premier_league/services/app_data_repository.dart';
 
 enum SearchFilter { players, teams }
 
@@ -31,10 +33,12 @@ class _MainScreenState extends State<MainScreen> {
   static const double _topBarImageRadius = 20;
   static const double _bottomNavLeagueLogoRadius = 14;
 
+  final AppDataRepository _repository = AppDataRepository.instance;
+
   int _selectedIndex = 0;
   int _premierScreenVersion = 0;
   List<Map<String, dynamic>> _userLeagues = [];
-  bool _isLoading = true;
+  bool _isLoading = false;
   Map<int, String> _leagueImageUrls = {};
   String? _accountImageUrl;
   Uint8List? _accountImagePreview;
@@ -48,7 +52,6 @@ class _MainScreenState extends State<MainScreen> {
   SearchFilter _searchFilter = SearchFilter.players;
   final ImagePicker _imagePicker = ImagePicker();
 
-  // --- KORREKTUR: initState ruft jetzt _loadInitialData auf ---
   @override
   void initState() {
     super.initState();
@@ -56,36 +59,32 @@ class _MainScreenState extends State<MainScreen> {
   }
 
   Future<void> _handleNewLeague(int newLeagueId) async {
-    setState(() => _isLoading = true);
+    if (mounted) setState(() => _isLoading = true);
+    _repository.invalidateLeagues();
+    await _refreshLeagues(forceRefresh: true);
 
-    // 1. Daten neu laden
-    await _refreshLeagues();
-
-
-    // 2. Die neue Liga suchen
     final index = _userLeagues.indexWhere((l) => l['id'] == newLeagueId);
 
     if (index != -1) {
-      // 3. Lokale Liste manipulieren: Liga entfernen und an den Anfang setzen
       final league = _userLeagues.removeAt(index);
       _userLeagues.insert(0, league);
 
-      // 4. Neue Reihenfolge in der DB speichern
-      // Wir machen das im Hintergrund (kein await nötig für UI Update)
-      context.read<DataManagement>().supabaseService.updateUserLeagueOrder(_userLeagues).catchError((e) {
-        print("Fehler beim Speichern der Reihenfolge: $e");
+      context
+          .read<DataManagement>()
+          .supabaseService
+          .updateUserLeagueOrder(_userLeagues)
+          .catchError((e) {
+        debugPrint('Fehler beim Speichern der Reihenfolge: $e');
       });
 
-      // 5. UI aktualisieren und Tab wechseln
       if (mounted) {
         setState(() {
-          _selectedIndex = 1; // Tab 1 ist die erste Liga (Tab 0 ist PL)
+          _selectedIndex = 1;
           _isLoading = false;
         });
       }
     } else {
-      // Fallback: Wenn Liga nicht gefunden wurde (sollte nicht passieren)
-      print("Warnung: Neue Liga ID $newLeagueId nicht in geladener Liste gefunden.");
+      debugPrint('Warnung: Neue Liga ID $newLeagueId nicht in geladener Liste gefunden.');
       if (mounted) setState(() => _isLoading = false);
     }
   }
@@ -104,25 +103,21 @@ class _MainScreenState extends State<MainScreen> {
       _overflowOverlay = null;
     }
     if (mounted) {
-      setState(() {
-        _isOverflowMenuOpen = false;
-      });
+      setState(() => _isOverflowMenuOpen = false);
     }
   }
 
   void _openOverflowMenu() {
-    // 1. Position des Buttons finden
-    final renderBox = _moreButtonKey.currentContext?.findRenderObject() as RenderBox?;
+    final renderBox =
+        _moreButtonKey.currentContext?.findRenderObject() as RenderBox?;
     if (renderBox == null) return;
 
     final size = renderBox.size;
     final offset = renderBox.localToGlobal(Offset.zero);
 
-    // 2. Overlay erstellen
     _overflowOverlay = OverlayEntry(
       builder: (context) => Stack(
         children: [
-          // Klick in den Hintergrund schließt das Menü
           Positioned.fill(
             child: GestureDetector(
               onTap: _closeOverflowMenu,
@@ -130,10 +125,9 @@ class _MainScreenState extends State<MainScreen> {
               child: Container(color: Colors.transparent),
             ),
           ),
-          // Das eigentliche Menü
           Positioned(
-            left: offset.dx - 120 + (size.width / 2), // Zentriert über dem Button ausrichten
-            bottom: MediaQuery.of(context).viewInsets.bottom + 80, // Über der NavBar
+            left: offset.dx - 120 + (size.width / 2),
+            bottom: MediaQuery.of(context).viewInsets.bottom + 80,
             width: 200,
             child: Material(
               elevation: 8,
@@ -142,19 +136,23 @@ class _MainScreenState extends State<MainScreen> {
               child: Column(
                 mainAxisSize: MainAxisSize.min,
                 children: [
-                  // Header
                   Container(
                     padding: const EdgeInsets.all(12),
                     decoration: BoxDecoration(
                       color: Theme.of(context).primaryColor.withOpacity(0.1),
-                      borderRadius: const BorderRadius.vertical(top: Radius.circular(12)),
+                      borderRadius:
+                          const BorderRadius.vertical(top: Radius.circular(12)),
                     ),
                     child: Row(
                       children: [
-                        Icon(Icons.list, size: 16, color: Theme.of(context).primaryColor),
+                        Icon(
+                          Icons.list,
+                          size: 16,
+                          color: Theme.of(context).primaryColor,
+                        ),
                         const SizedBox(width: 8),
                         Text(
-                          "Weitere Ligen",
+                          'Weitere Ligen',
                           style: TextStyle(
                             fontWeight: FontWeight.bold,
                             color: Theme.of(context).primaryColor,
@@ -163,7 +161,6 @@ class _MainScreenState extends State<MainScreen> {
                       ],
                     ),
                   ),
-                  // Liste der versteckten Ligen (Index 3 bis Ende)
                   if (_userLeagues.length > 3)
                     Flexible(
                       child: ListView.separated(
@@ -172,14 +169,14 @@ class _MainScreenState extends State<MainScreen> {
                         itemCount: _userLeagues.length - 3,
                         separatorBuilder: (ctx, i) => const Divider(height: 1),
                         itemBuilder: (context, index) {
-                          // Der Index in der _userLeagues Liste ist um 3 verschoben
                           final realIndex = index + 3;
                           final league = _userLeagues[realIndex];
 
                           return ListTile(
                             dense: true,
                             title: Text(league['name']),
-                            trailing: const Icon(Icons.arrow_forward_ios, size: 14),
+                            trailing:
+                                const Icon(Icons.arrow_forward_ios, size: 14),
                             onTap: () => _swapAndSelectLeague(realIndex),
                           );
                         },
@@ -193,81 +190,98 @@ class _MainScreenState extends State<MainScreen> {
       ),
     );
 
-    // 3. Overlay anzeigen
     Overlay.of(context).insert(_overflowOverlay!);
-    setState(() {
-      _isOverflowMenuOpen = true;
-    });
+    setState(() => _isOverflowMenuOpen = true);
   }
 
   void _swapAndSelectLeague(int selectedLeagueIndexInFullList) {
     _closeOverflowMenu();
 
     setState(() {
-      // 1. Die ausgewählte Liga aus der Liste nehmen
       final league = _userLeagues.removeAt(selectedLeagueIndexInFullList);
-
-      // 2. Liga an die erste Stelle setzen (damit sie sichtbar wird)
       _userLeagues.insert(2, league);
-
-      // 3. Den Tab wechseln (Index 1 = Erste User-Liga, da Index 0 = PL ist)
       _selectedIndex = 3;
     });
 
-    // 4. Neue Reihenfolge speichern
-    context.read<DataManagement>().supabaseService.updateUserLeagueOrder(_userLeagues);
+    context
+        .read<DataManagement>()
+        .supabaseService
+        .updateUserLeagueOrder(_userLeagues);
   }
 
-  Future<void> _loadInitialData() async {
-    // Warten auf den ersten Frame, damit der context verfügbar ist
+  Future<void> _loadInitialData({bool forceRefresh = false}) async {
     await WidgetsBinding.instance.endOfFrame;
     if (!mounted) return;
 
+    // Never block the whole shell. The tournament screen can render while account
+    // and league metadata are filled in asynchronously.
     setState(() => _isLoading = true);
     final dataManagement = context.read<DataManagement>();
     dataManagement.startAutoSync();
-    final leagues = await dataManagement.supabaseService.getLeaguesForUser();
-    final profileData = await Supabase.instance.client
-        .from('profiles')
-        .select('avatar_url')
-        .eq('user_id', Supabase.instance.client.auth.currentUser!.id)
-        .maybeSingle();
 
-    final Map<int, String> leagueImageUrls = {};
-    for (final league in leagues) {
-      final imageUrl = league['image_url'] as String?;
-      if (imageUrl != null && imageUrl.isNotEmpty) {
-        leagueImageUrls[league['id'] as int] = imageUrl;
+    try {
+      final results = await Future.wait<dynamic>([
+        _repository.getUserLeagues(
+          loader: dataManagement.supabaseService.getLeaguesForUser,
+          forceRefresh: forceRefresh,
+        ),
+        _repository.getProfileAvatar(forceRefresh: forceRefresh),
+      ]);
+
+      if (!mounted) return;
+      final leagues = List<Map<String, dynamic>>.from(results[0] as List);
+      final avatarUrl = results[1] as String?;
+
+      final Map<int, String> leagueImageUrls = {};
+      for (final league in leagues) {
+        final imageUrl = league['image_url'] as String?;
+        if (imageUrl != null && imageUrl.isNotEmpty) {
+          leagueImageUrls[league['id'] as int] = imageUrl;
+        }
       }
-    }
 
-    if (mounted) {
       setState(() {
         _userLeagues = leagues;
-        _accountImageUrl = profileData?['avatar_url'] as String?;
+        _accountImageUrl = avatarUrl;
         _leagueImageUrls = leagueImageUrls;
         _isLoading = false;
       });
+    } catch (e) {
+      debugPrint('Fehler beim initialen Laden: $e');
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
-  Future<void> _refreshLeagues({bool showLoading = false}) async {
+  Future<void> _refreshLeagues({
+    bool showLoading = false,
+    bool forceRefresh = false,
+  }) async {
     if (showLoading && mounted) setState(() => _isLoading = true);
     final supabaseService = context.read<DataManagement>().supabaseService;
-    final leagues = await supabaseService.getLeaguesForUser();
-    if (mounted) {
+
+    try {
+      final leagues = await _repository.getUserLeagues(
+        loader: supabaseService.getLeaguesForUser,
+        forceRefresh: forceRefresh,
+      );
+      if (!mounted) return;
+
+      final Map<int, String> refreshedImageUrls = {};
+      for (final league in leagues) {
+        final imageUrl = league['image_url'] as String?;
+        if (imageUrl != null && imageUrl.isNotEmpty) {
+          refreshedImageUrls[league['id'] as int] = imageUrl;
+        }
+      }
+
       setState(() {
         _userLeagues = leagues;
-        final Map<int, String> refreshedImageUrls = {};
-        for (final league in leagues) {
-          final imageUrl = league['image_url'] as String?;
-          if (imageUrl != null && imageUrl.isNotEmpty) {
-            refreshedImageUrls[league['id'] as int] = imageUrl;
-          }
-        }
         _leagueImageUrls = refreshedImageUrls;
         _isLoading = false;
       });
+    } catch (e) {
+      debugPrint('Fehler beim Aktualisieren der Ligen: $e');
+      if (mounted) setState(() => _isLoading = false);
     }
   }
 
@@ -280,7 +294,12 @@ class _MainScreenState extends State<MainScreen> {
     return 0;
   }
 
-  Widget _buildImagePreview({required IconData fallbackIcon, required String? imageUrl, required Uint8List? previewBytes, double radius = 22,}) {
+  Widget _buildImagePreview({
+    required IconData fallbackIcon,
+    required String? imageUrl,
+    required Uint8List? previewBytes,
+    double radius = 22,
+  }) {
     ImageProvider? provider;
     if (previewBytes != null) {
       provider = MemoryImage(previewBytes);
@@ -292,7 +311,9 @@ class _MainScreenState extends State<MainScreen> {
       radius: radius,
       backgroundColor: Colors.grey.shade200,
       backgroundImage: provider,
-      child: provider == null ? Icon(fallbackIcon, color: Colors.black54) : null,
+      child: provider == null
+          ? Icon(fallbackIcon, color: Colors.black54)
+          : null,
     );
   }
 
@@ -301,7 +322,12 @@ class _MainScreenState extends State<MainScreen> {
     final newLeagueIndex = newItemIndex - 1;
     final visibleLeagueCount = min(_userLeagues.length, 3);
 
-    if (oldLeagueIndex < 0 || newLeagueIndex < 0 || oldLeagueIndex >= visibleLeagueCount || newLeagueIndex >= visibleLeagueCount) return;
+    if (oldLeagueIndex < 0 ||
+        newLeagueIndex < 0 ||
+        oldLeagueIndex >= visibleLeagueCount ||
+        newLeagueIndex >= visibleLeagueCount) {
+      return;
+    }
 
     setState(() {
       final item = _userLeagues.removeAt(oldLeagueIndex);
@@ -311,13 +337,18 @@ class _MainScreenState extends State<MainScreen> {
       }
     });
 
-    context.read<DataManagement>().supabaseService.updateUserLeagueOrder(_userLeagues);
+    context
+        .read<DataManagement>()
+        .supabaseService
+        .updateUserLeagueOrder(_userLeagues);
   }
 
-  Future<List<Widget>> _fetchSuggestions(String query, SearchFilter filter) async {
+  Future<List<Widget>> _fetchSuggestions(
+    String query,
+    SearchFilter filter,
+  ) async {
     final seasonId = context.read<TournamentViewModel>().currentSeasonId;
-    if (seasonId == null) return [];
-    if (query.trim().isEmpty) return [];
+    if (seasonId == null || query.trim().isEmpty) return [];
 
     final completer = Completer<List<Map<String, dynamic>>>();
     if (_debounce?.isActive ?? false) _debounce!.cancel();
@@ -332,18 +363,26 @@ class _MainScreenState extends State<MainScreen> {
               .select('spieler:spieler(id, name, profilbild_url)')
               .eq('season_id', seasonId)
               .ilike('spieler.name', '%$query%');
-          for (var item in response) { if (item['spieler'] != null) combinedResults.add({...item['spieler'], 'type': 'player'}); }
+          for (final item in response) {
+            if (item['spieler'] != null) {
+              combinedResults.add({...item['spieler'], 'type': 'player'});
+            }
+          }
         } else {
           final response = await supabase
               .from('season_teams')
               .select('teams:team(id, name, image_url)')
               .eq('season_id', seasonId)
               .ilike('teams.name', '%$query%');
-          for (var item in response) { if (item['teams'] != null) combinedResults.add({...item['teams'], 'type': 'team'});}
+          for (final item in response) {
+            if (item['teams'] != null) {
+              combinedResults.add({...item['teams'], 'type': 'team'});
+            }
+          }
         }
         completer.complete(combinedResults);
       } catch (e) {
-        print("Fehler bei der Suche: $e");
+        debugPrint('Fehler bei der Suche: $e');
         completer.complete([]);
       }
     });
@@ -355,15 +394,27 @@ class _MainScreenState extends State<MainScreen> {
       return ListTile(
         leading: CircleAvatar(
           backgroundImage: imageUrl != null ? NetworkImage(imageUrl) : null,
-          child: imageUrl == null ? Icon(isTeam ? Icons.shield : Icons.person) : null,
+          child: imageUrl == null
+              ? Icon(isTeam ? Icons.shield : Icons.person)
+              : null,
         ),
         title: Text(result['name']),
         onTap: () {
-          Navigator.of(context).pop(); // Such-Overlay schließen
+          Navigator.of(context).pop();
           if (isTeam) {
-            Navigator.push(context, MaterialPageRoute(builder: (_) => TeamScreen(teamId: result['id'])));
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => TeamScreen(teamId: result['id']),
+              ),
+            );
           } else {
-            Navigator.push(context, MaterialPageRoute(builder: (_) => PlayerScreen(playerId: result['id'])));
+            Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => PlayerScreen(playerId: result['id']),
+              ),
+            );
           }
         },
       );
@@ -373,26 +424,20 @@ class _MainScreenState extends State<MainScreen> {
   @override
   void dispose() {
     _debounce?.cancel();
-    _closeOverflowMenu(); // Wichtig, um das Overlay zu entfernen
+    _closeOverflowMenu();
     super.dispose();
   }
 
   @override
   Widget build(BuildContext context) {
-    if (_isLoading) {
-      return const Scaffold(body: Center(child: CircularProgressIndicator()));
-    }
-
-    // ✅ NEU: Den globalen Turnier-State abgreifen
     final tournamentViewModel = context.watch<TournamentViewModel>();
     final bool isTournamentTab = _selectedIndex == 0;
 
     const double actionTabWidth = 64.0;
+    final List<Widget> screens = [
+      PremierLeagueScreen(key: ValueKey('premier-$_premierScreenVersion')),
+    ];
 
-    final List<Widget> screens = [ PremierLeagueScreen(key: ValueKey('premier-$_premierScreenVersion')) ];
-
-    // ✅ NEU: Das Icon und der Text für den ersten Tab sind jetzt dynamisch!
-    // Wir kürzen den Namen auf max. 10 Zeichen, damit die Leiste nicht platzt.
     String shortTournamentName = tournamentViewModel.currentTournamentName;
     if (shortTournamentName.length > 10) {
       shortTournamentName = '${shortTournamentName.substring(0, 8)}...';
@@ -400,41 +445,61 @@ class _MainScreenState extends State<MainScreen> {
 
     final List<NavItem> navItems = [
       NavItem(
-          icon: LeagueLogo(imageUrl: tournamentViewModel.currentTournamentLogo, radius: _bottomNavLeagueLogoRadius),
-          label: shortTournamentName
-      )
+        icon: LeagueLogo(
+          imageUrl: tournamentViewModel.currentTournamentLogo,
+          radius: _bottomNavLeagueLogoRadius,
+        ),
+        label: shortTournamentName,
+      ),
     ];
+
     final int visibleLeagueCount = min(_userLeagues.length, 3);
     for (int i = 0; i < visibleLeagueCount; i++) {
       final league = _userLeagues[i];
-      screens.add(LeagueDetailScreen(
-          key: ValueKey(league['id']), // <--- WICHTIG: Das zwingt zum Neuladen
-          league: league
-      ));
+      screens.add(
+        LeagueDetailScreen(
+          key: ValueKey(league['id']),
+          league: league,
+        ),
+      );
 
       navItems.add(
         NavItem(
-          icon: LeagueLogo(imageUrl: _leagueImageUrls[league['id'] as int], radius: _bottomNavLeagueLogoRadius),
+          icon: LeagueLogo(
+            imageUrl: _leagueImageUrls[league['id'] as int],
+            radius: _bottomNavLeagueLogoRadius,
+          ),
           label: league['name'],
           isDraggable: true,
         ),
       );
     }
+
     if (_userLeagues.length > 3) {
-      final isMoreTabSelected = _selectedIndex == (1 + visibleLeagueCount);
-      navItems.add(NavItem(
-        label: 'Mehr',
-        fixedWidth: actionTabWidth,
-        isDraggable: false,
-        onMoreTap: _toggleOverflowMenu,
-        icon: Icon(
-          _isOverflowMenuOpen ? Icons.keyboard_arrow_down : Icons.keyboard_arrow_up,
-          key: _moreButtonKey,
+      navItems.add(
+        NavItem(
+          label: 'Mehr',
+          fixedWidth: actionTabWidth,
+          isDraggable: false,
+          onMoreTap: _toggleOverflowMenu,
+          icon: Icon(
+            _isOverflowMenuOpen
+                ? Icons.keyboard_arrow_down
+                : Icons.keyboard_arrow_up,
+            key: _moreButtonKey,
+          ),
         ),
-      ));
+      );
       screens.add(Container());
     }
-    navItems.add(NavItem(icon: const Icon(Icons.add), label: 'Hinzufügen', fixedWidth: actionTabWidth));
+
+    navItems.add(
+      NavItem(
+        icon: const Icon(Icons.add),
+        label: 'Hinzufügen',
+        fixedWidth: actionTabWidth,
+      ),
+    );
     screens.add(const LeagueHubScreen());
 
     return Scaffold(
@@ -445,7 +510,6 @@ class _MainScreenState extends State<MainScreen> {
             Padding(
               padding: const EdgeInsets.only(left: 4, right: 8),
               child: IconButton(
-                // ✅ NEU: Dynamisches Logo je nach ausgewähltem Tab
                 icon: LeagueLogo(
                   imageUrl: isTournamentTab
                       ? tournamentViewModel.currentTournamentLogo
@@ -453,28 +517,33 @@ class _MainScreenState extends State<MainScreen> {
                   radius: _topBarImageRadius,
                 ),
                 onPressed: () {
-                  // ✅ NEU: Wenn wir im Turnier-Tab sind, öffne den Switcher!
                   if (isTournamentTab) {
                     Navigator.push<bool>(
                       context,
                       MaterialPageRoute(
-                        builder: (context) => const LeagueSettingsScreen(isTournamentTab: true),
+                        builder: (context) =>
+                            const LeagueSettingsScreen(isTournamentTab: true),
                       ),
                     ).then((shouldReload) {
                       if (shouldReload == true && mounted) {
+                        final seasonId = context
+                            .read<TournamentViewModel>()
+                            .currentSeasonId;
+                        if (seasonId != null) {
+                          _repository.invalidateSeason(seasonId);
+                        }
                         setState(() {
                           _selectedIndex = 0;
                           _premierScreenVersion++;
                         });
                       }
                     });
-                  }
-                  // Sonst (wie bisher) in die Liga-Einstellungen
-                  else if (_selectedLeagueId != 0) {
+                  } else if (_selectedLeagueId != 0) {
                     Navigator.push(
                       context,
                       MaterialPageRoute(
-                        builder: (context) => LeagueSettingsScreen(leagueId: _selectedLeagueId),
+                        builder: (context) =>
+                            LeagueSettingsScreen(leagueId: _selectedLeagueId),
                       ),
                     );
                   }
@@ -483,74 +552,113 @@ class _MainScreenState extends State<MainScreen> {
             ),
             Expanded(
               child: SearchAnchor.bar(
-          suggestionsBuilder: (context, controller) {
-            return [
-              StatefulBuilder(
-                builder: (BuildContext context, StateSetter setState) {
-                  Widget buildFilterButtons() {
-                    return Padding(
-                      padding: const EdgeInsets.symmetric(vertical: 8.0),
-                      child: Row(
-                        mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                        children: [
-                          ElevatedButton.icon(
-                            icon: const Icon(Icons.person, size: 18),
-                            label: const Text('Spieler'),
-                            style: ElevatedButton.styleFrom(
-                              foregroundColor: _searchFilter == SearchFilter.players ? Colors.white : Theme.of(context).colorScheme.onSurface,
-                              backgroundColor: _searchFilter == SearchFilter.players ? Theme.of(context).colorScheme.primary : Colors.grey[300],
+                suggestionsBuilder: (context, controller) {
+                  return [
+                    StatefulBuilder(
+                      builder: (BuildContext context, StateSetter setState) {
+                        Widget buildFilterButtons() {
+                          return Padding(
+                            padding: const EdgeInsets.symmetric(vertical: 8.0),
+                            child: Row(
+                              mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                              children: [
+                                ElevatedButton.icon(
+                                  icon: const Icon(Icons.person, size: 18),
+                                  label: const Text('Spieler'),
+                                  style: ElevatedButton.styleFrom(
+                                    foregroundColor:
+                                        _searchFilter == SearchFilter.players
+                                            ? Colors.white
+                                            : Theme.of(context)
+                                                .colorScheme
+                                                .onSurface,
+                                    backgroundColor:
+                                        _searchFilter == SearchFilter.players
+                                            ? Theme.of(context).colorScheme.primary
+                                            : Colors.grey[300],
+                                  ),
+                                  onPressed: () => setState(
+                                    () => _searchFilter = SearchFilter.players,
+                                  ),
+                                ),
+                                ElevatedButton.icon(
+                                  icon: const Icon(Icons.shield, size: 18),
+                                  label: const Text('Teams'),
+                                  style: ElevatedButton.styleFrom(
+                                    foregroundColor:
+                                        _searchFilter == SearchFilter.teams
+                                            ? Colors.white
+                                            : Theme.of(context)
+                                                .colorScheme
+                                                .onSurface,
+                                    backgroundColor:
+                                        _searchFilter == SearchFilter.teams
+                                            ? Theme.of(context).colorScheme.primary
+                                            : Colors.grey[300],
+                                  ),
+                                  onPressed: () => setState(
+                                    () => _searchFilter = SearchFilter.teams,
+                                  ),
+                                ),
+                              ],
                             ),
-                            onPressed: () => setState(() => _searchFilter = SearchFilter.players),
-                          ),
-                          ElevatedButton.icon(
-                            icon: const Icon(Icons.shield, size: 18),
-                            label: const Text('Teams'),
-                            style: ElevatedButton.styleFrom(
-                              foregroundColor: _searchFilter == SearchFilter.teams ? Colors.white : Theme.of(context).colorScheme.onSurface,
-                              backgroundColor: _searchFilter == SearchFilter.teams ? Theme.of(context).colorScheme.primary : Colors.grey[300],
-                            ),
-                            onPressed: () => setState(() => _searchFilter = SearchFilter.teams),
-                          ),
-                        ],
-                      ),
-                    );
-                  }
+                          );
+                        }
 
-                  return FutureBuilder<List<Widget>>(
-                    future: _fetchSuggestions(controller.text, _searchFilter),
-                    builder: (context, snapshot) {
-                      if (controller.text.isEmpty) {
-                        return Column(
-                          children: [
-                            buildFilterButtons(),
-                            const Center(child: Padding(padding: EdgeInsets.all(16.0), child: Text("Gib einen Namen ein..."))),
-                          ],
+                        return FutureBuilder<List<Widget>>(
+                          future: _fetchSuggestions(
+                            controller.text,
+                            _searchFilter,
+                          ),
+                          builder: (context, snapshot) {
+                            if (controller.text.isEmpty) {
+                              return Column(
+                                children: [
+                                  buildFilterButtons(),
+                                  const Center(
+                                    child: Padding(
+                                      padding: EdgeInsets.all(16.0),
+                                      child: Text('Gib einen Namen ein...'),
+                                    ),
+                                  ),
+                                ],
+                              );
+                            }
+                            if (snapshot.connectionState ==
+                                ConnectionState.waiting) {
+                              return Column(
+                                children: [
+                                  buildFilterButtons(),
+                                  const Padding(
+                                    padding: EdgeInsets.all(16.0),
+                                    child: Center(
+                                      child: CircularProgressIndicator(),
+                                    ),
+                                  ),
+                                ],
+                              );
+                            }
+                            final suggestions = snapshot.data ?? [];
+                            return ListView(
+                              shrinkWrap: true,
+                              children: [
+                                buildFilterButtons(),
+                                if (suggestions.isEmpty)
+                                  const Center(
+                                    child: Padding(
+                                      padding: EdgeInsets.all(16.0),
+                                      child: Text('Keine Ergebnisse gefunden.'),
+                                    ),
+                                  ),
+                                ...suggestions,
+                              ],
+                            );
+                          },
                         );
-                      }
-                      if (snapshot.connectionState == ConnectionState.waiting) {
-                        return Column(
-                          children: [
-                            buildFilterButtons(),
-                            const Padding(padding: EdgeInsets.all(16.0), child: Center(child: CircularProgressIndicator())),
-                          ],
-                        );
-                      }
-                      final suggestions = snapshot.data ?? [];
-                      return ListView(
-                        shrinkWrap: true,
-                        children: [
-                          buildFilterButtons(),
-                          if (suggestions.isEmpty)
-                            const Center(child: Padding(padding: EdgeInsets.all(16.0), child: Text("Keine Ergebnisse gefunden."))),
-                          ...suggestions,
-                        ],
-                      );
-                    },
-                  );
+                      },
+                    ),
+                  ];
                 },
-              ),
-            ];
-          },
               ),
             ),
             IconButton(
@@ -560,22 +668,27 @@ class _MainScreenState extends State<MainScreen> {
                   context,
                   MaterialPageRoute(builder: (context) => const ProfileScreen()),
                 ).then((_) {
-                  _loadInitialData();
+                  _repository.invalidateProfile();
+                  _loadInitialData(forceRefresh: true);
                 });
               },
               icon: _buildImagePreview(
                 fallbackIcon: Icons.person,
                 imageUrl: _accountImageUrl,
-                previewBytes: null, // previewBytes gibt es hier nicht mehr
+                previewBytes: null,
                 radius: _topBarImageRadius,
               ),
-            ),          ],
+            ),
+          ],
         ),
+        bottom: _isLoading
+            ? const PreferredSize(
+                preferredSize: Size.fromHeight(2),
+                child: LinearProgressIndicator(minHeight: 2),
+              )
+            : null,
       ),
-      body: IndexedStack(
-        index: _selectedIndex,
-        children: screens,
-      ),
+      body: IndexedStack(index: _selectedIndex, children: screens),
       bottomNavigationBar: DraggableNavBar(
         items: navItems,
         currentIndex: _selectedIndex,
@@ -584,18 +697,17 @@ class _MainScreenState extends State<MainScreen> {
 
           if (index == navItems.length - 1) {
             final newLeagueId = await Navigator.of(context).push(
-                MaterialPageRoute(builder: (_) => const LeagueHubScreen())
+              MaterialPageRoute(builder: (_) => const LeagueHubScreen()),
             );
 
             if (newLeagueId != null && newLeagueId is int) {
               await _handleNewLeague(newLeagueId);
             } else {
-              // Wenn abgebrochen wurde, nur refreshen um sicher zu gehen
-              _refreshLeagues();
+              _repository.invalidateLeagues();
+              _refreshLeagues(forceRefresh: true);
             }
           } else {
-            // Normaler Tab-Wechsel
-            setState(() { _selectedIndex = index; });
+            setState(() => _selectedIndex = index);
           }
         },
         onReorder: _onReorder,
