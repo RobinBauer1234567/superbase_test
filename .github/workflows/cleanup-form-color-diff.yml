@@ -1,0 +1,46 @@
+name: Cleanup form color diff
+
+on:
+  push:
+    branches:
+      - fix/form-rating-color-cap-five
+
+permissions:
+  contents: write
+
+jobs:
+  cleanup-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Restore main formatting and reapply targeted changes
+        run: python .github/scripts/cleanup_form_color_diff.py
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Run color helper tests
+        run: flutter test test/color_helper_test.dart
+
+      - name: Analyze affected files
+        run: >-
+          flutter analyze --no-fatal-infos --no-fatal-warnings
+          lib/utils/color_helper.dart
+          lib/screens/player_screen.dart
+
+      - name: Commit cleaned diff
+        run: |
+          git checkout -- pubspec.lock
+          git rm .github/scripts/cleanup_form_color_diff.py .github/workflows/cleanup-form-color-diff.yml
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add lib/utils/color_helper.dart test/color_helper_test.dart
+          git commit -m "Keep form color change focused"
+          git push
