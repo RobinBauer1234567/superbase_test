@@ -96,4 +96,46 @@ void main() {
     });
   });
 
+
+  group('form rating color scaling', () {
+    test('form appearance count follows player appearances and caps at five', () {
+      expect(getFormRatingAppearanceCount(0), 1);
+      expect(getFormRatingAppearanceCount(1), 1);
+      expect(getFormRatingAppearanceCount(4), 4);
+      expect(getFormRatingAppearanceCount(5), 5);
+      expect(getFormRatingAppearanceCount(12), 5);
+    });
+
+    test('one appearance keeps the normal 250 average maximum', () {
+      expect(
+        getFormRatingMaxValue(1, 0.85),
+        singleMatchRatingMax,
+      );
+    });
+
+    test('form uses the same 0.85 average decay as average points', () {
+      const appearances = 4;
+      const base = 0.85;
+      expect(
+        getFormRatingMaxValue(appearances, base),
+        getAverageRatingMaxValue(appearances, base),
+      );
+    });
+
+    test('form color scale stops changing after the fifth appearance', () {
+      const base = 0.85;
+      expect(
+        getFormRatingMaxValue(5, base),
+        getFormRatingMaxValue(20, base),
+      );
+    });
+
+    test('form uses the configured average fallback for invalid bases', () {
+      expect(
+        getFormRatingMaxValue(5, 2.0),
+        getFormRatingMaxValue(5, defaultAverageRatingColorDecayBase),
+      );
+    });
+  });
+
 }

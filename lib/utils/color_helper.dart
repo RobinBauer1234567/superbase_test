@@ -163,6 +163,41 @@ int getAggregateRatingMaxValue(
 }
 
 
+
+/// Number of player appearances represented by the rolling form value.
+///
+/// `spieler_analytics.form` is an average over the player's latest matches, so
+/// its color scale uses the same appearance-based decay as other averages and
+/// is capped at the five matches that can contribute to form.
+int getFormRatingAppearanceCount(
+  int appearanceCount, {
+  int maxAppearances = 5,
+}) {
+  final safeMaxAppearances = math.max(1, maxAppearances);
+  return math.min(math.max(1, appearanceCount), safeMaxAppearances);
+}
+
+/// Maximum of the rolling-form average color scale.
+///
+/// n = min(spieler_analytics.anzahl_spiele, 5)
+/// max = singleMatchMax * averageDecayBase ^ ln(n)
+int getFormRatingMaxValue(
+  int appearanceCount,
+  double averageDecayBase, {
+  int maxAppearances = 5,
+  int singleMatchMax = singleMatchRatingMax,
+}) {
+  final appearances = getFormRatingAppearanceCount(
+    appearanceCount,
+    maxAppearances: maxAppearances,
+  );
+  return getAverageRatingMaxValue(
+    appearances,
+    averageDecayBase,
+    singleMatchMax: singleMatchMax,
+  );
+}
+
 double getAveragePoints(num totalPoints, int appearanceCount) {
   if (appearanceCount <= 0) return 0;
   return totalPoints.toDouble() / appearanceCount;

@@ -1221,10 +1221,17 @@ class _PlayerScreenState extends State<PlayerScreen>
                       averageColorMax,
                     );
 
-                    // 3. Form (Wert zwischen 0.0 und 3.0 aus der DB).
-                    // Da getColorForRating wahrscheinlich Ganzzahlen (int) nutzt, multiplizieren wir es mit 10 (z.B. 2.5 wird 25 von 30)
-                    final Color colorForm = getColorForRating(playerForm.round(), 250);
-
+                    // 3. Form: Durchschnitt der letzten bis zu fünf Spieler-Spiele.
+                    // Deshalb dieselbe Durchschnittsskala wie beim Punkteschnitt,
+                    // mit dem konfigurierten 0,85-Faktor und maximal fünf Einsätzen.
+                    final int formColorMax = getFormRatingMaxValue(
+                      totalAppearances,
+                      _averageRatingColorDecayBase,
+                    );
+                    final Color colorForm = getColorForRating(
+                      playerForm.round(),
+                      formColorMax,
+                    );
                     return CustomScrollView(
                       key: const PageStorageKey<String>('playerUebersichtTab'),
                       slivers: [
