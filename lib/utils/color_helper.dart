@@ -164,49 +164,36 @@ int getAggregateRatingMaxValue(
 
 
 
-/// Number of season rounds used to color the rolling form value.
+/// Number of player appearances represented by the rolling form value.
 ///
-/// The form color follows the same cumulative scale as total season points,
-/// but freezes the comparison window at five rated rounds.
-int getFormRatingRoundCount(
-  int ratedRoundCount, {
-  int maxRounds = 5,
+/// `spieler_analytics.form` is an average over the player's latest matches, so
+/// its color scale uses the same appearance-based decay as other averages and
+/// is capped at the five matches that can contribute to form.
+int getFormRatingAppearanceCount(
+  int appearanceCount, {
+  int maxAppearances = 5,
 }) {
-  final safeMaxRounds = math.max(1, maxRounds);
-  return math.min(math.max(1, ratedRoundCount), safeMaxRounds);
+  final safeMaxAppearances = math.max(1, maxAppearances);
+  return math.min(math.max(1, appearanceCount), safeMaxAppearances);
 }
 
-/// Converts the displayed rolling form average into the cumulative-equivalent
-/// score used by the aggregate color formula.
-int getFormRatingColorValue(
-  num formAverage,
-  int ratedRoundCount, {
-  int maxRounds = 5,
-}) {
-  final rounds = getFormRatingRoundCount(
-    ratedRoundCount,
-    maxRounds: maxRounds,
-  );
-  return (formAverage.toDouble() * rounds).round();
-}
-
-/// Maximum for the rolling form color scale.
+/// Maximum of the rolling-form average color scale.
 ///
-/// n = min(ratedRoundCount, 5)
-/// max = n * singleMatchMax * decayBase ^ ln(n)
+/// n = min(spieler_analytics.anzahl_spiele, 5)
+/// max = singleMatchMax * averageDecayBase ^ ln(n)
 int getFormRatingMaxValue(
-  int ratedRoundCount,
-  double decayBase, {
-  int maxRounds = 5,
+  int appearanceCount,
+  double averageDecayBase, {
+  int maxAppearances = 5,
   int singleMatchMax = singleMatchRatingMax,
 }) {
-  final rounds = getFormRatingRoundCount(
-    ratedRoundCount,
-    maxRounds: maxRounds,
+  final appearances = getFormRatingAppearanceCount(
+    appearanceCount,
+    maxAppearances: maxAppearances,
   );
-  return getAggregateRatingMaxValue(
-    rounds,
-    decayBase,
+  return getAverageRatingMaxValue(
+    appearances,
+    averageDecayBase,
     singleMatchMax: singleMatchMax,
   );
 }

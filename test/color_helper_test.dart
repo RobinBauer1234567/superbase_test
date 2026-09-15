@@ -98,53 +98,42 @@ void main() {
 
 
   group('form rating color scaling', () {
-    test('form round count is capped at five', () {
-      expect(getFormRatingRoundCount(1), 1);
-      expect(getFormRatingRoundCount(4), 4);
-      expect(getFormRatingRoundCount(5), 5);
-      expect(getFormRatingRoundCount(12), 5);
+    test('form appearance count follows player appearances and caps at five', () {
+      expect(getFormRatingAppearanceCount(0), 1);
+      expect(getFormRatingAppearanceCount(1), 1);
+      expect(getFormRatingAppearanceCount(4), 4);
+      expect(getFormRatingAppearanceCount(5), 5);
+      expect(getFormRatingAppearanceCount(12), 5);
     });
 
-    test('one rated round matches the single-match color scale', () {
-      const formAverage = 125.0;
-      final value = getFormRatingColorValue(formAverage, 1);
-      final maxValue = getFormRatingMaxValue(1, 0.8);
-
-      expect(value, 125);
-      expect(maxValue, singleMatchRatingMax);
+    test('one appearance keeps the normal 250 average maximum', () {
       expect(
-        getColorForRating(value, maxValue),
-        getColorForRating(125, singleMatchRatingMax),
+        getFormRatingMaxValue(1, 0.85),
+        singleMatchRatingMax,
       );
     });
 
-    test('form uses the aggregate formula with the capped round count', () {
-      const formAverage = 100.0;
-      const ratedRounds = 4;
-      const base = 0.8;
-      final rounds = getFormRatingRoundCount(ratedRounds);
-
+    test('form uses the same 0.85 average decay as average points', () {
+      const appearances = 4;
+      const base = 0.85;
       expect(
-        getFormRatingColorValue(formAverage, ratedRounds),
-        (formAverage * rounds).round(),
-      );
-      expect(
-        getFormRatingMaxValue(ratedRounds, base),
-        getAggregateRatingMaxValue(rounds, base),
+        getFormRatingMaxValue(appearances, base),
+        getAverageRatingMaxValue(appearances, base),
       );
     });
 
-    test('form color scale no longer changes after round five', () {
-      const formAverage = 110.0;
-      const base = 0.8;
-
-      expect(
-        getFormRatingColorValue(formAverage, 5),
-        getFormRatingColorValue(formAverage, 20),
-      );
+    test('form color scale stops changing after the fifth appearance', () {
+      const base = 0.85;
       expect(
         getFormRatingMaxValue(5, base),
         getFormRatingMaxValue(20, base),
+      );
+    });
+
+    test('form uses the configured average fallback for invalid bases', () {
+      expect(
+        getFormRatingMaxValue(5, 2.0),
+        getFormRatingMaxValue(5, defaultAverageRatingColorDecayBase),
       );
     });
   });
