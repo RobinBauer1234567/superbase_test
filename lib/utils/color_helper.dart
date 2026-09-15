@@ -7,18 +7,19 @@ const int singleMatchRatingMax = 250;
 const double defaultRatingColorDecayBase = 0.8;
 const double defaultAverageRatingColorDecayBase = 0.85;
 
-
 Future<double> fetchRatingColorDecayBase(SupabaseClient client) async {
   try {
-    final settings = await client
-        .from('game_settings')
-        .select('rating_color_decay_base')
-        .eq('id', 1)
-        .maybeSingle();
+    final settings =
+        await client
+            .from('game_settings')
+            .select('rating_color_decay_base')
+            .eq('id', 1)
+            .maybeSingle();
     final rawValue = settings?['rating_color_decay_base'];
-    final value = rawValue is num
-        ? rawValue.toDouble()
-        : double.tryParse(rawValue?.toString() ?? '');
+    final value =
+        rawValue is num
+            ? rawValue.toDouble()
+            : double.tryParse(rawValue?.toString() ?? '');
     if (value != null && value > 0 && value <= 1) return value;
   } catch (_) {
     // Use the safe default below.
@@ -28,15 +29,17 @@ Future<double> fetchRatingColorDecayBase(SupabaseClient client) async {
 
 Future<double> fetchAverageRatingColorDecayBase(SupabaseClient client) async {
   try {
-    final settings = await client
-        .from('game_settings')
-        .select('average_rating_color_decay_base')
-        .eq('id', 1)
-        .maybeSingle();
+    final settings =
+        await client
+            .from('game_settings')
+            .select('average_rating_color_decay_base')
+            .eq('id', 1)
+            .maybeSingle();
     final rawValue = settings?['average_rating_color_decay_base'];
-    final value = rawValue is num
-        ? rawValue.toDouble()
-        : double.tryParse(rawValue?.toString() ?? '');
+    final value =
+        rawValue is num
+            ? rawValue.toDouble()
+            : double.tryParse(rawValue?.toString() ?? '');
     if (value != null && value > 0 && value <= 1) return value;
   } catch (_) {
     // Use the safe default below.
@@ -112,19 +115,12 @@ Color getColorForRating(num rating, int maxValue) {
   return colorSequence.transform(t)!;
 }
 
-double getAggregateRatingFactor(
-  int gameCount,
-  double decayBase,
-) {
+double getAggregateRatingFactor(int gameCount, double decayBase) {
   final safeGameCount = math.max(1, gameCount);
   final safeDecayBase =
-      decayBase > 0 && decayBase <= 1
-          ? decayBase
-          : defaultRatingColorDecayBase;
+      decayBase > 0 && decayBase <= 1 ? decayBase : defaultRatingColorDecayBase;
 
-  return math
-      .pow(safeDecayBase, math.log(safeGameCount.toDouble()))
-      .toDouble();
+  return math.pow(safeDecayBase, math.log(safeGameCount.toDouble())).toDouble();
 }
 
 /// Converts a cumulative score into the equivalent single-match rating used by
@@ -162,16 +158,50 @@ int getAggregateRatingMaxValue(
   return math.max(1, maxValue.round());
 }
 
+/// Number of season rounds used to color the rolling form value.
+///
+/// The form color follows the same cumulative scale as total season points,
+/// but freezes the comparison window at five rated rounds.
+int getFormRatingRoundCount(int ratedRoundCount, {int maxRounds = 5}) {
+  final safeMaxRounds = math.max(1, maxRounds);
+  return math.min(math.max(1, ratedRoundCount), safeMaxRounds);
+}
+
+/// Converts the displayed rolling form average into the cumulative-equivalent
+/// score used by the aggregate color formula.
+int getFormRatingColorValue(
+  num formAverage,
+  int ratedRoundCount, {
+  int maxRounds = 5,
+}) {
+  final rounds = getFormRatingRoundCount(ratedRoundCount, maxRounds: maxRounds);
+  return (formAverage.toDouble() * rounds).round();
+}
+
+/// Maximum for the rolling form color scale.
+///
+/// n = min(ratedRoundCount, 5)
+/// max = n * singleMatchMax * decayBase ^ ln(n)
+int getFormRatingMaxValue(
+  int ratedRoundCount,
+  double decayBase, {
+  int maxRounds = 5,
+  int singleMatchMax = singleMatchRatingMax,
+}) {
+  final rounds = getFormRatingRoundCount(ratedRoundCount, maxRounds: maxRounds);
+  return getAggregateRatingMaxValue(
+    rounds,
+    decayBase,
+    singleMatchMax: singleMatchMax,
+  );
+}
 
 double getAveragePoints(num totalPoints, int appearanceCount) {
   if (appearanceCount <= 0) return 0;
   return totalPoints.toDouble() / appearanceCount;
 }
 
-double getAverageRatingFactor(
-  int appearanceCount,
-  double decayBase,
-) {
+double getAverageRatingFactor(int appearanceCount, double decayBase) {
   final safeAppearanceCount = math.max(1, appearanceCount);
   final safeDecayBase =
       decayBase > 0 && decayBase <= 1
