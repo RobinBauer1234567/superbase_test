@@ -167,18 +167,39 @@ class _PlayerScreenState extends State<PlayerScreen>
           await fetchAverageRatingColorDecayBase(supabase);
       final ratedRoundCount = await fetchRatedSeasonRoundCount(supabase, seasonId);
 
-      // 1. Spieler- und Teamdaten abrufen (inkl. der neuen Analytics-Felder)
-      final playerResponse = await supabase
+      // 1. Spieler- und aktuelle Teamdaten abrufen. season_players enthält bewusst
+      // historische Vereinszuordnungen; aktive Zuordnungen müssen daher bevorzugt
+      // werden. limit(1) verhindert zudem, dass inkonsistente Altdaten den Screen
+      // durch PostgREST .single() komplett unbenutzbar machen.
+      final playerMemberships = await supabase
           .from('season_players')
           .select(
-          'team:team(id, name, image_url), spieler:spieler(name, position, profilbild_url, spieler_analytics(marktwert, season_id, form, anzahl_spiele, punkteschnitt, gesamtstatistiken))')
+          'team_id, is_active, team:team(id, name, image_url), spieler:spieler(name, position, profilbild_url, spieler_analytics(marktwert, season_id, form, anzahl_spiele, punkteschnitt, gesamtstatistiken))')
           .eq('season_id', seasonId)
           .eq('player_id', widget.playerId)
-          .single();
+          .order('is_active', ascending: false)
+          .order('team_id', ascending: true)
+          .limit(1);
 
-      final spielerData = playerResponse['spieler'];
-      teamData = playerResponse['team'];
-      final playerTeamId = teamData!['id'];
+      if (playerMemberships.isEmpty) {
+        throw StateError(
+          'Keine Saisonzuordnung für Spieler ${widget.playerId} in Saison $seasonId gefunden.',
+        );
+      }
+
+      final playerResponse =
+          Map<String, dynamic>.from(playerMemberships.first);
+      final spielerRaw = playerResponse['spieler'];
+      final teamRaw = playerResponse['team'];
+      if (spielerRaw is! Map || teamRaw is! Map) {
+        throw StateError(
+          'Unvollständige Spieler- oder Teamdaten für Spieler ${widget.playerId}.',
+        );
+      }
+
+      final spielerData = Map<String, dynamic>.from(spielerRaw);
+      teamData = Map<String, dynamic>.from(teamRaw);
+      final playerTeamId = (teamData!['id'] as num).toInt();
 
       // --- ANALYTICS DIREKT AUS DER DATENBANK AUSLESEN ---
       final analyticsRaw = spielerData['spieler_analytics'];
