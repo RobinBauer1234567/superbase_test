@@ -17,8 +17,8 @@ jobs:
           ref: fix/form-rating-color-cap-five
 
       - name: Apply corrected form color logic
-        shell: python
         run: |
+          python3 <<'PY'
           from pathlib import Path
           import re
 
@@ -158,6 +158,7 @@ double getAveragePoints'''
           workflow = Path('.github/workflows/correct-form-color-basis.yml')
           if workflow.exists():
               workflow.unlink()
+          PY
 
       - uses: subosito/flutter-action@v2
         with:
@@ -176,7 +177,7 @@ double getAveragePoints'''
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
-          git add lib/utils/color_helper.dart lib/screens/player_screen.dart test/color_helper_test.dart .github/workflows/correct-form-color-basis.yml
+          git add -A
           git diff --cached --quiet && exit 0
           git commit -m "Use average scale for form colors"
           git push
