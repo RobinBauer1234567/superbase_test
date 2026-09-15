@@ -1,0 +1,182 @@
+name: Correct form color basis
+
+on:
+  push:
+    branches:
+      - fix/form-rating-color-cap-five
+
+permissions:
+  contents: write
+
+jobs:
+  correct-and-test:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: fix/form-rating-color-cap-five
+
+      - name: Apply corrected form color logic
+        shell: python
+        run: |
+          from pathlib import Path
+          import re
+
+          helper_path = Path('lib/utils/color_helper.dart')
+          helper = helper_path.read_text()
+          pattern = re.compile(
+              r"/// Number of season rounds used to color the rolling form value\.[\s\S]*?\n\ndouble getAveragePoints",
+              re.MULTILINE,
+          )
+          replacement = '''/// Number of player appearances represented by the rolling form value.
+///
+/// `spieler_analytics.form` is an average over the player's latest matches, so
+/// its color scale uses the same appearance-based decay as other averages and
+/// is capped at the five matches that can contribute to form.
+int getFormRatingAppearanceCount(
+  int appearanceCount, {
+  int maxAppearances = 5,
+}) {
+  final safeMaxAppearances = math.max(1, maxAppearances);
+  return math.min(math.max(1, appearanceCount), safeMaxAppearances);
+}
+
+/// Maximum of the rolling-form average color scale.
+///
+/// n = min(spieler_analytics.anzahl_spiele, 5)
+/// max = singleMatchMax * averageDecayBase ^ ln(n)
+int getFormRatingMaxValue(
+  int appearanceCount,
+  double averageDecayBase, {
+  int maxAppearances = 5,
+  int singleMatchMax = singleMatchRatingMax,
+}) {
+  final appearances = getFormRatingAppearanceCount(
+    appearanceCount,
+    maxAppearances: maxAppearances,
+  );
+  return getAverageRatingMaxValue(
+    appearances,
+    averageDecayBase,
+    singleMatchMax: singleMatchMax,
+  );
+}
+
+double getAveragePoints'''
+          helper, count = pattern.subn(replacement, helper, count=1)
+          if count != 1:
+              raise SystemExit(f'Expected one form helper block, replaced {count}')
+          if 'getFormRatingRoundCount' in helper or 'getFormRatingColorValue' in helper:
+              raise SystemExit('Old round-based form helpers remain')
+          helper_path.write_text(helper)
+
+          player_path = Path('lib/screens/player_screen.dart')
+          player = player_path.read_text()
+          old = '''                    // 3. Form: gleiche kumulative Farbformel wie Gesamtpunkte,
+                    // aber mit maximal fünf gewerteten Spieltagen.
+                    final int formColorValue = getFormRatingColorValue(
+                      playerForm,
+                      _ratedRoundCount,
+                    );
+                    final int formColorMax = getFormRatingMaxValue(
+                      _ratedRoundCount,
+                      _ratingColorDecayBase,
+                    );
+                    final Color colorForm = getColorForRating(
+                      formColorValue,
+                      formColorMax,
+                    );'''
+          new = '''                    // 3. Form: Durchschnitt der letzten bis zu fünf Spieler-Spiele.
+                    // Deshalb dieselbe Durchschnittsskala wie beim Punkteschnitt,
+                    // mit dem konfigurierten 0,85-Faktor und maximal fünf Einsätzen.
+                    final int formColorMax = getFormRatingMaxValue(
+                      totalAppearances,
+                      _averageRatingColorDecayBase,
+                    );
+                    final Color colorForm = getColorForRating(
+                      playerForm.round(),
+                      formColorMax,
+                    );'''
+          if player.count(old) != 1:
+              raise SystemExit(f'Expected one player form block, found {player.count(old)}')
+          player = player.replace(old, new, 1)
+          player_path.write_text(player)
+
+          test_path = Path('test/color_helper_test.dart')
+          tests = test_path.read_text()
+          group_pattern = re.compile(
+              r"\n\n  group\('form rating color scaling', \(\) \{[\s\S]*?\n  \}\);",
+              re.MULTILINE,
+          )
+          new_group = '''
+
+  group('form rating color scaling', () {
+    test('form appearance count follows player appearances and caps at five', () {
+      expect(getFormRatingAppearanceCount(0), 1);
+      expect(getFormRatingAppearanceCount(1), 1);
+      expect(getFormRatingAppearanceCount(4), 4);
+      expect(getFormRatingAppearanceCount(5), 5);
+      expect(getFormRatingAppearanceCount(12), 5);
+    });
+
+    test('one appearance keeps the normal 250 average maximum', () {
+      expect(
+        getFormRatingMaxValue(1, 0.85),
+        singleMatchRatingMax,
+      );
+    });
+
+    test('form uses the same 0.85 average decay as average points', () {
+      const appearances = 4;
+      const base = 0.85;
+      expect(
+        getFormRatingMaxValue(appearances, base),
+        getAverageRatingMaxValue(appearances, base),
+      );
+    });
+
+    test('form color scale stops changing after the fifth appearance', () {
+      const base = 0.85;
+      expect(
+        getFormRatingMaxValue(5, base),
+        getFormRatingMaxValue(20, base),
+      );
+    });
+
+    test('form uses the configured average fallback for invalid bases', () {
+      expect(
+        getFormRatingMaxValue(5, 2.0),
+        getFormRatingMaxValue(5, defaultAverageRatingColorDecayBase),
+      );
+    });
+  });'''
+          tests, count = group_pattern.subn(new_group, tests, count=1)
+          if count != 1:
+              raise SystemExit(f'Expected one form test group, replaced {count}')
+          test_path.write_text(tests)
+
+          workflow = Path('.github/workflows/correct-form-color-basis.yml')
+          if workflow.exists():
+              workflow.unlink()
+
+      - uses: subosito/flutter-action@v2
+        with:
+          channel: stable
+
+      - name: Install dependencies
+        run: flutter pub get
+
+      - name: Run color helper tests
+        run: flutter test test/color_helper_test.dart
+
+      - name: Analyze affected files
+        run: flutter analyze --no-fatal-infos --no-fatal-warnings lib/utils/color_helper.dart lib/screens/player_screen.dart
+
+      - name: Commit correction
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add lib/utils/color_helper.dart lib/screens/player_screen.dart test/color_helper_test.dart .github/workflows/correct-form-color-basis.yml
+          git diff --cached --quiet && exit 0
+          git commit -m "Use average scale for form colors"
+          git push
