@@ -7,6 +7,7 @@ import 'package:premier_league/viewmodels/tournament_viewmodel.dart';
 import 'package:premier_league/viewmodels/radar_chart_viewmodel.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
+import 'package:premier_league/screens/screenelements/assist_icon.dart';
 import 'package:premier_league/screens/screenelements/match_screen/formations.dart';
 import 'package:premier_league/screens/screenelements/match_screen/matchrating_screen.dart';
 import 'package:premier_league/screens/screenelements/player_list_item.dart';
@@ -1409,7 +1410,7 @@ class _PlayerScreenState extends State<PlayerScreen>
                                     child: _buildMiniStat(
                                       value: totalAssists.toString(),
                                       label: 'VORLAGEN',
-                                      customIcon: const Text('👟', style: TextStyle(fontSize: 24)),
+                                      customIcon: const AssistIcon(size: 24),
                                     ),
                                   ),
                                 ],
@@ -1732,6 +1733,14 @@ class MatchRatingRow extends StatelessWidget {
     );
   }
 
+  Widget _buildAssistEventIcon(int count) {
+    if (count == 0) return const SizedBox.shrink();
+    return const Padding(
+      padding: EdgeInsets.symmetric(horizontal: 1.0),
+      child: AssistIcon(size: 14),
+    );
+  }
+
   // NEUE METHODE: Bestimmt das Status-Icon des Spielers
   Widget _buildPlayerStatusIcon(BuildContext context) {
     final status =
@@ -1980,11 +1989,7 @@ class MatchRatingRow extends StatelessWidget {
                               Colors.black,
                               goals,
                             ),
-                            _buildEventIcon(
-                              Icons.assistant,
-                              Colors.blue,
-                              assists,
-                            ),
+                            _buildAssistEventIcon(assists),
                             _buildEventIcon(
                               Icons.sports_soccer,
                               Colors.red,
