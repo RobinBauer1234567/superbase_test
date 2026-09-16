@@ -2,7 +2,7 @@ import 'dart:async';
 
 import 'package:flutter/material.dart';
 import 'package:intl/intl.dart';
-import 'package:premier_league/screens/match_details_screen.dart';
+import 'package:premier_league/screens/match_details_screen_fixed.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:premier_league/screens/team_screen.dart';
@@ -156,9 +156,6 @@ class _MatchesScreenState extends State<MatchesScreen> {
             if (!mounted || _loadedSeasonId != seasonId) return;
 
             if (payload.eventType == PostgresChangeEvent.delete) {
-              // Deletes are rare and the delete payload does not contain the joined
-              // team data. A forced refresh is still cheaper than reloading on every
-              // normal score/status update.
               _fetchSpiele(seasonId: seasonId, forceRefresh: true);
               return;
             }
