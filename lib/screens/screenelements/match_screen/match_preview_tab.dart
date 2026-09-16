@@ -519,6 +519,7 @@ class _MatchPreviewTabState extends State<MatchPreviewTab> {
     return RefreshIndicator(
       onRefresh: _loadPreviewData,
       child: ListView(
+        primary: false,
         physics: const AlwaysScrollableScrollPhysics(),
         padding: const EdgeInsets.fromLTRB(12, 12, 12, 28),
         children: [
