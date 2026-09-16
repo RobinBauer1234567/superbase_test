@@ -704,7 +704,6 @@ class _GameScreenState extends State<GameScreen>
     );
   }
 
-  // Mirrors the original pitch implementation from spiel_screen.dart.
   Widget _buildPitchTab(BuildContext context) {
     final mediaQuery = MediaQuery.of(context);
     final screenHeight = mediaQuery.size.height;
