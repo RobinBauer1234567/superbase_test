@@ -1,5 +1,6 @@
 // lib/screens/screenelements/match_screen/formations.dart
 import 'package:flutter/material.dart';
+import 'package:premier_league/screens/screenelements/assist_icon.dart';
 import 'package:premier_league/utils/color_helper.dart';
 import 'dart:ui' as ui;
 import 'dart:math';
@@ -149,6 +150,27 @@ class PlayerAvatar extends StatelessWidget {
     );
   }
 
+  Widget _buildAssistEventIcon(int count, double size) {
+    if (count == 0) return const SizedBox.shrink();
+    return Container(
+      margin: const EdgeInsets.only(bottom: 2),
+      padding: EdgeInsets.all(size * 0.1),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        shape: BoxShape.circle,
+        border: Border.all(color: Colors.grey.shade300, width: 0.5),
+        boxShadow: [
+          BoxShadow(
+            color: Colors.black.withOpacity(0.15),
+            blurRadius: 2,
+            offset: const Offset(0, 1),
+          ),
+        ],
+      ),
+      child: AssistIcon(size: size * 0.9),
+    );
+  }
+
   @override
   Widget build(BuildContext context) {
     final bool isGoalkeeper = player.position.toUpperCase().contains('TW') || player.position.toUpperCase().contains('GK');
@@ -276,7 +298,7 @@ class PlayerAvatar extends StatelessWidget {
                     child: Column(
                       children: [
                         _buildEventIcon(Icons.sports_soccer, const Color(0xFF2E7D32), player.goals, eventIconSize),
-                        _buildEventIcon(Icons.auto_fix_high, Colors.blueAccent, player.assists, eventIconSize),
+                        _buildAssistEventIcon(player.assists, eventIconSize),
                         _buildEventIcon(Icons.cancel, Colors.redAccent, player.ownGoals, eventIconSize),
                       ],
                     ),
