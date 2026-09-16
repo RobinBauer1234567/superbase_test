@@ -17,6 +17,7 @@ import 'package:premier_league/screens/team_screen.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:premier_league/screens/User/profile_screen.dart';
 import 'package:premier_league/screens/leagues/league_settings_screen.dart';
+import 'package:premier_league/screens/leagues/tournament_selection_screen.dart';
 import 'package:premier_league/screens/screenelements/league_logo.dart';
 import 'package:premier_league/viewmodels/tournament_viewmodel.dart';
 import 'package:premier_league/services/app_data_repository.dart';
@@ -522,7 +523,7 @@ class _MainScreenState extends State<MainScreen> {
                       context,
                       MaterialPageRoute(
                         builder: (context) =>
-                            const LeagueSettingsScreen(isTournamentTab: true),
+                            const TournamentSelectionScreen(),
                       ),
                     ).then((shouldReload) {
                       if (shouldReload == true && mounted) {
