@@ -1,8 +1,8 @@
 import 'package:flutter/material.dart';
-import 'package:material_design_icons_flutter/material_design_icons_flutter.dart';
+import 'package:flutter_svg/flutter_svg.dart';
 
-/// Einheitliches Assist-Symbol auf Basis des bestehenden
-/// Material Design Icons `shoe-cleat` von Pictogrammers.
+/// Einheitliches Assist-Symbol auf Basis eines externen CC0-Fußballschuh-SVGs.
+/// Quelle: https://www.svgrepo.com/svg/39123/football-shoe
 class AssistIcon extends StatelessWidget {
   final double size;
   final Color color;
@@ -18,10 +18,12 @@ class AssistIcon extends StatelessWidget {
     return Semantics(
       label: 'Vorlage',
       image: true,
-      child: Icon(
-        MdiIcons.shoeCleat,
-        size: size,
-        color: color,
+      child: SvgPicture.asset(
+        'assets/icons/assist_football_shoe.svg',
+        width: size,
+        height: size,
+        fit: BoxFit.contain,
+        colorFilter: ColorFilter.mode(color, BlendMode.srcIn),
       ),
     );
   }
