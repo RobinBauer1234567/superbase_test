@@ -25,25 +25,23 @@ List<LeagueCreationTarget> leagueCreationTargets(
 
   for (final tournament in tournaments) {
     final seasons = sortedSeasons(tournament['season']);
-    Map<String, dynamic>? activeSeason;
+    if (seasons.isEmpty) continue;
 
-    for (final season in seasons) {
-      if (season['is_active'] == true &&
-          season['is_initialized'] == true &&
-          season['finished_at'] == null) {
-        activeSeason = season;
-        break;
-      }
-    }
-
-    if (activeSeason == null) continue;
+    // A new manager league must always use the newest discovered season.
+    // Never fall back to an older initialized archive when the newest season
+    // is not ready yet.
+    final latestSeason = seasons.first;
+    final isEligible = latestSeason['is_active'] == true &&
+        latestSeason['is_initialized'] == true &&
+        latestSeason['finished_at'] == null;
+    if (!isEligible) continue;
 
     targets.add(
       LeagueCreationTarget(
         tournamentId: (tournament['id'] as num).toInt(),
         tournamentName: tournament['name']?.toString() ?? 'Unbekannte Liga',
-        seasonId: (activeSeason['id'] as num).toInt(),
-        seasonName: activeSeason['name']?.toString() ?? 'Unbekannt',
+        seasonId: (latestSeason['id'] as num).toInt(),
+        seasonName: latestSeason['name']?.toString() ?? 'Unbekannt',
         imageUrl: tournament['image_url']?.toString(),
       ),
     );

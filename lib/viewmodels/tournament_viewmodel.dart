@@ -98,6 +98,23 @@ class TournamentViewModel extends ChangeNotifier {
     notifyListeners();
   }
 
+  /// Selects a tournament exactly as the tournament picker should: the newest
+  /// discovered manager season is always selected. Historical seasons are only
+  /// selected explicitly from the league information/archive tab.
+  void selectLatestTournament(int tournamentId) {
+    final tournament = allTournaments.firstWhere(
+      (t) => t['id'] == tournamentId,
+    );
+    final tournamentSeasons = managerSeasons(tournament['season']);
+    if (tournamentSeasons.isEmpty) {
+      throw ArgumentError('Turnier hat keine verfügbare Saison');
+    }
+
+    _explicitSelections[tournamentId] = tournamentSeasons.first['id'] as int;
+    _select(tournament);
+    notifyListeners();
+  }
+
   List<Map<String, dynamic>> get seasons =>
       managerSeasons(selectedTournament?['season']);
   Map<String, dynamic>? get latestSeason =>

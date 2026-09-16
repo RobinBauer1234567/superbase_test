@@ -50,7 +50,7 @@ void main() {
   });
 
   test(
-    'latest default, explicit archive retained, league creation stays latest',
+    'latest default, archive selection explicit, tournament picker resets to latest',
     () async {
       var rows = [
         {
@@ -81,9 +81,16 @@ void main() {
       ];
       await vm.fetchTournaments();
       expect(vm.currentSeasonId, 102);
+
       vm.selectTournament(17, 101);
+      expect(vm.currentSeasonId, 101);
       await vm.fetchTournaments();
       expect(vm.currentSeasonId, 101);
+
+      vm.selectLatestTournament(17);
+      expect(vm.currentSeasonId, 102);
+      await vm.fetchTournaments();
+      expect(vm.currentSeasonId, 102);
       expect(vm.leagueCreationSeasonId, 102);
       expect(() => vm.selectTournament(17, 999), throwsArgumentError);
 
@@ -105,6 +112,7 @@ void main() {
       await vm.fetchTournaments();
       expect(vm.currentSeasonId, isNull);
       expect(vm.leagueCreationSeasonId, isNull);
+      expect(() => vm.selectLatestTournament(17), throwsArgumentError);
       vm.dispose();
     },
   );

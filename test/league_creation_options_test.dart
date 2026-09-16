@@ -2,7 +2,7 @@ import 'package:flutter_test/flutter_test.dart';
 import 'package:premier_league/utils/league_creation_options.dart';
 
 void main() {
-  test('only active initialized unfinished seasons are offered', () {
+  test('only newest active initialized unfinished seasons are offered', () {
     final targets = leagueCreationTargets([
       {
         'id': 17,
@@ -39,6 +39,26 @@ void main() {
             'name': '26/27',
             'is_active': true,
             'is_initialized': false,
+            'finished_at': null,
+          },
+        ],
+      },
+      {
+        'id': 99,
+        'name': 'Archive fallback must not happen',
+        'season': [
+          {
+            'id': 2027,
+            'name': '26/27',
+            'is_active': false,
+            'is_initialized': false,
+            'finished_at': null,
+          },
+          {
+            'id': 2026,
+            'name': '25/26',
+            'is_active': true,
+            'is_initialized': true,
             'finished_at': null,
           },
         ],
