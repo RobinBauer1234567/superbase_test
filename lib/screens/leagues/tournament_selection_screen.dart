@@ -5,6 +5,7 @@ import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:premier_league/screens/screenelements/league_logo.dart';
 import 'package:premier_league/utils/season_order.dart';
+import 'package:premier_league/utils/uefa_country_ranking.dart';
 import 'package:premier_league/viewmodels/tournament_viewmodel.dart';
 
 class TournamentSelectionScreen extends StatefulWidget {
@@ -123,7 +124,7 @@ class _TournamentSelectionScreenState extends State<TournamentSelectionScreen>
       return;
     }
 
-    final fallbackIndex = _tabController.index.clamp(0, nextLength - 1);
+    final fallbackIndex = _tabController.index.clamp(0, nextLength - 1).toInt();
     _tabController.removeListener(_handleTabChanged);
     _tabController.dispose();
     _tabController = TabController(
@@ -174,8 +175,6 @@ class _TournamentSelectionScreenState extends State<TournamentSelectionScreen>
   Future<void> _initializeLatestSeason(
     Map<String, dynamic> tournament,
   ) async {
-    // Deliberately resolve the season again here. This makes it impossible for
-    // an archive selection to accidentally initialize an old season.
     final season = _latestSeason(tournament);
     final seasonId = season?['id'] as int?;
     final tournamentId = tournament['id'] as int?;
@@ -340,16 +339,15 @@ class _TournamentSelectionScreenState extends State<TournamentSelectionScreen>
                               kToolbarHeight + bottomHeight + safeAreaTop;
                           const expandedHeight = 280.0;
                           final currentHeight = constraints.maxHeight;
-                          final radius = (screenWidth * 0.14).clamp(
-                            40.0,
-                            _headerImageRadius,
-                          );
+                          final radius = (screenWidth * 0.14)
+                              .clamp(40.0, _headerImageRadius)
+                              .toDouble();
 
                           var fade = 1.0;
                           if (expandedHeight > collapsedHeight) {
                             fade = (currentHeight - collapsedHeight) /
                                 (expandedHeight - collapsedHeight);
-                            fade = fade.clamp(0.0, 1.0);
+                            fade = fade.clamp(0.0, 1.0).toDouble();
                           }
 
                           return Container(
@@ -452,9 +450,6 @@ class _TournamentSelectionScreenState extends State<TournamentSelectionScreen>
                                                     fontSize: 12,
                                                     color: Colors.grey.shade600,
                                                   ),
-                                                  maxLines: 1,
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
                                                 ),
                                               ],
                                             ),
@@ -529,7 +524,11 @@ class _TournamentSelectionScreenState extends State<TournamentSelectionScreen>
           ..sort((a, b) {
             final aSelected = a['id'] == selectedTournamentId;
             final bSelected = b['id'] == selectedTournamentId;
-            if (aSelected == bSelected) return 0;
+            if (aSelected == bSelected) {
+              final aName = (a['name'] ?? '').toString();
+              final bName = (b['name'] ?? '').toString();
+              return aName.compareTo(bName);
+            }
             return aSelected ? -1 : 1;
           });
     final initializing = allTournaments.where(_isLatestInitializing).toList();
@@ -537,6 +536,8 @@ class _TournamentSelectionScreenState extends State<TournamentSelectionScreen>
       return !_isLatestActiveAndInitialized(tournament) &&
           !_isLatestInitializing(tournament);
     }).toList();
+    final otherCountryGroups =
+        groupTournamentsByUefaCountryRanking(others);
 
     return Builder(
       builder: (context) => CustomScrollView(
@@ -570,12 +571,17 @@ class _TournamentSelectionScreenState extends State<TournamentSelectionScreen>
                         primaryColor: primaryColor,
                         vm: vm,
                       ),
-                      _buildTournamentSection(
-                        title: 'Weitere Turniere',
-                        tournaments: others,
-                        selectedTournamentId: selectedTournamentId,
-                        primaryColor: primaryColor,
-                        vm: vm,
+                      if (otherCountryGroups.isNotEmpty)
+                        const _SectionTitle('WEITERE TURNIERE'),
+                      ...otherCountryGroups.map(
+                        (group) => _buildTournamentSection(
+                          title: group.country,
+                          tournaments: group.tournaments,
+                          selectedTournamentId: selectedTournamentId,
+                          primaryColor: primaryColor,
+                          vm: vm,
+                          countryHeading: true,
+                        ),
                       ),
                     ]),
                   ),
@@ -591,6 +597,7 @@ class _TournamentSelectionScreenState extends State<TournamentSelectionScreen>
     required int? selectedTournamentId,
     required Color primaryColor,
     required TournamentViewModel vm,
+    bool countryHeading = false,
   }) {
     if (tournaments.isEmpty) return const SizedBox.shrink();
 
@@ -598,80 +605,96 @@ class _TournamentSelectionScreenState extends State<TournamentSelectionScreen>
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: const EdgeInsets.only(left: 8, bottom: 8, top: 8),
+          padding: EdgeInsets.only(
+            left: 8,
+            bottom: countryHeading ? 6 : 8,
+            top: countryHeading ? 4 : 8,
+          ),
           child: Text(
-            title.toUpperCase(),
-            style: const TextStyle(
-              fontWeight: FontWeight.bold,
-              color: Colors.blueGrey,
-              fontSize: 12,
-              letterSpacing: 1.2,
+            countryHeading ? title : title.toUpperCase(),
+            style: TextStyle(
+              fontWeight: countryHeading ? FontWeight.w600 : FontWeight.bold,
+              color: countryHeading ? Colors.grey.shade700 : Colors.blueGrey,
+              fontSize: countryHeading ? 12 : 12,
+              letterSpacing: countryHeading ? 0.2 : 1.2,
             ),
           ),
         ),
-        ...tournaments.map((tournament) {
-          final latest = _latestSeason(tournament);
-          final isSelected = tournament['id'] == selectedTournamentId;
-          final isInitializationFocus =
-              tournament['id'] == _initializingTournamentId &&
-                  _showInitializationTab;
-          final isInitialized = latest?['is_initialized'] == true;
-          final isInitializing =
-              latest?['is_active'] == true && !isInitialized;
-          final latestName = latest?['name']?.toString();
-          final subtitle = latest == null
-              ? 'Noch keine Saison entdeckt'
-              : 'Neueste Saison $latestName · '
-                  '${TournamentViewModel.seasonStatus(latest)}';
-
-          return Card(
-            margin: const EdgeInsets.only(bottom: 12),
-            elevation: 1,
-            shape: RoundedRectangleBorder(
-              borderRadius: BorderRadius.circular(16),
-              side: isSelected
-                  ? BorderSide(color: primaryColor, width: 2)
-                  : (isInitializationFocus
-                      ? BorderSide(color: Colors.orange.shade700, width: 2)
-                      : BorderSide.none),
-            ),
-            child: ListTile(
-              contentPadding:
-                  const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-              leading: LeagueLogo(
-                imageUrl: tournament['image_url'] as String?,
-                radius: 20,
-              ),
-              title: Text(
-                tournament['name']?.toString() ?? 'Turnier',
-                style: const TextStyle(fontWeight: FontWeight.w600),
-              ),
-              subtitle: Text(subtitle),
-              trailing: latest == null
-                  ? const Icon(Icons.info_outline)
-                  : isInitializing || isInitializationFocus
-                      ? Icon(Icons.hourglass_top, color: Colors.orange.shade700)
-                      : isSelected
-                          ? Icon(Icons.check_circle, color: primaryColor)
-                          : const Icon(Icons.chevron_right),
-              onTap: latest == null
-                  ? null
-                  : () async {
-                      if (isInitializing) {
-                        _openInitializationTab(tournament);
-                        return;
-                      }
-                      if (!isInitialized) {
-                        await _showInitializeDialog(tournament);
-                        return;
-                      }
-                      await _selectLatestTournamentAndReturn(vm, tournament);
-                    },
-            ),
-          );
-        }),
+        ...tournaments.map(
+          (tournament) => _buildTournamentCard(
+            tournament: tournament,
+            selectedTournamentId: selectedTournamentId,
+            primaryColor: primaryColor,
+            vm: vm,
+          ),
+        ),
         const SizedBox(height: 4),
       ],
+    );
+  }
+
+  Widget _buildTournamentCard({
+    required Map<String, dynamic> tournament,
+    required int? selectedTournamentId,
+    required Color primaryColor,
+    required TournamentViewModel vm,
+  }) {
+    final latest = _latestSeason(tournament);
+    final isSelected = tournament['id'] == selectedTournamentId;
+    final isInitializationFocus =
+        tournament['id'] == _initializingTournamentId &&
+            _showInitializationTab;
+    final isInitialized = latest?['is_initialized'] == true;
+    final isInitializing = latest?['is_active'] == true && !isInitialized;
+    final latestName = latest?['name']?.toString();
+    final subtitle = latest == null
+        ? 'Noch keine Saison entdeckt'
+        : 'Neueste Saison $latestName · '
+            '${TournamentViewModel.seasonStatus(latest)}';
+
+    return Card(
+      margin: const EdgeInsets.only(bottom: 12),
+      elevation: 1,
+      shape: RoundedRectangleBorder(
+        borderRadius: BorderRadius.circular(16),
+        side: isSelected
+            ? BorderSide(color: primaryColor, width: 2)
+            : (isInitializationFocus
+                ? BorderSide(color: Colors.orange.shade700, width: 2)
+                : BorderSide.none),
+      ),
+      child: ListTile(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        leading: LeagueLogo(
+          imageUrl: tournament['image_url'] as String?,
+          radius: 20,
+        ),
+        title: Text(
+          tournament['name']?.toString() ?? 'Turnier',
+          style: const TextStyle(fontWeight: FontWeight.w600),
+        ),
+        subtitle: Text(subtitle),
+        trailing: latest == null
+            ? const Icon(Icons.info_outline)
+            : isInitializing || isInitializationFocus
+                ? Icon(Icons.hourglass_top, color: Colors.orange.shade700)
+                : isSelected
+                    ? Icon(Icons.check_circle, color: primaryColor)
+                    : const Icon(Icons.chevron_right),
+        onTap: latest == null
+            ? null
+            : () async {
+                if (isInitializing) {
+                  _openInitializationTab(tournament);
+                  return;
+                }
+                if (!isInitialized) {
+                  await _showInitializeDialog(tournament);
+                  return;
+                }
+                await _selectLatestTournamentAndReturn(vm, tournament);
+              },
+      ),
     );
   }
 
@@ -707,6 +730,9 @@ class _TournamentSelectionScreenState extends State<TournamentSelectionScreen>
                   season['is_initialized'] == true,
             )
             .toList();
+        final country = normalizeTournamentCountry(
+          tournament['country_name']?.toString(),
+        );
 
         return CustomScrollView(
           key: const PageStorageKey<String>('leagueInfoTab'),
@@ -734,6 +760,15 @@ class _TournamentSelectionScreenState extends State<TournamentSelectionScreen>
                           title: const Text('Liga'),
                           subtitle: Text(
                             tournament['name']?.toString() ?? 'Turnier',
+                          ),
+                        ),
+                        const Divider(height: 1),
+                        ListTile(
+                          leading: const Icon(Icons.public_outlined),
+                          title: const Text('Ligaland'),
+                          trailing: Text(
+                            country,
+                            style: const TextStyle(fontWeight: FontWeight.bold),
                           ),
                         ),
                         const Divider(height: 1),
@@ -897,20 +932,16 @@ class _TournamentSelectionScreenState extends State<TournamentSelectionScreen>
           .order('created_at'),
       builder: (context, snapshot) {
         final rows = snapshot.data ?? const <Map<String, dynamic>>[];
-        final failed = rows
-            .where((row) => _taskStatus(row) == 'FAILED')
-            .length;
-        final processing = rows
-            .where((row) => _taskStatus(row) == 'PROCESSING')
-            .length;
-        final completed = rows
-            .where((row) => _taskStatus(row) == 'COMPLETED')
-            .length;
+        final failed = rows.where((row) => _taskStatus(row) == 'FAILED').length;
+        final processing =
+            rows.where((row) => _taskStatus(row) == 'PROCESSING').length;
+        final completed =
+            rows.where((row) => _taskStatus(row) == 'COMPLETED').length;
         final taskProgress = rows.isEmpty ? 0.0 : completed / rows.length;
-        final progress = math.max(
-          _initializationProgress,
-          taskProgress,
-        ).clamp(0.0, 1.0);
+        final progress = math
+            .max(_initializationProgress, taskProgress)
+            .clamp(0.0, 1.0)
+            .toDouble();
 
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
