@@ -4,9 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:supabase_flutter/supabase_flutter.dart';
 import 'package:premier_league/screens/screenelements/league_logo.dart';
+import 'package:premier_league/utils/league_ranking.dart';
 import 'package:premier_league/utils/season_order.dart';
-import 'package:premier_league/utils/uefa_country_ranking.dart';
 import 'package:premier_league/viewmodels/tournament_viewmodel.dart';
+
+enum _TournamentGenderFilter { all, men, women }
 
 class TournamentSelectionScreen extends StatefulWidget {
   const TournamentSelectionScreen({super.key});
@@ -22,6 +24,7 @@ class _TournamentSelectionScreenState extends State<TournamentSelectionScreen>
   static const double _collapsedImageRadius = 18;
 
   final SupabaseClient supabase = Supabase.instance.client;
+  final TextEditingController _searchController = TextEditingController();
   late TabController _tabController;
 
   bool _isLoading = true;
@@ -31,6 +34,8 @@ class _TournamentSelectionScreenState extends State<TournamentSelectionScreen>
   String _initializationStatus = 'Warte auf Start...';
   int? _initializingTournamentId;
   int? _initializingSeasonId;
+  String _searchQuery = '';
+  _TournamentGenderFilter _genderFilter = _TournamentGenderFilter.all;
 
   int get _tabCount => 2 + (_showInitializationTab ? 1 : 0);
 
@@ -44,6 +49,7 @@ class _TournamentSelectionScreenState extends State<TournamentSelectionScreen>
 
   @override
   void dispose() {
+    _searchController.dispose();
     _tabController.removeListener(_handleTabChanged);
     _tabController.dispose();
     super.dispose();
@@ -57,11 +63,6 @@ class _TournamentSelectionScreenState extends State<TournamentSelectionScreen>
   Map<String, dynamic>? _latestSeason(Map<String, dynamic> tournament) {
     final seasons = managerSeasons(tournament['season']);
     return seasons.isEmpty ? null : seasons.first;
-  }
-
-  bool _isLatestActiveAndInitialized(Map<String, dynamic> tournament) {
-    final season = _latestSeason(tournament);
-    return season?['is_active'] == true && season?['is_initialized'] == true;
   }
 
   bool _isLatestInitializing(Map<String, dynamic> tournament) {
@@ -138,6 +139,55 @@ class _TournamentSelectionScreenState extends State<TournamentSelectionScreen>
       WidgetsBinding.instance.addPostFrameCallback((_) {
         if (mounted) _tabController.animateTo(targetIndex);
       });
+    }
+  }
+
+  void _cycleGenderFilter() {
+    setState(() {
+      switch (_genderFilter) {
+        case _TournamentGenderFilter.all:
+          _genderFilter = _TournamentGenderFilter.men;
+          break;
+        case _TournamentGenderFilter.men:
+          _genderFilter = _TournamentGenderFilter.women;
+          break;
+        case _TournamentGenderFilter.women:
+          _genderFilter = _TournamentGenderFilter.all;
+          break;
+      }
+    });
+  }
+
+  String? get _genderFilterValue {
+    switch (_genderFilter) {
+      case _TournamentGenderFilter.all:
+        return null;
+      case _TournamentGenderFilter.men:
+        return 'M';
+      case _TournamentGenderFilter.women:
+        return 'F';
+    }
+  }
+
+  IconData get _genderFilterIcon {
+    switch (_genderFilter) {
+      case _TournamentGenderFilter.all:
+        return Icons.filter_alt_off;
+      case _TournamentGenderFilter.men:
+        return Icons.male;
+      case _TournamentGenderFilter.women:
+        return Icons.female;
+    }
+  }
+
+  String get _genderFilterTooltip {
+    switch (_genderFilter) {
+      case _TournamentGenderFilter.all:
+        return 'Alle Ligen';
+      case _TournamentGenderFilter.men:
+        return 'Nur Männerligen';
+      case _TournamentGenderFilter.women:
+        return 'Nur Frauenligen';
     }
   }
 
@@ -441,8 +491,7 @@ class _TournamentSelectionScreenState extends State<TournamentSelectionScreen>
                                                     color: Colors.black87,
                                                   ),
                                                   maxLines: 1,
-                                                  overflow:
-                                                      TextOverflow.ellipsis,
+                                                  overflow: TextOverflow.ellipsis,
                                                 ),
                                                 Text(
                                                   'Turnierauswahl',
@@ -518,26 +567,12 @@ class _TournamentSelectionScreenState extends State<TournamentSelectionScreen>
     final allTournaments =
         List<Map<String, dynamic>>.from(vm.allTournaments);
     final selectedTournamentId = vm.currentTournamentId;
-
-    final activeInitialized =
-        allTournaments.where(_isLatestActiveAndInitialized).toList()
-          ..sort((a, b) {
-            final aSelected = a['id'] == selectedTournamentId;
-            final bSelected = b['id'] == selectedTournamentId;
-            if (aSelected == bSelected) {
-              final aName = (a['name'] ?? '').toString();
-              final bName = (b['name'] ?? '').toString();
-              return aName.compareTo(bName);
-            }
-            return aSelected ? -1 : 1;
-          });
-    final initializing = allTournaments.where(_isLatestInitializing).toList();
-    final others = allTournaments.where((tournament) {
-      return !_isLatestActiveAndInitialized(tournament) &&
-          !_isLatestInitializing(tournament);
-    }).toList();
-    final otherCountryGroups =
-        groupTournamentsByUefaCountryRanking(others);
+    final filtered = filterTournaments(
+      tournaments: allTournaments,
+      query: _searchQuery,
+      gender: _genderFilterValue,
+    );
+    final countryGroups = groupTournamentsByAssociationRanking(filtered);
 
     return Builder(
       builder: (context) => CustomScrollView(
@@ -547,80 +582,141 @@ class _TournamentSelectionScreenState extends State<TournamentSelectionScreen>
             handle: NestedScrollView.sliverOverlapAbsorberHandleFor(context),
           ),
           SliverPadding(
-            padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 16),
-            sliver: allTournaments.isEmpty
-                ? const SliverToBoxAdapter(
-                    child: Padding(
-                      padding: EdgeInsets.only(top: 24),
-                      child: Center(child: Text('Keine Turniere verfügbar.')),
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 32),
+            sliver: SliverList(
+              delegate: SliverChildListDelegate([
+                _buildTournamentSearch(primaryColor),
+                const SizedBox(height: 14),
+                if (allTournaments.isEmpty)
+                  const Padding(
+                    padding: EdgeInsets.only(top: 24),
+                    child: Center(child: Text('Keine Turniere verfügbar.')),
+                  )
+                else if (countryGroups.isEmpty)
+                  Padding(
+                    padding: const EdgeInsets.only(top: 24),
+                    child: Center(
+                      child: Text(
+                        'Keine passenden Ligen gefunden.',
+                        style: TextStyle(color: Colors.grey.shade600),
+                      ),
                     ),
                   )
-                : SliverList(
-                    delegate: SliverChildListDelegate([
-                      _buildTournamentSection(
-                        title: 'Aktiv & initialisiert',
-                        tournaments: activeInitialized,
-                        selectedTournamentId: selectedTournamentId,
-                        primaryColor: primaryColor,
-                        vm: vm,
-                      ),
-                      _buildTournamentSection(
-                        title: 'Wird initialisiert',
-                        tournaments: initializing,
-                        selectedTournamentId: selectedTournamentId,
-                        primaryColor: primaryColor,
-                        vm: vm,
-                      ),
-                      if (otherCountryGroups.isNotEmpty)
-                        const _SectionTitle('WEITERE TURNIERE'),
-                      ...otherCountryGroups.map(
-                        (group) => _buildTournamentSection(
-                          title: group.country,
-                          tournaments: group.tournaments,
-                          selectedTournamentId: selectedTournamentId,
-                          primaryColor: primaryColor,
-                          vm: vm,
-                          countryHeading: true,
-                        ),
-                      ),
-                    ]),
+                else
+                  ...countryGroups.map(
+                    (group) => _buildCountrySection(
+                      group: group,
+                      selectedTournamentId: selectedTournamentId,
+                      primaryColor: primaryColor,
+                      vm: vm,
+                    ),
                   ),
+              ]),
+            ),
           ),
         ],
       ),
     );
   }
 
-  Widget _buildTournamentSection({
-    required String title,
-    required List<Map<String, dynamic>> tournaments,
+  Widget _buildTournamentSearch(Color primaryColor) {
+    final filterActive = _genderFilter != _TournamentGenderFilter.all;
+
+    return Row(
+      children: [
+        Expanded(
+          child: TextField(
+            controller: _searchController,
+            onChanged: (value) => setState(() => _searchQuery = value),
+            textInputAction: TextInputAction.search,
+            decoration: InputDecoration(
+              hintText: 'Land oder Liga suchen',
+              prefixIcon: const Icon(Icons.search),
+              suffixIcon: _searchQuery.isEmpty
+                  ? null
+                  : IconButton(
+                      tooltip: 'Suche löschen',
+                      onPressed: () {
+                        _searchController.clear();
+                        setState(() => _searchQuery = '');
+                      },
+                      icon: const Icon(Icons.close),
+                    ),
+              filled: true,
+              fillColor: Colors.white,
+              contentPadding: const EdgeInsets.symmetric(vertical: 12),
+              border: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: BorderSide(color: Colors.grey.shade300),
+              ),
+              enabledBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: BorderSide(color: Colors.grey.shade300),
+              ),
+              focusedBorder: OutlineInputBorder(
+                borderRadius: BorderRadius.circular(14),
+                borderSide: BorderSide(color: primaryColor, width: 1.5),
+              ),
+            ),
+          ),
+        ),
+        const SizedBox(width: 8),
+        Tooltip(
+          message: _genderFilterTooltip,
+          child: Material(
+            color: filterActive
+                ? primaryColor.withOpacity(0.12)
+                : Colors.white,
+            borderRadius: BorderRadius.circular(14),
+            child: InkWell(
+              onTap: _cycleGenderFilter,
+              borderRadius: BorderRadius.circular(14),
+              child: Container(
+                width: 50,
+                height: 50,
+                decoration: BoxDecoration(
+                  borderRadius: BorderRadius.circular(14),
+                  border: Border.all(
+                    color: filterActive
+                        ? primaryColor.withOpacity(0.45)
+                        : Colors.grey.shade300,
+                  ),
+                ),
+                alignment: Alignment.center,
+                child: Icon(
+                  _genderFilterIcon,
+                  color: filterActive ? primaryColor : Colors.grey.shade700,
+                ),
+              ),
+            ),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _buildCountrySection({
+    required LeagueCountryGroup group,
     required int? selectedTournamentId,
     required Color primaryColor,
     required TournamentViewModel vm,
-    bool countryHeading = false,
   }) {
-    if (tournaments.isEmpty) return const SizedBox.shrink();
-
     return Column(
       crossAxisAlignment: CrossAxisAlignment.start,
       children: [
         Padding(
-          padding: EdgeInsets.only(
-            left: 8,
-            bottom: countryHeading ? 6 : 8,
-            top: countryHeading ? 4 : 8,
-          ),
+          padding: const EdgeInsets.only(left: 8, bottom: 6, top: 6),
           child: Text(
-            countryHeading ? title : title.toUpperCase(),
+            group.displayCountry,
             style: TextStyle(
-              fontWeight: countryHeading ? FontWeight.w600 : FontWeight.bold,
-              color: countryHeading ? Colors.grey.shade700 : Colors.blueGrey,
-              fontSize: countryHeading ? 12 : 12,
-              letterSpacing: countryHeading ? 0.2 : 1.2,
+              fontWeight: FontWeight.w600,
+              color: Colors.grey.shade700,
+              fontSize: 12,
+              letterSpacing: 0.2,
             ),
           ),
         ),
-        ...tournaments.map(
+        ...group.tournaments.map(
           (tournament) => _buildTournamentCard(
             tournament: tournament,
             selectedTournamentId: selectedTournamentId,
@@ -730,9 +826,12 @@ class _TournamentSelectionScreenState extends State<TournamentSelectionScreen>
                   season['is_initialized'] == true,
             )
             .toList();
-        final country = normalizeTournamentCountry(
+        final country = displayTournamentCountry(
           tournament['country_name']?.toString(),
         );
+        final gender = tournamentGender(tournament) == 'F' ? 'Frauen' : 'Männer';
+        final tier = tournamentTier(tournament);
+        final coefficient = tournamentAssociationCoefficient(tournament);
 
         return CustomScrollView(
           key: const PageStorageKey<String>('leagueInfoTab'),
@@ -768,6 +867,37 @@ class _TournamentSelectionScreenState extends State<TournamentSelectionScreen>
                           title: const Text('Ligaland'),
                           trailing: Text(
                             country,
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                        const Divider(height: 1),
+                        ListTile(
+                          leading: Icon(
+                            tournamentGender(tournament) == 'F'
+                                ? Icons.female
+                                : Icons.male,
+                          ),
+                          title: const Text('Kategorie'),
+                          trailing: Text(
+                            gender,
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                        const Divider(height: 1),
+                        ListTile(
+                          leading: const Icon(Icons.format_list_numbered),
+                          title: const Text('Ligastufe'),
+                          trailing: Text(
+                            '$tier',
+                            style: const TextStyle(fontWeight: FontWeight.bold),
+                          ),
+                        ),
+                        const Divider(height: 1),
+                        ListTile(
+                          leading: const Icon(Icons.leaderboard_outlined),
+                          title: const Text('Länderkoeffizient'),
+                          trailing: Text(
+                            coefficient.toStringAsFixed(3),
                             style: const TextStyle(fontWeight: FontWeight.bold),
                           ),
                         ),
